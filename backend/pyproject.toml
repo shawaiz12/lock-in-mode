@@ -1,0 +1,17 @@
+[project]
+name = "lock-in-mode-api"
+version = "0.1.0"
+description = "Backend API for Lock In Mode, a gamified fitness app."
+readme = "README.md"
+authors = [
+    { name = "bruce18wayne", email = "shawaizsheikh030@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = []
+
+[project.scripts]
+lock-in-mode-api = "lock_in_mode_api:main"
+
+[build-system]
+requires = ["uv_build>=0.13.7,<0.14.0"]
+build-backend = "uv_build"
