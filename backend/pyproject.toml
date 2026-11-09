@@ -7,7 +7,9 @@ authors = [
     { name = "bruce18wayne", email = "shawaizsheikh030@gmail.com" }
 ]
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "fastapi[standard]>=0.162.2",
+]
 
 [project.scripts]
 lock-in-mode-api = "lock_in_mode_api:main"
