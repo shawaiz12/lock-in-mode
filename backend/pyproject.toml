@@ -8,7 +8,10 @@ authors = [
 ]
 requires-python = ">=3.13"
 dependencies = [
+    "asyncpg>=0.32.0",
     "fastapi[standard]>=0.162.2",
+    "pydantic-settings>=2.16.2",
+    "sqlalchemy[asyncio]>=2.1.8",
 ]
 
 [project.scripts]
