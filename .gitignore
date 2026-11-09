@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Tool caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Secrets – NEVER commit these
+.env
+
+# Editor / OS
+.vscode/
+.DS_Store
+Thumbs.db
