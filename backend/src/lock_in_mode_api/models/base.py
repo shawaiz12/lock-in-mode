@@ -1,3 +1,6 @@
+import enum
+
+from sqlalchemy import Enum, MetaData
 from sqlalchemy import MetaData
 from sqlalchemy.orm import DeclarativeBase
 
@@ -12,3 +15,12 @@ NAMING_CONVENTION = {
 
 class Base(DeclarativeBase):
     metadata = MetaData(naming_convention=NAMING_CONVENTION)
+
+def enum_column(enum_cls: type[enum.Enum]) -> Enum:
+    """Store a Python enum as plain text (its value), not a native Postgres ENUM."""
+    return Enum(
+        enum_cls,
+        native_enum=False,
+        length=30,
+        values_callable=lambda members: [member.value for member in members],
+    )
