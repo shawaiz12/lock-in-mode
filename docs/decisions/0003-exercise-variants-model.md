@@ -1,7 +1,7 @@
 # 0003 – Model exercise variants with a self-referencing key and a join table
 
-- **Date:** 2026-11-11
-- **Status:** Accepted
+**Date:** 2026-11-11
+**Status:** Accepted
 
 ## Context
 Every exercise can have an easier and a harder version (knee push-up → push-up →
@@ -23,7 +23,7 @@ Columns: `exercise_id`, `easier_id`, `harder_id`, `alternative_ids[]`.
 
 ### 2. Self-referencing key + join table (chosen)
 - `exercises.harder_variant_id` → `exercises.id`
-  - `UNIQUE`: each exercise has at most one easier version, so a ladder can't split.
+  - `UNIQUE`: each exercise is the harder version of at most one other exercise, so every exercise has at most one easier version and ladders can't merge.
   - `ON DELETE SET NULL`: deleting a variant unlinks it instead of deleting its neighbour.
   - `CHECK (harder_variant_id <> id)`: an exercise can't be its own harder version,
     which would make the plan generator loop forever.
@@ -32,6 +32,11 @@ Columns: `exercise_id`, `easier_id`, `harder_id`, `alternative_ids[]`.
     once either exercise is gone.
   - Composite primary key: the same pair can't be added twice.
   - `CHECK (exercise_id <> alternative_id)`: an exercise isn't its own alternative.
+
+### 3. Generic `exercise_relations(from_id, to_id, kind)` table
+One table for every kind of link, with `kind` = `harder` / `alternative`.
+- ❌ The two relationships need different rules: only "harder" must be unique, and they need different delete behaviour. With one table, every constraint has to depend on `kind` (partial unique indexes, triggers), which is harder to read and easy to get wrong.
+- ❌ Flexibility we don't need (YAGNI): we have exactly two kinds of relationship.
 
 ## Decision
 Use option 2.
@@ -51,3 +56,4 @@ General rule adopted for the project:
   both pairs must be added (the admin panel can do this automatically later).
 - ⚠️ Cycles across several rows (A → B → C → A) are not blocked by the database.
   The seed script and admin validation must prevent them.
+- ⚠️ Ladders can't merge: knee push-up and incline push-up can't both lead to push-up. Workaround: keep one main ladder and link the other exercise as an alternative. If we really need merging later, drop the UNIQUE constraint in a migration and treat "easier" as a list.
