@@ -11,21 +11,35 @@ FastAPI · PostgreSQL · SQLAlchemy 2 (async) · Alembic · Redis · Docker Comp
 
 ## Local development
 
-**Requirements:** Docker Desktop, Python 3.13, [uv](https://docs.astral.sh/uv/)
+### Prerequisites
+- Python 3.13 and [uv](https://docs.astral.sh/uv/)
+- Docker Desktop (WSL2 backend on Windows)
+- Git
 
-```powershell
-# 1. Start the database and cache (from the repo root)
-cp .env.example .env        # first time only, then fill in values
-docker compose up -d
+### First-time setup
+```bash
+git clone https://github.com/shawaiz12/lock-in-mode.git
+cd lock-in-mode
+cp .env.example .env              # then fill in the POSTGRES_* values
 
-# 2. Run migrations and the API (from backend/)
+docker compose up -d              # starts postgres + redis
+docker compose ps                 # wait until both show "healthy"
+
 cd backend
-uv run alembic upgrade head
+uv sync                           # creates .venv and installs locked deps
+uv run alembic upgrade head       # applies all migrations
 uv run fastapi dev src/lock_in_mode_api/main.py
 ```
 
-- API docs: http://127.0.0.1:8000/docs
-- Health check: http://127.0.0.1:8000/health
+Check it's running: open http://127.0.0.1:8000/health (API docs at http://127.0.0.1:8000/docs).
+
+> **Windows note:** if uv's cache and the project are on different drives, set `UV_LINK_MODE=copy` to silence hardlink warnings.
+
+### Every session
+```bash
+docker compose up -d
+cd backend && uv run fastapi dev src/lock_in_mode_api/main.py
+```
 
 ## Architecture decisions
 
