@@ -29,7 +29,7 @@ type DbSession = Annotated[AsyncSession, Depends(get_db_session)]
 async def health(session: DbSession) -> dict[str, str]:
     try:
         await session.execute(text("SELECT 1"))
-    # Fixed the indentation so it aligns perfectly with 'try'
+
     except (OSError, SQLAlchemyError) as exc:
         # OSError: couldn't connect (refused, timeout, DNS).
         # SQLAlchemyError: connected, but the driver failed (auth, dropped connection).
