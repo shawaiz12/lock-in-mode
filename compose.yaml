@@ -25,5 +25,36 @@ services:
       timeout: 3s
       retries: 5
 
+  # One-off job: apply migrations, then exit. The API only starts if this succeeds.
+  migrate:
+    build: ./backend
+    image: lock-in-mode-api:local
+    command: ["alembic", "upgrade", "head"]
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres  # the compose service name, not localhost
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build: ./backend
+    image: lock-in-mode-api:local
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+    ports:
+      - "8000:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      # The slim image has no curl, so use Python itself.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
 volumes:
   postgres_data:

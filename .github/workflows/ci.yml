@@ -58,3 +58,7 @@ jobs:
 
       - name: Tests
         run: uv run pytest -v
+
+      - name: Build API Docker image
+        working-directory: .
+        run: docker build --tag lock-in-mode-api:ci backend
