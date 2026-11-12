@@ -53,3 +53,13 @@ select = [
     "SIM",   # simplifications
     "ASYNC", # async pitfalls (blocking calls in async code)
 ]
+[tool.mypy]
+python_version = "3.13"
+strict = true
+plugins = ["pydantic.mypy"]
+files = ["src", "tests", "migrations/env.py"]
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
