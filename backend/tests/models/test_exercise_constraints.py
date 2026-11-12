@@ -39,9 +39,7 @@ async def _link_alternative(
     session: AsyncSession, exercise_id: uuid.UUID, alternative_id: uuid.UUID
 ) -> None:
     await session.execute(
-        insert(exercise_alternatives).values(
-            exercise_id=exercise_id, alternative_id=alternative_id
-        )
+        insert(exercise_alternatives).values(exercise_id=exercise_id, alternative_id=alternative_id)
     )
 
 
@@ -132,9 +130,7 @@ async def test_deleting_harder_variant_unlinks_it(db_session: AsyncSession) -> N
     await db_session.execute(delete(Exercise).where(Exercise.id == hard.id))
 
     # Read the column straight from the DB; the ORM object in memory is stale.
-    link = await db_session.scalar(
-        select(Exercise.harder_variant_id).where(Exercise.id == easy.id)
-    )
+    link = await db_session.scalar(select(Exercise.harder_variant_id).where(Exercise.id == easy.id))
     assert link is None
 
 

@@ -1,7 +1,7 @@
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Annotated, TypeAlias
+from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException, status
 from sqlalchemy import text
@@ -12,6 +12,7 @@ from lock_in_mode_api.core.db import engine, get_db_session
 
 logger = logging.getLogger(__name__)
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     yield  # app runs here
@@ -20,8 +21,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="Lock In Mode API", version="0.1.0", lifespan=lifespan)
 
-# Mark as a TypeAlias to resolve the Pylance typing error
-DbSession: TypeAlias = Annotated[AsyncSession, Depends(get_db_session)]
+# Reusable dependency: any endpoint that takes `session: DbSession` gets a request-scoped session.
+type DbSession = Annotated[AsyncSession, Depends(get_db_session)]
 
 
 @app.get("/health")

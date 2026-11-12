@@ -34,6 +34,7 @@ class BodyLimit(StrEnum):
     BACK = "back"
     SHOULDERS = "shoulders"
 
+
 class ExerciseCategory(StrEnum):
     PUSH = "push"
     PULL = "pull"

@@ -56,9 +56,7 @@ class Exercise(Base):
     harder_variant_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("exercises.id", ondelete="SET NULL"), unique=True
     )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )

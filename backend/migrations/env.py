@@ -1,14 +1,13 @@
 import asyncio
-
-from lock_in_mode_api.core.config import settings
-from lock_in_mode_api.models import Base
 from logging.config import fileConfig
 
+from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-from alembic import context
+from lock_in_mode_api.core.config import settings
+from lock_in_mode_api.models import Base
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -17,7 +16,7 @@ config = context.config
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
 if config.config_file_name is not None:
-        # Don't disable loggers that already exist (e.g. the app's, when Alembic
+    # Don't disable loggers that already exist (e.g. the app's, when Alembic
     # runs inside the test process or at app startup).
     fileConfig(config.config_file_name, disable_existing_loggers=False)
 

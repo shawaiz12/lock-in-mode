@@ -27,17 +27,13 @@ class Profile(Base):
     equipment: Mapped[list[str]] = mapped_column(
         ARRAY(String(30)), default=list, server_default="{}"
     )
-    limits: Mapped[list[str]] = mapped_column(
-        ARRAY(String(30)), default=list, server_default="{}"
-    )
+    limits: Mapped[list[str]] = mapped_column(ARRAY(String(30)), default=list, server_default="{}")
     days_per_week: Mapped[int]
     minutes_per_session: Mapped[int]
     women_home_track: Mapped[bool] = mapped_column(default=False, server_default=false())
     needs_low_intensity: Mapped[bool] = mapped_column(default=False, server_default=false())
     safety_screened_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
