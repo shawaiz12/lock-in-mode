@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    name: Backend (lint, types, tests)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    # A throwaway Postgres for this job only, same image as compose.yaml.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: lockin
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: lockin
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U lockin"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    # No .env in CI: pydantic-settings reads these environment variables instead.
+    # The tests switch POSTGRES_DB to lockin_test themselves (see tests/conftest.py).
+    env:
+      POSTGRES_USER: lockin
+      POSTGRES_PASSWORD: ci-only-password
+      POSTGRES_DB: lockin
+      POSTGRES_HOST: localhost
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install dependencies (fails if uv.lock is out of date)
+        run: uv sync --locked
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Check formatting
+        run: uv run ruff format --check .
+
+      - name: Type check
+        run: uv run mypy
+
+      - name: Tests
+        run: uv run pytest -v
