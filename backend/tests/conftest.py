@@ -10,6 +10,8 @@ import os
 # import time, so this is our only chance to point them at the test database.
 # Real environment variables beat values from .env in pydantic-settings.
 os.environ["POSTGRES_DB"] = "lockin_test"
+# A fixed, test-only signing key, so tests never depend on the developer's .env.
+os.environ["JWT_SECRET"] = "test-only-jwt-secret-not-used-anywhere-else"
 
 import asyncio  # noqa: E402
 from collections.abc import AsyncIterator, Iterator  # noqa: E402
