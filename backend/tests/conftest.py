@@ -25,7 +25,7 @@ from sqlalchemy import text  # noqa: E402
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine  # noqa: E402
 
 from lock_in_mode_api.core.config import settings  # noqa: E402
-from lock_in_mode_api.core.db import engine  # noqa: E402
+from lock_in_mode_api.core.db import engine, get_db_session  # noqa: E402
 from lock_in_mode_api.main import app  # noqa: E402
 
 ALEMBIC_INI = Path(__file__).resolve().parents[1] / "alembic.ini"
@@ -63,8 +63,17 @@ def _reset_dependency_overrides() -> Iterator[None]:
 
 
 @pytest.fixture
-async def client() -> AsyncIterator[AsyncClient]:
-    """HTTP client that calls the app in memory, with no real server."""
+async def client(db_session: AsyncSession) -> AsyncIterator[AsyncClient]:
+    """HTTP client that calls the app in memory, with no real server.
+
+    Every request uses the test's `db_session`, so whatever the API writes is
+    rolled back at the end of the test, and the test can inspect the same data.
+    """
+
+    async def _test_session() -> AsyncIterator[AsyncSession]:
+        yield db_session
+
+    app.dependency_overrides[get_db_session] = _test_session
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
