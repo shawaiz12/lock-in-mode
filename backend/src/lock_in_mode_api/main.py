@@ -1,14 +1,14 @@
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Annotated
 
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, status
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from lock_in_mode_api.core.db import engine, get_db_session
+from lock_in_mode_api.api import v1
+from lock_in_mode_api.api.deps import DbSession
+from lock_in_mode_api.core.db import engine
 
 logger = logging.getLogger(__name__)
 
@@ -20,16 +20,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="Lock In Mode API", version="0.1.0", lifespan=lifespan)
-
-# Reusable dependency: any endpoint that takes `session: DbSession` gets a request-scoped session.
-type DbSession = Annotated[AsyncSession, Depends(get_db_session)]
+app.include_router(v1.router)
 
 
-@app.get("/health")
+@app.get("/health", tags=["infrastructure"])
 async def health(session: DbSession) -> dict[str, str]:
     try:
         await session.execute(text("SELECT 1"))
-
     except (OSError, SQLAlchemyError) as exc:
         # OSError: couldn't connect (refused, timeout, DNS).
         # SQLAlchemyError: connected, but the driver failed (auth, dropped connection).
