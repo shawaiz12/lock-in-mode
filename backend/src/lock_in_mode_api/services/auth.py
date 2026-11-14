@@ -1,13 +1,17 @@
-"""Sign-in and token lifecycle (ADR 0005).
+"""Sign-in, account linking and token lifecycle (ADR 0005, ADR 0006).
 
 Functions here own the transaction: they commit on success. Routes stay thin.
 """
 
 import uuid
 from datetime import UTC, datetime, timedelta
+from enum import StrEnum
 
 from sqlalchemy import select, update
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import InstrumentedAttribute
 
 from lock_in_mode_api.core.config import settings
 from lock_in_mode_api.core.security import (
@@ -21,6 +25,24 @@ from lock_in_mode_api.schemas.auth import TokenPair
 
 class InvalidRefreshTokenError(Exception):
     """Unknown, expired, revoked or reused refresh token. Callers answer 401."""
+
+
+class ProviderAccountInUseError(Exception):
+    """This Google/Apple account already belongs to another user. Callers answer 409."""
+
+
+class ProviderAlreadyLinkedError(Exception):
+    """This user already has a different Google/Apple account linked. Callers answer 409."""
+
+
+class Provider(StrEnum):
+    GOOGLE = "google"
+    APPLE = "apple"
+
+
+def _sub_column(provider: Provider) -> InstrumentedAttribute[str | None]:
+    """The users column that stores this provider's account id."""
+    return User.google_sub if provider is Provider.GOOGLE else User.apple_sub
 
 
 def _now() -> datetime:
@@ -101,3 +123,52 @@ async def sign_out(session: AsyncSession, raw_refresh_token: str) -> None:
     if family_id is not None:
         await _revoke_family(session, family_id, _now())
         await session.commit()
+
+
+async def sign_in_with_provider(session: AsyncSession, provider: Provider, sub: str) -> TokenPair:
+    """Sign in with a verified Google/Apple account, creating the user the first time.
+
+    Always signs into the account that owns `sub`. A guest who wants to keep their
+    progress calls `link_provider` first (ADR 0006).
+    """
+    column = _sub_column(provider)
+    # "Create it unless it exists" in ONE statement. Two first sign-ins at the same
+    # moment can't create two users: the second insert hits UNIQUE(sub), does
+    # nothing, and returns no row.
+    user_id: uuid.UUID | None = await session.scalar(
+        insert(User)
+        .values({column.key: sub, "is_guest": False})
+        .on_conflict_do_nothing(index_elements=[column])
+        .returning(User.id)
+    )
+    if user_id is None:  # the account already existed
+        user_id = (await session.execute(select(User.id).where(column == sub))).scalar_one()
+
+    tokens = await _issue_token_pair(session, user_id, family_id=uuid.uuid4(), now=_now())
+    await session.commit()
+    return tokens
+
+
+async def link_provider(session: AsyncSession, user: User, provider: Provider, sub: str) -> User:
+    """Attach a verified Google/Apple account to `user` (ADR 0006).
+
+    For a guest this saves their progress: same user id, so their tokens keep working.
+    """
+    column = _sub_column(provider)
+    current_sub: str | None = getattr(user, column.key)
+    if current_sub == sub:
+        return user  # already linked: a retried request succeeds again
+    if current_sub is not None:
+        raise ProviderAlreadyLinkedError
+
+    setattr(user, column.key, sub)
+    user.is_guest = False
+    try:
+        await session.commit()
+    except IntegrityError as exc:
+        # No "is it taken?" query first: two requests could both pass that check.
+        # The UNIQUE constraint on the sub column is the only reliable referee, and
+        # it is the only constraint this UPDATE can break.
+        await session.rollback()
+        raise ProviderAccountInUseError from exc
+    return user
