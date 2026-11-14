@@ -59,10 +59,14 @@ async def test_me_without_a_token_is_401(client: AsyncClient) -> None:
 
     assert response.status_code == 401
     assert response.headers["WWW-Authenticate"] == "Bearer"
+    assert response.json()["code"] == "not_authenticated"
 
 
 async def test_me_with_a_garbage_token_is_401(client: AsyncClient) -> None:
-    assert (await _me(client, "not-a-jwt")).status_code == 401
+    response = await _me(client, "not-a-jwt")
+
+    assert response.status_code == 401
+    assert response.json()["code"] == "invalid_access_token"
 
 
 async def test_me_with_an_expired_token_is_401(
@@ -111,6 +115,7 @@ async def test_reusing_a_refresh_token_revokes_the_whole_family(client: AsyncCli
     reuse = await _refresh(client, first.refresh_token)  # attacker replays the old one
 
     assert reuse.status_code == 401
+    assert reuse.json()["code"] == "invalid_refresh_token"
     # The newest token is revoked too, so the attacker's copy is useless as well.
     assert (await _refresh(client, second.refresh_token)).status_code == 401
 

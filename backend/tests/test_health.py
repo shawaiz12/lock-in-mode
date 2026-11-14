@@ -45,7 +45,8 @@ async def test_health_returns_503_when_database_is_unreachable(
     response = await client.get("/health")
 
     assert response.status_code == 503
-    assert response.json() == {"detail": "Database unavailable"}
+    assert response.headers["content-type"] == "application/problem+json"
+    assert response.json()["code"] == "database_unavailable"
     assert "Health check failed" in caplog.text
 
 

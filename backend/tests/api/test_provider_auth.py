@@ -95,6 +95,7 @@ async def test_apple_sign_in_with_the_wrong_nonce_is_401(
     )
 
     assert response.status_code == 401
+    assert response.json()["code"] == "invalid_id_token"
 
 
 async def test_apple_sign_in_without_a_nonce_is_422(
@@ -103,6 +104,9 @@ async def test_apple_sign_in_without_a_nonce_is_422(
     response = await client.post("/api/v1/auth/apple", json={"id_token": apple_id_token()})
 
     assert response.status_code == 422
+    assert response.json()["errors"] == [
+        {"location": "body", "field": "nonce", "code": "missing", "message": "Field required"}
+    ]
 
 
 async def test_invalid_id_token_is_401(client: AsyncClient, google_id_token: MakeIdToken) -> None:
@@ -128,6 +132,7 @@ async def test_unconfigured_provider_is_503(
     response = await _sign_in_google(client, "any-token")
 
     assert response.status_code == 503
+    assert response.json()["code"] == "provider_unavailable"
 
 
 # --- POST /me/link/google and /me/link/apple ------------------------------------------
@@ -168,6 +173,7 @@ async def test_linking_an_account_that_belongs_to_someone_else_is_409(
     )
 
     assert response.status_code == 409
+    assert response.json()["code"] == "provider_account_in_use"  # the app warns on this
     me = await _me(client, guest.access_token)  # the guest is untouched
     assert me["is_guest"] is True
     guest_row = await db_session.get(User, me["id"])
@@ -189,6 +195,7 @@ async def test_warn_first_flow_after_a_409(
         headers=_auth(guest.access_token),
     )
     assert link.status_code == 409
+    assert link.json()["code"] == "provider_account_in_use"
     # (the app shows its warning here; the user taps "Continue")
     signed_in = await _sign_in_google(client, google_id_token("google-user-1"))
 
@@ -223,6 +230,7 @@ async def test_replacing_a_linked_account_with_another_is_409(
     )
 
     assert response.status_code == 409
+    assert response.json()["code"] == "provider_already_linked"  # NOT the warn-first case
 
 
 async def test_google_user_can_add_apple(
@@ -253,6 +261,19 @@ async def test_linking_requires_being_signed_in(
     )
 
     assert response.status_code == 401
+
+
+async def test_linking_checks_sign_in_before_the_provider(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Google is switched off AND there's no access token: "who are you?" comes first.
+    monkeypatch.setattr(settings, "google_client_ids", [])
+    identity.get_google_verifier.cache_clear()
+
+    response = await client.post("/api/v1/me/link/google", json={"id_token": "x"})
+
+    assert response.status_code == 401
+    assert response.json()["code"] == "not_authenticated"
 
 
 async def test_linking_with_an_invalid_id_token_is_401(
