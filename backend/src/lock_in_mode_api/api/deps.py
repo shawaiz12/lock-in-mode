@@ -3,10 +3,16 @@
 import asyncio
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from lock_in_mode_api.api.errors import (
+    InvalidAccessToken,
+    InvalidIdToken,
+    NotAuthenticated,
+    ProviderUnavailable,
+)
 from lock_in_mode_api.core.db import get_db_session
 from lock_in_mode_api.core.identity import (
     IdTokenVerifier,
@@ -27,28 +33,20 @@ type DbSession = Annotated[AsyncSession, Depends(get_db_session)]
 _bearer = HTTPBearer(auto_error=False)
 
 
-def _unauthorized(detail: str) -> HTTPException:
-    return HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail=detail,
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-
-
 async def get_current_user(
     session: DbSession,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
 ) -> User:
     if credentials is None:
-        raise _unauthorized("Not authenticated")
+        raise NotAuthenticated
     try:
         user_id = decode_access_token(credentials.credentials)
     except InvalidAccessTokenError as exc:
-        raise _unauthorized("Invalid or expired access token") from exc
+        raise InvalidAccessToken from exc
 
     user = await session.get(User, user_id)
     if user is None:  # valid token, but the account has since been deleted
-        raise _unauthorized("Invalid or expired access token")
+        raise InvalidAccessToken
     return user
 
 
@@ -61,11 +59,8 @@ type CurrentUser = Annotated[User, Depends(get_current_user)]
 # Tests replace `google_verifier` / `apple_verifier` with one that trusts a local key.
 
 
-def _provider_unavailable(name: str) -> HTTPException:
-    return HTTPException(
-        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        detail=f"Sign in with {name} is not available",
-    )
+def _provider_unavailable(name: str) -> ProviderUnavailable:
+    return ProviderUnavailable(f"Sign in with {name} is not available")
 
 
 def google_verifier() -> IdTokenVerifier:
@@ -90,7 +85,7 @@ async def _verify(
         # so run it in a worker thread instead of freezing the event loop.
         return await asyncio.to_thread(verifier.verify, id_token, raw_nonce=raw_nonce)
     except InvalidIdTokenError as exc:
-        raise _unauthorized("Invalid ID token") from exc
+        raise InvalidIdToken from exc
 
 
 async def google_identity(

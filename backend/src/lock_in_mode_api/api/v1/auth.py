@@ -1,6 +1,7 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, status
 
 from lock_in_mode_api.api.deps import AppleIdentity, DbSession, GoogleIdentity
+from lock_in_mode_api.api.errors import InvalidRefreshToken
 from lock_in_mode_api.schemas.auth import RefreshRequest, TokenPair
 from lock_in_mode_api.services import auth as auth_service
 from lock_in_mode_api.services.auth import Provider
@@ -34,11 +35,7 @@ async def refresh(body: RefreshRequest, session: DbSession) -> TokenPair:
     try:
         return await auth_service.rotate_refresh_token(session, body.refresh_token)
     except auth_service.InvalidRefreshTokenError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired refresh token",
-            headers={"WWW-Authenticate": "Bearer"},
-        ) from exc
+        raise InvalidRefreshToken from exc
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
