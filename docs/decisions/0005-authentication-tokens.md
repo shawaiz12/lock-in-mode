@@ -65,6 +65,8 @@ of its own. Three decisions had to be made:
   all need conflict rules. Complex and easy to get wrong.
 - (iii) Refuse and ask the user: extra screens and confusing.
 
+*How the app learns about the conflict in time to warn: see [ADR 0006](0006-linking-guest-to-provider-account.md).*
+
 When the provider account is **new**, the guest user is simply upgraded: the
 `google_sub`/`apple_sub` is attached, `is_guest` becomes false, and all progress is kept.
 
