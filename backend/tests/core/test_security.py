@@ -69,7 +69,7 @@ def test_tampered_token_is_rejected() -> None:
 
 def test_unsigned_alg_none_token_is_rejected() -> None:
     """Classic JWT attack: claim "alg: none" and send no signature at all."""
-    token = jwt.encode(_valid_claims(uuid.uuid4()), key=None, algorithm="none")
+    token = jwt.encode(_valid_claims(uuid.uuid4()), key="", algorithm="none")
 
     with pytest.raises(InvalidAccessTokenError):
         decode_access_token(token)

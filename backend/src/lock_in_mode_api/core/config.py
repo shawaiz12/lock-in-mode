@@ -22,6 +22,12 @@ class Settings(BaseSettings):
     access_token_ttl_minutes: int = 15
     refresh_token_ttl_days: int = 60
 
+    # Sign in with Google / Apple (ADR 0005). Empty means that provider is switched off,
+    # so the API runs fine before the mobile app exists.
+    # GOOGLE_CLIENT_IDS is a JSON list, one id per app build: '["<android>", "<ios>"]'
+    google_client_ids: list[str] = []
+    apple_bundle_id: str | None = None
+
     @field_validator("jwt_secret")
     @classmethod
     def jwt_secret_must_be_long(cls, value: SecretStr) -> SecretStr:
