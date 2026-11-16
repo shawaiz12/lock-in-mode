@@ -13,6 +13,7 @@ dependencies = [
     "fastapi[standard]>=0.162.2",
     "pydantic-settings>=2.16.2",
     "pyjwt[crypto]>=2.10",
+    "pyyaml>=6.0.3",
     "redis>=8.1.0",
     "sqlalchemy[asyncio]>=2.1.8",
 ]
@@ -31,6 +32,7 @@ dev = [
     "pytest>=9.2.0",
     "pytest-asyncio>=1.4.1.post1",
     "ruff>=0.17.4",
+    "types-pyyaml>=6.0.12.20261113",
 ]
 
 [tool.pytest.ini_options]
