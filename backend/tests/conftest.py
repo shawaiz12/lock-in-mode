@@ -12,6 +12,8 @@ import os
 os.environ["POSTGRES_DB"] = "lockin_test"
 # A fixed, test-only signing key, so tests never depend on the developer's .env.
 os.environ["JWT_SECRET"] = "test-only-jwt-secret-not-used-anywhere-else"
+# Redis database 15 is for tests only, so flushing it never touches dev data in db 0.
+os.environ["REDIS_URL"] = "redis://localhost:6379/15"
 
 import asyncio  # noqa: E402
 from collections.abc import AsyncIterator, Iterator  # noqa: E402
@@ -26,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine  # noqa: E4
 
 from lock_in_mode_api.core.config import settings  # noqa: E402
 from lock_in_mode_api.core.db import engine, get_db_session  # noqa: E402
+from lock_in_mode_api.core.redis import redis_client  # noqa: E402
 from lock_in_mode_api.main import app  # noqa: E402
 
 ALEMBIC_INI = Path(__file__).resolve().parents[1] / "alembic.ini"
@@ -60,6 +63,14 @@ def _reset_dependency_overrides() -> Iterator[None]:
     """Runs around every test: no override can leak into the next test."""
     yield
     app.dependency_overrides.clear()
+
+
+@pytest.fixture(autouse=True)
+async def _empty_redis() -> None:
+    """Every test starts with no rate-limit counters left over from other tests."""
+    # Safety net, like the database one: only ever flush the test-only Redis db.
+    assert redis_client.connection_pool.connection_kwargs["db"] == 15
+    await redis_client.flushdb()
 
 
 @pytest.fixture
