@@ -29,6 +29,17 @@ jobs:
           --health-timeout 5s
           --health-retries 10
 
+      # Rate limiting tests use a real Redis too (ADR 0008), same image as compose.yaml.
+      redis:
+        image: redis:8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
     # No .env in CI: pydantic-settings reads these environment variables instead.
     # The tests switch POSTGRES_DB to lockin_test themselves (see tests/conftest.py).
     env:
