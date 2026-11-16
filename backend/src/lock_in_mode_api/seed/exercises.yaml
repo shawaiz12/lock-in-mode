@@ -1,0 +1,81 @@
+# Lock In Mode exercise library (ADR 0009).
+#
+# One entry per exercise. Rules are checked by seed/schema.py and run in CI:
+#   slug           lowercase-with-hyphens, never changes once released (it's the key)
+#   category       push | pull | legs | core | cardio | mobility
+#   muscle_groups  chest, back, shoulders, arms, core, legs, glutes, full_body
+#   equipment      [] means none needed; else dumbbells, resistance_bands, pull_up_bar,
+#                  barbell, bench, cable_machine, kettlebell
+#   difficulty     1 (easiest) .. 5
+#   steps          3-5 plain-language steps, cues 2-3, one common_mistake
+#   harder         slug of the next exercise up the ladder (same category, higher difficulty)
+#   alternatives   slugs; write each pair once, the loader stores both directions
+#
+# Language: someone who has never been to a gym must understand every line.
+
+exercises:
+  # --- Push-up ladder: knee push-up -> push-up -> decline push-up ---------------------
+  - slug: knee-push-up
+    name: Knee Push-Up
+    category: push
+    muscle_groups: [chest, arms, shoulders]
+    difficulty: 1
+    steps:
+      - Kneel on the floor and place your hands a little wider than your shoulders.
+      - Walk your hands forward until your body is in a straight line from knees to head.
+      - Bend your elbows and lower your chest towards the floor.
+      - Push the floor away to come back up.
+    cues:
+      - Keep your hips in line with your back, not up in the air.
+      - Elbows point back at an angle, not straight out to the sides.
+    common_mistake: Only moving your head down instead of lowering your whole chest.
+    harder: push-up
+    # Knee and incline push-ups can't both sit below push-up on the ladder (ADR 0003),
+    # so incline push-up is linked as an alternative instead.
+    alternatives: [incline-push-up]
+
+  - slug: incline-push-up
+    name: Incline Push-Up
+    category: push
+    muscle_groups: [chest, arms, shoulders]
+    difficulty: 1
+    steps:
+      - Place your hands on a sturdy table, bed or wall ledge, a little wider than your shoulders.
+      - Step your feet back until your body is in a straight line from heels to head.
+      - Bend your elbows and lower your chest towards the edge.
+      - Push away to come back up.
+    cues:
+      - The higher your hands, the easier it gets.
+      - Squeeze your stomach and bottom so your body stays straight.
+    common_mistake: Using furniture that slides or tips. Check it is steady first.
+
+  - slug: push-up
+    name: Push-Up
+    category: push
+    muscle_groups: [chest, arms, shoulders, core]
+    difficulty: 2
+    steps:
+      - Start on your hands and toes, hands a little wider than your shoulders.
+      - Make a straight line from your heels to your head.
+      - Bend your elbows and lower your chest until it is close to the floor.
+      - Push the floor away to come back up.
+    cues:
+      - Squeeze your stomach so your hips don't sag.
+      - Look at the floor slightly ahead of your hands, not at your feet.
+    common_mistake: Letting your hips drop towards the floor, which strains your lower back.
+    harder: decline-push-up
+
+  - slug: decline-push-up
+    name: Decline Push-Up
+    category: push
+    muscle_groups: [chest, arms, shoulders, core]
+    difficulty: 3
+    steps:
+      - Put your feet on a sturdy step, bed or chair and your hands on the floor.
+      - Make a straight line from your heels to your head.
+      - Bend your elbows and lower your chest towards the floor.
+      - Push the floor away to come back up.
+    cues:
+      - Start with a low step; the higher your feet, the harder it gets.
+      - Keep your stomach tight the whole time.
+    common_mistake: Feet on something that slides. Use a surface that stays put.
