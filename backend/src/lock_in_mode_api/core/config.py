@@ -28,6 +28,14 @@ class Settings(BaseSettings):
     google_client_ids: list[str] = []
     apple_bundle_id: str | None = None
 
+    # Redis (rate limiting now; caching and Celery later). A URL, because hosted Redis
+    # (e.g. Upstash) hands you one: rediss://default:<password>@<host>:6379
+    redis_url: str = "redis://localhost:6379/0"
+
+    # Rate limits (ADR 0008): max requests per client IP per minute, per sign-in endpoint.
+    # Generous on purpose: mobile carriers put many phones behind one shared IP.
+    auth_rate_limit_per_minute: int = 20
+
     @field_validator("jwt_secret")
     @classmethod
     def jwt_secret_must_be_long(cls, value: SecretStr) -> SecretStr:

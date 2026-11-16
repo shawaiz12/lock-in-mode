@@ -43,11 +43,14 @@ services:
     env_file: .env
     environment:
       POSTGRES_HOST: postgres
+      REDIS_URL: redis://redis:6379/0  # the compose service name, not localhost
     ports:
       - "8000:8000"
     depends_on:
       migrate:
         condition: service_completed_successfully
+      redis:
+        condition: service_healthy
     healthcheck:
       # The slim image has no curl, so use Python itself.
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]

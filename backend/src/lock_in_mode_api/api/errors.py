@@ -37,11 +37,15 @@ class ApiError(Exception):
     status_code: ClassVar[int]
     code: ClassVar[str]
     title: ClassVar[str]
-    headers: ClassVar[Mapping[str, str]] = {}
+    default_headers: ClassVar[Mapping[str, str]] = {}
 
-    def __init__(self, detail: str | None = None) -> None:
+    def __init__(
+        self, detail: str | None = None, *, headers: Mapping[str, str] | None = None
+    ) -> None:
         super().__init__(detail or self.title)
         self.detail = detail
+        # Per-error headers on top of the class defaults (e.g. Retry-After on a 429).
+        self.headers = {**self.default_headers, **(headers or {})}
 
 
 # --- 401: who are you? ----------------------------------------------------------------
@@ -51,28 +55,28 @@ class NotAuthenticated(ApiError):
     status_code = 401
     code = "not_authenticated"
     title = "Not authenticated"
-    headers = _BEARER_CHALLENGE
+    default_headers = _BEARER_CHALLENGE
 
 
 class InvalidAccessToken(ApiError):
     status_code = 401
     code = "invalid_access_token"
     title = "Invalid or expired access token"
-    headers = _BEARER_CHALLENGE
+    default_headers = _BEARER_CHALLENGE
 
 
 class InvalidRefreshToken(ApiError):
     status_code = 401
     code = "invalid_refresh_token"
     title = "Invalid or expired refresh token"
-    headers = _BEARER_CHALLENGE
+    default_headers = _BEARER_CHALLENGE
 
 
 class InvalidIdToken(ApiError):
     status_code = 401
     code = "invalid_id_token"
     title = "Invalid ID token"
-    headers = _BEARER_CHALLENGE
+    default_headers = _BEARER_CHALLENGE
 
 
 # --- 404 / 405 / 422: the request itself is wrong (raised by FastAPI, not by us) -------
@@ -111,6 +115,17 @@ class ProviderAlreadyLinked(ApiError):
     status_code = 409
     code = "provider_already_linked"
     title = "A different account is already linked"
+
+
+# --- 429: slow down ---------------------------------------------------------------------
+
+
+class RateLimited(ApiError):
+    """Too many requests from this IP. Always sent with Retry-After (ADR 0008)."""
+
+    status_code = 429
+    code = "rate_limited"
+    title = "Too many requests"
 
 
 # --- 5xx: our side --------------------------------------------------------------------

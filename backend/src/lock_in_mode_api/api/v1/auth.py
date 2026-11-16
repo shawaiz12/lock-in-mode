@@ -1,7 +1,8 @@
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, status
 
 from lock_in_mode_api.api.deps import AppleIdentity, DbSession, GoogleIdentity
 from lock_in_mode_api.api.errors import InvalidRefreshToken
+from lock_in_mode_api.api.rate_limit import rate_limit
 from lock_in_mode_api.schemas.auth import RefreshRequest, TokenPair
 from lock_in_mode_api.services import auth as auth_service
 from lock_in_mode_api.services.auth import Provider
@@ -9,13 +10,18 @@ from lock_in_mode_api.services.auth import Provider
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-@router.post("/guest", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/guest",
+    status_code=status.HTTP_201_CREATED,
+    # Route-level dependencies run before the body is even read (ADR 0008).
+    dependencies=[Depends(rate_limit("guest"))],
+)
 async def sign_in_as_guest(session: DbSession) -> TokenPair:
     """Start without an account. The refresh token is this guest's only way back in."""
     return await auth_service.sign_in_as_guest(session)
 
 
-@router.post("/google")
+@router.post("/google", dependencies=[Depends(rate_limit("google"))])
 async def sign_in_with_google(identity: GoogleIdentity, session: DbSession) -> TokenPair:
     """Sign in, or create an account, with a Google ID token.
 
@@ -24,7 +30,7 @@ async def sign_in_with_google(identity: GoogleIdentity, session: DbSession) -> T
     return await auth_service.sign_in_with_provider(session, Provider.GOOGLE, identity.sub)
 
 
-@router.post("/apple")
+@router.post("/apple", dependencies=[Depends(rate_limit("apple"))])
 async def sign_in_with_apple(identity: AppleIdentity, session: DbSession) -> TokenPair:
     """Sign in, or create an account, with an Apple ID token and its raw nonce."""
     return await auth_service.sign_in_with_provider(session, Provider.APPLE, identity.sub)

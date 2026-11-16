@@ -10,6 +10,7 @@ from lock_in_mode_api.api import v1
 from lock_in_mode_api.api.deps import DbSession
 from lock_in_mode_api.api.errors import DatabaseUnavailable, add_problem_handlers
 from lock_in_mode_api.core.db import engine
+from lock_in_mode_api.core.redis import redis_client
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +19,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     yield  # app runs here
     await engine.dispose()  # on shutdown: close all pooled connections
+    await redis_client.aclose()
 
 
 app = FastAPI(title="Lock In Mode API", version="0.1.0", lifespan=lifespan)
