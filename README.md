@@ -82,12 +82,14 @@ from `backend/` before pushing:
 uv run ruff check .               # lint
 uv run ruff format --check .      # formatting
 uv run mypy                       # strict type checking
-uv run pytest -v                  # tests (needs the postgres container running)
+uv run pytest -v                  # tests (needs the postgres and redis containers running)
 ```
 
 Tests never touch your dev data: they create a separate `lockin_test` database,
 apply all migrations to it, and roll back every test
 (see [ADR 0004](docs/decisions/0004-test-database-strategy.md)).
+Redis works the same way: tests use Redis database 15 and empty it before each test,
+so your dev data in database 0 is never touched.
 
 ## Architecture decisions
 

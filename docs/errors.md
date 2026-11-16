@@ -28,6 +28,7 @@ problem document, sent as `Content-Type: application/problem+json`
 | [`provider_account_in_use`](#provider_account_in_use) | 409 | That Google/Apple account belongs to another user | Warn that guest progress stays behind; if confirmed, call `/auth/{provider}` |
 | [`provider_already_linked`](#provider_already_linked) | 409 | A different account of that provider is already linked | Don't offer linking again |
 | [`validation_failed`](#validation_failed) | 422 | Request body or parameters invalid; see `errors` | Bug in the app |
+| [`rate_limited`](#rate_limited) | 429 | Too many sign-in attempts from this IP | Wait `Retry-After` seconds, then retry |
 | [`internal_error`](#internal_error) | 500 | Unexpected server error | Retry later |
 | [`provider_unavailable`](#provider_unavailable) | 503 | Google/Apple sign-in is switched off on the server | Hide that sign-in option |
 | [`database_unavailable`](#database_unavailable) | 503 | Health check can't reach the database | Retry later |
@@ -78,6 +79,12 @@ list. Submitted values are never echoed back, because they can contain tokens.
   "errors": [{"location": "body", "field": "nonce", "code": "missing", "message": "Field required"}]
 }
 ```
+
+## rate_limited
+Too many requests to a sign-in endpoint (`/auth/guest`, `/auth/google`, `/auth/apple`)
+from this IP in the current minute ([ADR 0008](decisions/0008-rate-limiting.md)).
+Always sent with `Retry-After: <seconds>`. Wait that long before retrying; don't retry
+in a tight loop.
 
 ## internal_error
 Something unexpected broke on the server. The response never includes internal details;
