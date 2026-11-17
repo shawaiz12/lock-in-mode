@@ -61,6 +61,7 @@ Details:
   reference points to a real slug, at most one easier version per exercise (mirrors the
   `UNIQUE` on `harder_variant_id`), no cycles, and a harder variant must be in the same
   category with a higher difficulty.
+  > Changed by ADR 0010: same movement slot, and the same **or** a higher difficulty.
 - **The slug is the stable key.** The file never contains UUIDs; the loader looks rows up
   by `slug` (already `UNIQUE`), so the database keeps its own ids across reloads.
 - **Alternatives are written once.** The file lists a pair once; the loader stores both
