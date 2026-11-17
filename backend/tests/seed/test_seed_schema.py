@@ -1,4 +1,4 @@
-"""Rules for the exercise seed file (ADR 0009). Pure Python: no database needed."""
+"""Rules for the exercise seed file (ADRs 0009, 0010). Pure Python: no database needed."""
 
 from pathlib import Path
 
@@ -14,8 +14,12 @@ def _exercise(slug: str, **overrides: object) -> dict[str, object]:
         "slug": slug,
         "name": slug.replace("-", " ").title(),
         "category": "push",
-        "muscle_groups": ["chest"],
+        "movement_slot": "horizontal_push",
+        "exercise_type": "compound",
+        "primary_muscle": "chest",
+        "targets": ["chest_mid"],
         "difficulty": 2,
+        "effectiveness": 3,
         "steps": ["Step one.", "Step two.", "Step three."],
         "cues": ["Cue one.", "Cue two."],
         "common_mistake": "A mistake.",
@@ -45,8 +49,12 @@ def test_load_library_reads_a_given_path(tmp_path: Path) -> None:
         "  - slug: plank\n"
         "    name: Plank\n"
         "    category: core\n"
-        "    muscle_groups: [core]\n"
+        "    movement_slot: brace\n"
+        "    exercise_type: isolation\n"
+        "    primary_muscle: core\n"
+        "    targets: [deep_core]\n"
         "    difficulty: 1\n"
+        "    effectiveness: 3\n"
         "    is_timed: true\n"
         "    steps: [One., Two., Three.]\n"
         "    cues: [One., Two.]\n"
@@ -65,7 +73,10 @@ def test_load_library_reads_a_given_path(tmp_path: Path) -> None:
 def test_a_valid_exercise_passes() -> None:
     library = _library(_exercise("push-up"))
 
-    assert library.by_slug["push-up"].equipment == []
+    push_up = library.by_slug["push-up"]
+    assert push_up.equipment == []
+    assert push_up.impact == "none"
+    assert push_up.home_only is False
 
 
 def test_unknown_key_is_rejected() -> None:
@@ -86,8 +97,14 @@ def test_badly_formed_slug_is_rejected(slug: str) -> None:
     ("field", "value"),
     [
         ("category", "arms"),
-        ("muscle_groups", ["biceps"]),
+        ("movement_slot", "pushing"),
+        ("exercise_type", "cardio-ish"),
+        ("primary_muscle", "arms"),
+        ("secondary_muscles", ["legs"]),
+        ("targets", ["inner_biceps"]),
         ("equipment", ["chair"]),
+        ("impact", "huge"),
+        ("not_suitable_for", ["wrists"]),
     ],
 )
 def test_values_outside_the_enums_are_rejected(field: str, value: object) -> None:
@@ -95,10 +112,11 @@ def test_values_outside_the_enums_are_rejected(field: str, value: object) -> Non
         _library(_exercise("push-up", **{field: value}))
 
 
-@pytest.mark.parametrize("difficulty", [0, 6])
-def test_difficulty_must_be_1_to_5(difficulty: int) -> None:
-    with pytest.raises(ValidationError, match="difficulty"):
-        _library(_exercise("push-up", difficulty=difficulty))
+@pytest.mark.parametrize("field", ["difficulty", "effectiveness"])
+@pytest.mark.parametrize("value", [0, 6])
+def test_ratings_must_be_1_to_5(field: str, value: int) -> None:
+    with pytest.raises(ValidationError, match=field):
+        _library(_exercise("push-up", **{field: value}))
 
 
 @pytest.mark.parametrize(
@@ -108,7 +126,6 @@ def test_difficulty_must_be_1_to_5(difficulty: int) -> None:
         ("steps", ["1.", "2.", "3.", "4.", "5.", "6."]),
         ("cues", ["Only one."]),  # brief: 2-3 cues
         ("cues", ["1.", "2.", "3.", "4."]),
-        ("muscle_groups", []),
     ],
 )
 def test_list_lengths_follow_the_brief(field: str, value: list[str]) -> None:
@@ -121,13 +138,17 @@ def test_blank_text_is_rejected() -> None:
         _library(_exercise("push-up", common_mistake="   "))
 
 
-@pytest.mark.parametrize("field", ["muscle_groups", "equipment", "alternatives"])
-def test_duplicates_in_a_list_are_rejected(field: str) -> None:
-    values = {
-        "muscle_groups": ["chest", "chest"],
-        "equipment": ["bench", "bench"],
-        "alternatives": ["dip", "dip"],
-    }[field]
+@pytest.mark.parametrize(
+    ("field", "values"),
+    [
+        ("secondary_muscles", ["triceps", "triceps"]),
+        ("targets", ["chest_mid", "chest_mid"]),
+        ("equipment", ["dumbbells", "dumbbells"]),
+        ("not_suitable_for", ["knees", "knees"]),
+        ("alternatives", ["dip", "dip"]),
+    ],
+)
+def test_duplicates_in_a_list_are_rejected(field: str, values: list[str]) -> None:
 
     with pytest.raises(ValidationError, match="duplicates"):
         _library(_exercise("push-up", **{field: values}), _exercise("dip"))
@@ -146,6 +167,96 @@ def test_exercise_cannot_be_its_own_harder_variant() -> None:
 def test_exercise_cannot_be_its_own_alternative() -> None:
     with pytest.raises(ValidationError, match="its own alternative"):
         _library(_exercise("push-up", alternatives=["push-up"]))
+
+
+# --- muscles, heads and equipment agree (ADR 0010) -------------------------------
+
+
+def test_target_in_a_secondary_muscle_is_allowed() -> None:
+    library = _library(
+        _exercise(
+            "push-up", secondary_muscles=["triceps"], targets=["chest_mid", "triceps_lateral"]
+        )
+    )
+
+    assert "triceps_lateral" in library.by_slug["push-up"].targets
+
+
+def test_target_outside_the_trained_muscles_is_rejected() -> None:
+    # A push-up tagged with a biceps head would make the head-coverage check lie.
+    with pytest.raises(ValidationError, match="biceps_long belongs to biceps"):
+        _library(_exercise("push-up", targets=["chest_mid", "biceps_long"]))
+
+
+def test_strength_exercise_needs_a_primary_muscle() -> None:
+    with pytest.raises(ValidationError, match="primary_muscle is required"):
+        _library(_exercise("push-up", primary_muscle=None))
+
+
+def test_strength_exercise_needs_a_target() -> None:
+    with pytest.raises(ValidationError, match="at least one target"):
+        _library(_exercise("push-up", targets=[]))
+
+
+def test_primary_muscle_cannot_also_be_secondary() -> None:
+    # It would be counted 1.5 times in the weekly set count.
+    with pytest.raises(ValidationError, match="also listed as secondary"):
+        _library(_exercise("push-up", secondary_muscles=["chest"]))
+
+
+@pytest.mark.parametrize("category", ["cardio", "mobility"])
+def test_cardio_and_mobility_have_no_primary_muscle_or_targets(category: str) -> None:
+    library = _library(
+        _exercise(
+            "march-in-place",
+            category=category,
+            movement_slot="conditioning",
+            exercise_type="cardio",
+            primary_muscle=None,
+            targets=[],
+        )
+    )
+
+    assert library.by_slug["march-in-place"].primary_muscle is None
+
+
+def test_cardio_with_a_primary_muscle_is_rejected() -> None:
+    with pytest.raises(ValidationError, match="no primary muscle or targets"):
+        _library(
+            _exercise(
+                "march-in-place",
+                category="cardio",
+                movement_slot="conditioning",
+                exercise_type="cardio",
+                targets=[],
+            )
+        )
+
+
+def test_effectiveness_is_required_except_for_mobility() -> None:
+    with pytest.raises(ValidationError, match="effectiveness is required"):
+        _library(_exercise("push-up", effectiveness=None))
+
+
+def test_mobility_can_be_unrated() -> None:
+    library = _library(
+        _exercise(
+            "cat-cow",
+            category="mobility",
+            movement_slot="warm_up",
+            exercise_type="mobility",
+            primary_muscle=None,
+            targets=[],
+            effectiveness=None,
+        )
+    )
+
+    assert library.by_slug["cat-cow"].effectiveness is None
+
+
+def test_home_only_exercise_cannot_need_gym_equipment() -> None:
+    with pytest.raises(ValidationError, match="home-only exercise can't need gym"):
+        _library(_exercise("table-row", home_only=True, equipment=["gym"]))
 
 
 # --- the library as a whole -------------------------------------------------------
@@ -190,20 +301,31 @@ def test_ladder_loop_is_rejected() -> None:
         )
 
 
-def test_harder_variant_needs_a_higher_difficulty() -> None:
+def test_harder_variant_with_the_same_difficulty_is_allowed() -> None:
+    # Difficulty only goes 1-5 and some ladders have 7 rungs, so neighbours can share it.
+    library = _library(
+        _exercise("push-up", difficulty=3, harder="close-grip-push-up"),
+        _exercise("close-grip-push-up", difficulty=3),
+    )
+
+    assert library.by_slug["push-up"].harder == "close-grip-push-up"
+
+
+def test_harder_variant_with_a_lower_difficulty_is_rejected() -> None:
     # Also catches a link written the wrong way round (harder pointing to an easier one).
-    with pytest.raises(ValidationError, match="needs a higher difficulty"):
+    with pytest.raises(ValidationError, match="same or a higher difficulty"):
         _library(
             _exercise("push-up", difficulty=2, harder="knee-push-up"),
             _exercise("knee-push-up", difficulty=1),
         )
 
 
-def test_harder_variant_must_be_in_the_same_category() -> None:
-    with pytest.raises(ValidationError, match="same category"):
+def test_harder_variant_must_fill_the_same_movement_slot() -> None:
+    # Push-up -> pike push-up is harder, but it's a different job (vertical push).
+    with pytest.raises(ValidationError, match="same movement slot"):
         _library(
-            _exercise("push-up", difficulty=2, harder="jump-squat"),
-            _exercise("jump-squat", category="legs", difficulty=3),
+            _exercise("push-up", difficulty=2, harder="pike-push-up"),
+            _exercise("pike-push-up", movement_slot="vertical_push", difficulty=3),
         )
 
 
