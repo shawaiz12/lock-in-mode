@@ -50,27 +50,21 @@ def test_gym_users_never_get_bands_or_home_tricks(library: SeedLibrary) -> None:
 @pytest.mark.parametrize(
     "kit",
     [
+        {Equipment.RESISTANCE_BANDS},
         {Equipment.DUMBBELLS},
         {Equipment.DUMBBELLS, Equipment.RESISTANCE_BANDS, Equipment.PULL_UP_BAR},
     ],
 )
-def test_home_users_with_dumbbells_can_hit_every_head(
+def test_home_users_with_bands_or_dumbbells_can_hit_every_head(
     library: SeedLibrary, kit: set[Equipment]
 ) -> None:
     assert _heads(_available(library, kit, at_home=True)) == set(MuscleHead)
 
 
-def test_home_users_with_no_equipment_miss_only_the_known_gaps(library: SeedLibrary) -> None:
-    # Knowledge base, section 5: without kit the biceps heads and forearms can't be
-    # separated, and there is no vertical pull. Anything else missing is a regression.
-    no_kit = _available(library, set(), at_home=True)
-    known_gaps = {
-        MuscleHead.BRACHIALIS,
-        MuscleHead.BRACHIORADIALIS,
-        MuscleHead.FOREARM_EXTENSORS,
-    }
-
-    assert set(MuscleHead) - _heads(no_kit) <= known_gaps
+def test_home_users_with_no_equipment_can_hit_every_head(library: SeedLibrary) -> None:
+    # Backpack hammer and reverse curls close the arm and forearm gaps the knowledge base
+    # mentions (ADR 0011). Without kit there is still no vertical pull: rows fill that slot.
+    assert _heads(_available(library, set(), at_home=True)) == set(MuscleHead)
 
 
 def test_every_category_has_a_beginner_exercise(library: SeedLibrary) -> None:
