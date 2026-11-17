@@ -76,6 +76,8 @@ the exact item is in `also_needs`). An exercise is available when the user has e
 | `impact` | none / low / medium / high, default none | |
 | `not_suitable_for` | text[] of body limits | |
 
+> Changed by ADR 0011: mobility moves name the muscle they stretch (cardio stays NULL).
+
 `muscle_groups` is dropped (no rows anywhere used it). Rules that need more than one
 column (for example "cardio has no primary muscle") are checked by the seed file's
 validation, not by the database.
