@@ -37,6 +37,18 @@ services:
       postgres:
         condition: service_healthy
 
+  # One-off job: load the exercise library (safe to repeat), then exit.
+  seed:
+    build: ./backend
+    image: lock-in-mode-api:local
+    command: ["python", "-m", "lock_in_mode_api.seed"]
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
   api:
     build: ./backend
     image: lock-in-mode-api:local
@@ -47,7 +59,7 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      migrate:
+      seed:
         condition: service_completed_successfully
       redis:
         condition: service_healthy

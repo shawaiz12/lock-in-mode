@@ -21,8 +21,8 @@ git clone https://github.com/shawaiz12/lock-in-mode.git
 cd lock-in-mode
 cp .env.example .env              # then fill in the POSTGRES_* values
 
-docker compose up -d --build      # postgres, redis, migrations, API
-docker compose ps -a              # migrate: "Exited (0)", everything else: "healthy"
+docker compose up -d --build      # postgres, redis, migrations, exercise library, API
+docker compose ps -a              # migrate and seed: "Exited (0)", everything else: "healthy"
 ```
 
 Open http://localhost:8000/health (API docs at http://localhost:8000/docs).
@@ -34,7 +34,8 @@ What starts:
 | `postgres` | PostgreSQL 17, data kept in the `postgres_data` volume                       |
 | `redis`    | Redis 8 (cache, rate limits, background job broker)                          |
 | `migrate`  | One-off job: runs `alembic upgrade head`, then exits                         |
-| `api`      | FastAPI app (uvicorn) on port 8000; starts only after `migrate` succeeds     |
+| `seed`     | One-off job: loads the exercise library (`python -m lock_in_mode_api.seed`)  |
+| `api`      | FastAPI app (uvicorn) on port 8000; starts only after `seed` succeeds        |
 
 After changing backend code, rebuild with `docker compose up -d --build api`.
 
@@ -58,6 +59,7 @@ docker compose ps                 # wait until both show "healthy"
 cd backend
 uv sync                           # creates .venv and installs locked deps (incl. dev tools)
 uv run alembic upgrade head       # applies all migrations
+uv run python -m lock_in_mode_api.seed   # loads the exercise library (safe to repeat)
 uv run fastapi dev src/lock_in_mode_api/main.py
 ```
 
