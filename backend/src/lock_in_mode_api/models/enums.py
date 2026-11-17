@@ -20,13 +20,17 @@ class Location(StrEnum):
 
 
 class Equipment(StrEnum):
+    """Kit an exercise needs (ADR 0010).
+
+    Home users own any mix of the first three. GYM means "only a gym has it" (machines,
+    cables, barbells, benches, racks); the exact item is in the exercise's `also_needs`.
+    Gym users have everything except bands.
+    """
+
     DUMBBELLS = "dumbbells"
     RESISTANCE_BANDS = "resistance_bands"
     PULL_UP_BAR = "pull_up_bar"
-    BARBELL = "barbell"
-    BENCH = "bench"
-    CABLE_MACHINE = "cable_machine"
-    KETTLEBELL = "kettlebell"
+    GYM = "gym"
 
 
 class BodyLimit(StrEnum):
@@ -45,11 +49,151 @@ class ExerciseCategory(StrEnum):
 
 
 class MuscleGroup(StrEnum):
+    """Muscle groups the engine counts weekly sets for (knowledge base, section 3)."""
+
     CHEST = "chest"
     BACK = "back"
     SHOULDERS = "shoulders"
-    ARMS = "arms"
-    CORE = "core"
-    LEGS = "legs"
+    TRAPS = "traps"
+    BICEPS = "biceps"
+    TRICEPS = "triceps"
+    FOREARMS = "forearms"
+    QUADS = "quads"
+    HAMSTRINGS = "hamstrings"
     GLUTES = "glutes"
-    FULL_BODY = "full_body"
+    ADDUCTORS = "adductors"
+    CALVES = "calves"
+    CORE = "core"
+
+
+class MuscleHead(StrEnum):
+    """The part of a muscle an exercise emphasises (knowledge base, section 5).
+
+    No exercise isolates one head; a target means "most of the work goes here".
+    """
+
+    CHEST_UPPER = "chest_upper"
+    CHEST_MID = "chest_mid"
+    CHEST_LOWER = "chest_lower"
+    DELT_FRONT = "delt_front"
+    DELT_SIDE = "delt_side"
+    DELT_REAR = "delt_rear"
+    BICEPS_LONG = "biceps_long"  # outer head
+    BICEPS_SHORT = "biceps_short"  # inner head
+    BRACHIALIS = "brachialis"
+    TRICEPS_LONG = "triceps_long"
+    TRICEPS_LATERAL = "triceps_lateral"
+    TRICEPS_MEDIAL = "triceps_medial"
+    LATS = "lats"
+    MID_BACK = "mid_back"  # rhomboids and middle traps
+    SPINAL_ERECTORS = "spinal_erectors"
+    UPPER_TRAPS = "upper_traps"
+    LOWER_TRAPS = "lower_traps"
+    QUADS_VASTUS = "quads_vastus"
+    RECTUS_FEMORIS = "rectus_femoris"
+    HAMSTRINGS_HIP = "hamstrings_hip"  # worked by hinging
+    HAMSTRINGS_KNEE = "hamstrings_knee"  # worked by curling
+    GLUTE_MAX = "glute_max"
+    GLUTE_MED = "glute_med"
+    GASTROCNEMIUS = "gastrocnemius"  # upper calf, straight knee
+    SOLEUS = "soleus"  # lower calf, bent knee
+    UPPER_ABS = "upper_abs"
+    LOWER_ABS = "lower_abs"
+    OBLIQUES = "obliques"
+    DEEP_CORE = "deep_core"
+    FOREARM_FLEXORS = "forearm_flexors"
+    FOREARM_EXTENSORS = "forearm_extensors"
+    BRACHIORADIALIS = "brachioradialis"
+    ADDUCTORS = "adductors"
+
+
+# Which muscle group each head belongs to. A test checks that every head is listed.
+HEAD_GROUP: dict[MuscleHead, MuscleGroup] = {
+    MuscleHead.CHEST_UPPER: MuscleGroup.CHEST,
+    MuscleHead.CHEST_MID: MuscleGroup.CHEST,
+    MuscleHead.CHEST_LOWER: MuscleGroup.CHEST,
+    MuscleHead.DELT_FRONT: MuscleGroup.SHOULDERS,
+    MuscleHead.DELT_SIDE: MuscleGroup.SHOULDERS,
+    MuscleHead.DELT_REAR: MuscleGroup.SHOULDERS,
+    MuscleHead.BICEPS_LONG: MuscleGroup.BICEPS,
+    MuscleHead.BICEPS_SHORT: MuscleGroup.BICEPS,
+    MuscleHead.BRACHIALIS: MuscleGroup.BICEPS,
+    MuscleHead.TRICEPS_LONG: MuscleGroup.TRICEPS,
+    MuscleHead.TRICEPS_LATERAL: MuscleGroup.TRICEPS,
+    MuscleHead.TRICEPS_MEDIAL: MuscleGroup.TRICEPS,
+    MuscleHead.LATS: MuscleGroup.BACK,
+    MuscleHead.MID_BACK: MuscleGroup.BACK,
+    MuscleHead.SPINAL_ERECTORS: MuscleGroup.BACK,
+    MuscleHead.UPPER_TRAPS: MuscleGroup.TRAPS,
+    MuscleHead.LOWER_TRAPS: MuscleGroup.TRAPS,
+    MuscleHead.QUADS_VASTUS: MuscleGroup.QUADS,
+    MuscleHead.RECTUS_FEMORIS: MuscleGroup.QUADS,
+    MuscleHead.HAMSTRINGS_HIP: MuscleGroup.HAMSTRINGS,
+    MuscleHead.HAMSTRINGS_KNEE: MuscleGroup.HAMSTRINGS,
+    MuscleHead.GLUTE_MAX: MuscleGroup.GLUTES,
+    MuscleHead.GLUTE_MED: MuscleGroup.GLUTES,
+    MuscleHead.GASTROCNEMIUS: MuscleGroup.CALVES,
+    MuscleHead.SOLEUS: MuscleGroup.CALVES,
+    MuscleHead.UPPER_ABS: MuscleGroup.CORE,
+    MuscleHead.LOWER_ABS: MuscleGroup.CORE,
+    MuscleHead.OBLIQUES: MuscleGroup.CORE,
+    MuscleHead.DEEP_CORE: MuscleGroup.CORE,
+    MuscleHead.FOREARM_FLEXORS: MuscleGroup.FOREARMS,
+    MuscleHead.FOREARM_EXTENSORS: MuscleGroup.FOREARMS,
+    MuscleHead.BRACHIORADIALIS: MuscleGroup.FOREARMS,
+    MuscleHead.ADDUCTORS: MuscleGroup.ADDUCTORS,
+}
+
+
+class MovementSlot(StrEnum):
+    """A job in a workout template; different exercises fill it for different users."""
+
+    # Legs
+    SQUAT = "squat"
+    SINGLE_LEG = "single_leg"
+    HINGE = "hinge"
+    BRIDGE = "bridge"
+    LEG_CURL = "leg_curl"
+    LEG_EXTENSION = "leg_extension"
+    CALVES = "calves"
+    ADDUCTORS = "adductors"
+    # Push
+    HORIZONTAL_PUSH = "horizontal_push"
+    VERTICAL_PUSH = "vertical_push"
+    CHEST_FLY = "chest_fly"
+    LATERAL_RAISE = "lateral_raise"
+    FRONT_RAISE = "front_raise"
+    TRICEPS = "triceps"
+    # Pull
+    HORIZONTAL_PULL = "horizontal_pull"
+    VERTICAL_PULL = "vertical_pull"
+    REAR_DELT = "rear_delt"
+    TRAPS = "traps"
+    BICEPS = "biceps"
+    FOREARMS = "forearms"
+    # Core
+    BRACE = "brace"
+    AB_CURL = "ab_curl"
+    SIDE_AND_ROTATION = "side_and_rotation"
+    LOWER_BACK = "lower_back"
+    CARRY = "carry"
+    # Cardio and mobility
+    CONDITIONING = "conditioning"
+    WARM_UP = "warm_up"
+    COOL_DOWN = "cool_down"
+
+
+class ExerciseType(StrEnum):
+    COMPOUND = "compound"  # several joints move: squat, row, press
+    ISOLATION = "isolation"  # one joint moves: curl, lateral raise
+    CARDIO = "cardio"
+    MOBILITY = "mobility"
+
+
+class Impact(StrEnum):
+    """How much jumping / pounding. Drives the knee, low-intensity and women-at-home filters."""
+
+    NONE = "none"
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
