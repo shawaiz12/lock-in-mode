@@ -23,6 +23,10 @@
 # Language: someone who has never been to a gym must understand every line.
 
 exercises:
+  # ===================================================================================
+  # PUSH (MVP batch 1)
+  # ===================================================================================
+
   # --- Horizontal push ladder: incline -> knee -> push-up -> (close-grip) -> decline ----
   - slug: incline-push-up
     name: Incline Push-Up
@@ -109,3 +113,121 @@ exercises:
       - Start with a low step; the higher your feet, the harder it gets.
       - Keep your stomach tight the whole time.
     common_mistake: Feet on something that slides. Use a surface that stays put.
+    # The sheet's next rung, archer push-up, isn't seeded yet.
+
+  - slug: dumbbell-bench-press
+    name: Dumbbell Bench Press
+    category: push
+    movement_slot: horizontal_push
+    exercise_type: compound
+    primary_muscle: chest
+    secondary_muscles: [triceps, shoulders]
+    targets: [chest_mid, delt_front, triceps_lateral]
+    # Needs a bench, so home users with dumbbells but no bench don't get it (ADR 0010).
+    equipment: [dumbbells, gym]
+    also_needs: Bench
+    difficulty: 3
+    effectiveness: 5
+    steps:
+      - Sit on the end of a flat bench with a dumbbell standing on each thigh.
+      - Lie back and bring the dumbbells up beside your chest, palms facing your feet.
+      - Press both dumbbells up until your arms are straight over your chest.
+      - Lower them slowly until they are level with your chest.
+      - When you finish, bring the dumbbells back to your thighs and sit up.
+    cues:
+      - Keep your feet flat and your shoulder blades pressed back into the bench.
+      - Elbows point out at an angle, not straight out to the sides.
+    common_mistake: Dropping the dumbbells fast and bouncing them at the bottom.
+    # The sheet's next rung, incline dumbbell press, isn't seeded yet.
+
+  - slug: barbell-bench-press
+    name: Barbell Bench Press
+    category: push
+    movement_slot: horizontal_push
+    exercise_type: compound
+    primary_muscle: chest
+    secondary_muscles: [triceps, shoulders]
+    targets: [chest_mid, delt_front, triceps_lateral]
+    equipment: [gym]
+    also_needs: Barbell, bench
+    difficulty: 4
+    effectiveness: 5
+    steps:
+      - Set the safety bars just below chest height, or ask someone to spot you.
+      - Lie on the bench with your eyes under the bar and your feet flat on the floor.
+      - Grip the bar a little wider than your shoulders and lift it off the rack.
+      - Lower the bar slowly to the middle of your chest.
+      - Press it back up until your arms are straight.
+    cues:
+      - Pull your shoulder blades together and keep them pressed into the bench.
+      - Keep your wrists straight, stacked over your elbows.
+    common_mistake: Bouncing the bar off your chest to get it moving.
+    # The sheet's next rung, incline bench press, isn't seeded yet.
+
+  # --- Vertical push ----------------------------------------------------------------
+  - slug: pike-push-up
+    name: Pike Push-Up
+    category: push
+    movement_slot: vertical_push
+    exercise_type: compound
+    primary_muscle: shoulders
+    secondary_muscles: [triceps]
+    targets: [delt_front, delt_side, triceps_lateral]
+    difficulty: 3
+    effectiveness: 3
+    not_suitable_for: [shoulders]
+    steps:
+      - Start in a push-up position, then walk your feet in and lift your hips high, like an upside-down V.
+      - Place your hands a little wider than your shoulders.
+      - Bend your elbows and lower the top of your head towards the floor between your hands.
+      - Push back up to the upside-down V.
+    cues:
+      - Keep your hips high the whole time.
+      - Your head goes slightly in front of your hands, making a triangle.
+    common_mistake: Letting your hips drop so it turns into a normal push-up.
+    # The sheet's next rung, feet-elevated pike push-up, isn't seeded yet.
+
+  - slug: seated-dumbbell-shoulder-press
+    name: Seated Dumbbell Shoulder Press
+    category: push
+    movement_slot: vertical_push
+    exercise_type: compound
+    primary_muscle: shoulders
+    secondary_muscles: [triceps]
+    targets: [delt_front, delt_side, triceps_lateral]
+    equipment: [dumbbells]
+    also_needs: Chair or bench
+    difficulty: 2
+    effectiveness: 5
+    steps:
+      - Sit on a chair or bench with your back against the backrest and feet flat.
+      - Hold the dumbbells at shoulder height, palms facing forward.
+      - Press them straight up until your arms are almost straight above your head.
+      - Lower them slowly back to shoulder height.
+    cues:
+      - Keep your back against the backrest; don't lean back.
+      - Squeeze your stomach so your lower back doesn't arch.
+    common_mistake: Arching your lower back to push a heavier weight.
+    # The sheet's next rung, standing dumbbell press, isn't seeded yet.
+
+  # --- Triceps ------------------------------------------------------------------------
+  - slug: cable-triceps-pushdown
+    name: Cable Triceps Pushdown
+    category: push
+    movement_slot: triceps
+    exercise_type: isolation
+    primary_muscle: triceps
+    targets: [triceps_lateral, triceps_medial]
+    equipment: [gym]
+    also_needs: Cable machine with a bar or rope
+    difficulty: 1
+    effectiveness: 5
+    steps:
+      - Attach a straight bar or rope to the high cable and stand facing it.
+      - Hold it with your elbows bent and tucked against your sides.
+      - Push down until your arms are straight.
+      - Slowly let your hands come back up to chest height, keeping your elbows still.
+    cues:
+      - Only your forearms move; your elbows stay glued to your sides.
+      - Stand tall with a slight lean forward.
+    common_mistake: Letting your elbows drift forward and pushing with your shoulders.
