@@ -1899,6 +1899,28 @@ exercises:
       - Stand still; don't swing.
     common_mistake: Leaning back to swing the bag up.
 
+  - slug: backpack-hammer-curl
+    name: Backpack hammer curl
+    category: pull
+    movement_slot: biceps
+    exercise_type: isolation
+    primary_muscle: biceps
+    secondary_muscles: [forearms]
+    targets: [brachialis, brachioradialis, biceps_long]
+    also_needs: Backpack with books
+    home_only: true
+    difficulty: 1
+    effectiveness: 2
+    steps:
+      - Fill a backpack with books and hold one shoulder strap in each hand, thumbs pointing up.
+      - Let the bag hang in front of your thighs with your arms straight.
+      - Bend your elbows to curl the bag up towards your chest, keeping your thumbs up.
+      - Lower it slowly until your arms are straight.
+    cues:
+      - Elbows stay by your sides.
+      - Add books to make it harder.
+    common_mistake: Leaning back to swing the bag up.
+
   - slug: band-curl
     name: Band curl
     category: pull
@@ -2224,6 +2246,28 @@ exercises:
     common_mistake: Letting your elbow drift forward.
 
   # --- Forearms ----------------------------------------------------------------------
+
+  - slug: backpack-reverse-curl
+    name: Backpack reverse curl
+    category: pull
+    movement_slot: forearms
+    exercise_type: isolation
+    primary_muscle: forearms
+    secondary_muscles: [biceps]
+    targets: [brachioradialis, forearm_extensors]
+    also_needs: Backpack with books
+    home_only: true
+    difficulty: 1
+    effectiveness: 2
+    steps:
+      - Hold a lightly loaded backpack by its top handle with both hands, palms facing down.
+      - Let it hang in front of your thighs with your arms straight.
+      - Curl it up towards your chest, keeping your palms down and wrists straight.
+      - Lower it slowly.
+    cues:
+      - Use fewer books than for a normal curl.
+      - Keep your wrists straight, not bent back.
+    common_mistake: Letting your wrists bend back under the weight.
 
   - slug: reverse-curl
     name: Reverse curl

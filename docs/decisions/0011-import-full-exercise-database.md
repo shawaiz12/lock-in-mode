@@ -72,4 +72,6 @@ New tests run against the shipped file and fail if an edit breaks a promise:
   (knowledge base, section 13).
 - ⚠️ The no-equipment gaps could be closed with two more home moves (a backpack hammer
   curl and a backpack reverse curl). Not done; they'd be new exercises outside the sheet.
+  > Update 2026-11-18: both added (257 exercises). Home users with no equipment, or
+  > with only bands, now hit every head; only the vertical pull slot stays empty without kit.
 - ⚠️ Demo GIFs/illustrations are still open (`demo_url` empty everywhere).
