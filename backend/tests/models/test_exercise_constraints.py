@@ -12,7 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lock_in_mode_api.models import Exercise, exercise_alternatives
-from lock_in_mode_api.models.enums import ExerciseCategory
+from lock_in_mode_api.models.enums import ExerciseCategory, ExerciseType, MovementSlot
 
 
 def _valid_exercise(slug: str, **overrides: object) -> Exercise:
@@ -21,6 +21,8 @@ def _valid_exercise(slug: str, **overrides: object) -> Exercise:
         "slug": slug,
         "name": slug.replace("-", " ").title(),
         "category": ExerciseCategory.PUSH,
+        "movement_slot": MovementSlot.HORIZONTAL_PUSH,
+        "exercise_type": ExerciseType.COMPOUND,
         "difficulty": 2,
     }
     fields.update(overrides)
@@ -85,6 +87,35 @@ async def test_difficulty_rejects_out_of_range(db_session: AsyncSession, difficu
 
     with pytest.raises(IntegrityError, match="ck_exercises_difficulty_range"):
         await db_session.flush()
+
+
+@pytest.mark.parametrize("effectiveness", [None, 1, 5])
+async def test_effectiveness_accepts_blank_and_boundaries(
+    db_session: AsyncSession, effectiveness: int | None
+) -> None:
+    db_session.add(_valid_exercise("push-up", effectiveness=effectiveness))
+    await db_session.flush()
+
+
+@pytest.mark.parametrize("effectiveness", [0, 6])
+async def test_effectiveness_rejects_out_of_range(
+    db_session: AsyncSession, effectiveness: int
+) -> None:
+    db_session.add(_valid_exercise("push-up", effectiveness=effectiveness))
+
+    with pytest.raises(IntegrityError, match="ck_exercises_effectiveness_range"):
+        await db_session.flush()
+
+
+async def test_new_fields_default_to_safe_values(db_session: AsyncSession) -> None:
+    (push_up,) = await _create_exercises(db_session, "push-up")
+
+    assert push_up.impact == "none"
+    assert push_up.home_only is False
+    assert push_up.primary_muscle is None
+    assert push_up.secondary_muscles == []
+    assert push_up.targets == []
+    assert push_up.not_suitable_for == []
 
 
 # --- harder variant ladder --------------------------------------------------
