@@ -204,33 +204,62 @@ def test_primary_muscle_cannot_also_be_secondary() -> None:
         _library(_exercise("push-up", secondary_muscles=["chest"]))
 
 
-@pytest.mark.parametrize("category", ["cardio", "mobility"])
-def test_cardio_and_mobility_have_no_primary_muscle_or_targets(category: str) -> None:
-    library = _library(
-        _exercise(
-            "march-in-place",
-            category=category,
-            movement_slot="conditioning",
-            exercise_type="cardio",
-            primary_muscle=None,
-            targets=[],
-        )
-    )
+def _cardio(**overrides: object) -> dict[str, object]:
+    fields: dict[str, object] = {
+        "category": "cardio",
+        "movement_slot": "conditioning",
+        "exercise_type": "cardio",
+        "primary_muscle": None,
+        "targets": [],
+    }
+    fields.update(overrides)
+    return _exercise("march-in-place", **fields)
+
+
+def _stretch(**overrides: object) -> dict[str, object]:
+    fields: dict[str, object] = {
+        "category": "mobility",
+        "movement_slot": "cool_down",
+        "exercise_type": "mobility",
+        "primary_muscle": "hamstrings",
+        "targets": [],
+        "effectiveness": None,
+    }
+    fields.update(overrides)
+    return _exercise("hamstring-stretch", **fields)
+
+
+def test_cardio_has_no_muscles() -> None:
+    library = _library(_cardio())
 
     assert library.by_slug["march-in-place"].primary_muscle is None
 
 
-def test_cardio_with_a_primary_muscle_is_rejected() -> None:
-    with pytest.raises(ValidationError, match="no primary muscle or targets"):
-        _library(
-            _exercise(
-                "march-in-place",
-                category="cardio",
-                movement_slot="conditioning",
-                exercise_type="cardio",
-                targets=[],
-            )
-        )
+@pytest.mark.parametrize(
+    "overrides",
+    [{"primary_muscle": "quads"}, {"secondary_muscles": ["calves"]}, {"targets": ["soleus"]}],
+)
+def test_cardio_with_muscles_is_rejected(overrides: dict[str, object]) -> None:
+    with pytest.raises(ValidationError, match="cardio moves have no muscles"):
+        _library(_cardio(**overrides))
+
+
+def test_stretch_names_the_muscle_it_stretches() -> None:
+    # The cool-down picks stretches for the muscles trained that day (ADR 0011).
+    library = _library(_stretch())
+
+    assert library.by_slug["hamstring-stretch"].primary_muscle == "hamstrings"
+
+
+def test_stretch_can_have_no_muscle() -> None:
+    library = _library(_stretch(primary_muscle=None, movement_slot="warm_up"))
+
+    assert library.by_slug["hamstring-stretch"].primary_muscle is None
+
+
+def test_stretch_with_head_targets_is_rejected() -> None:
+    with pytest.raises(ValidationError, match="mobility moves have no head targets"):
+        _library(_stretch(targets=["hamstrings_hip"]))
 
 
 def test_effectiveness_is_required_except_for_mobility() -> None:
