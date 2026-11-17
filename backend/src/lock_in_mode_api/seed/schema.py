@@ -1,4 +1,4 @@
-"""Rules for the exercise seed file (ADR 0009, fields from ADR 0010).
+"""Rules for the exercise seed file (ADR 0009, fields from ADRs 0010 and 0011).
 
 Two layers:
 - `SeedExercise` checks one exercise on its own (types, allowed values, counts, and that
@@ -42,10 +42,6 @@ PlainText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1
 DemoUrl = Annotated[str, StringConstraints(pattern=r"^https://\S+$", max_length=500)]
 
 DEFAULT_SEED_FILE = "exercises.yaml"
-
-# Cardio and mobility moves don't count towards weekly muscle sets, so they have no
-# primary muscle or head targets (knowledge base, "Key" sheet).
-NO_MUSCLE_TARGET = {ExerciseCategory.CARDIO, ExerciseCategory.MOBILITY}
 
 
 class SeedExercise(BaseModel):
@@ -102,18 +98,23 @@ class SeedExercise(BaseModel):
 
     @model_validator(mode="after")
     def muscles_and_heads_agree(self) -> Self:
-        if self.category in NO_MUSCLE_TARGET:
-            if self.primary_muscle is not None or self.targets:
-                raise ValueError(
-                    f"{self.slug}: {self.category} moves have no primary muscle or targets"
-                )
+        if self.primary_muscle is not None and self.primary_muscle in self.secondary_muscles:
+            raise ValueError(f"{self.slug}: primary muscle is also listed as secondary")
+        if self.category == ExerciseCategory.CARDIO:
+            # Cardio trains the heart and lungs; it never counts towards muscle sets.
+            if self.primary_muscle is not None or self.secondary_muscles or self.targets:
+                raise ValueError(f"{self.slug}: cardio moves have no muscles or targets")
+            return self
+        if self.category == ExerciseCategory.MOBILITY:
+            # A stretch names the muscle it stretches, so the cool-down can pick stretches
+            # for what was trained (ADR 0011). It has no head targets and counts no sets.
+            if self.targets:
+                raise ValueError(f"{self.slug}: mobility moves have no head targets")
             return self
         if self.primary_muscle is None:
             raise ValueError(f"{self.slug}: primary_muscle is required")
         if not self.targets:
             raise ValueError(f"{self.slug}: at least one target head is required")
-        if self.primary_muscle in self.secondary_muscles:
-            raise ValueError(f"{self.slug}: primary muscle is also listed as secondary")
         # Every head must belong to a muscle the exercise says it trains; otherwise the
         # head-coverage check and the weekly set count would disagree.
         trained = {self.primary_muscle, *self.secondary_muscles}

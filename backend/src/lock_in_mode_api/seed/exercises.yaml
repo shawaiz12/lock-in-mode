@@ -1,13 +1,15 @@
-# Lock In Mode exercise library (ADR 0009, fields from ADR 0010).
+# Lock In Mode exercise library (ADR 0009, fields from ADR 0010, imported per ADR 0011).
 #
-# Source of truth for the facts: the "Lock In Mode: Exercise Database" sheet.
+# Imported from the "Lock In Mode: Exercise Database" sheet (255 exercises). From now on this
+# file is the source of truth: change exercises here, not in the sheet (ADR 0011).
 # Rules are checked by seed/schema.py and run in CI:
 #   slug              lowercase-with-hyphens, never changes once released (it's the key)
 #   category          push | pull | legs | core | cardio | mobility
 #   movement_slot     the job it does in a workout template (see MovementSlot in models/enums.py)
 #   exercise_type     compound | isolation | cardio | mobility
 #   primary_muscle    one of: chest, back, shoulders, traps, biceps, triceps, forearms, quads,
-#                     hamstrings, glutes, adductors, calves, core (none for cardio/mobility)
+#                     hamstrings, glutes, adductors, calves, core. None for cardio; for mobility
+#                     it's the muscle being stretched (counts no sets)
 #   secondary_muscles same list; a set counts 1 for primary, 0.5 for each secondary
 #   targets           heads it emphasises (see MuscleHead); each must belong to a listed muscle
 #   equipment         [] = none needed; else dumbbells, resistance_bands, pull_up_bar, gym
@@ -16,20 +18,42 @@
 #   difficulty        1 (easiest) .. 5;  effectiveness 1..5 (blank only for mobility)
 #   impact            none | low | medium | high;  not_suitable_for: knees, back, shoulders
 #   steps             3-5 plain-language steps, cues 2-3, one common_mistake
-#   harder            next exercise up: same movement slot, same or higher difficulty.
-#                     If the sheet's next rung isn't in this file yet, link the next one that is.
+#   harder            next exercise up: same movement slot, same or higher difficulty
 #   alternatives      slugs; write each pair once, the loader stores both directions
 #
 # Language: someone who has never been to a gym must understand every line.
 
 exercises:
+
   # ===================================================================================
-  # PUSH (MVP batch 1)
+  # PUSH
   # ===================================================================================
 
-  # --- Horizontal push ladder: incline -> knee -> push-up -> (close-grip) -> decline ----
+  # --- Horizontal push ---------------------------------------------------------------
+
+  - slug: wall-push-up
+    name: Wall push-up
+    category: push
+    movement_slot: horizontal_push
+    exercise_type: compound
+    primary_muscle: chest
+    secondary_muscles: [triceps, shoulders]
+    targets: [chest_mid, delt_front, triceps_lateral]
+    also_needs: Wall
+    difficulty: 1
+    effectiveness: 2
+    steps:
+      - Stand an arm's length from a wall and put your hands on it at shoulder height.
+      - Lean in by bending your elbows until your chest is close to the wall.
+      - Push the wall away to come back to the start.
+    cues:
+      - Keep your body straight from heels to head.
+      - Step further back to make it harder.
+    common_mistake: Only bending the elbows a little instead of bringing your chest close to the wall.
+    harder: incline-push-up
+
   - slug: incline-push-up
-    name: Incline Push-Up
+    name: Incline push-up
     category: push
     movement_slot: horizontal_push
     exercise_type: compound
@@ -51,7 +75,7 @@ exercises:
     harder: knee-push-up
 
   - slug: knee-push-up
-    name: Knee Push-Up
+    name: Knee push-up
     category: push
     movement_slot: horizontal_push
     exercise_type: compound
@@ -72,7 +96,7 @@ exercises:
     harder: push-up
 
   - slug: push-up
-    name: Push-Up
+    name: Push-up
     category: push
     movement_slot: horizontal_push
     exercise_type: compound
@@ -90,11 +114,30 @@ exercises:
       - Squeeze your stomach so your hips don't sag.
       - Look at the floor slightly ahead of your hands, not at your feet.
     common_mistake: Letting your hips drop towards the floor, which strains your lower back.
-    # The sheet's next rung is close-grip push-up, which isn't seeded yet.
+    harder: close-grip-push-up
+
+  - slug: close-grip-push-up
+    name: Close-grip push-up
+    category: push
+    movement_slot: horizontal_push
+    exercise_type: compound
+    primary_muscle: triceps
+    secondary_muscles: [chest, shoulders]
+    targets: [triceps_lateral, triceps_medial, chest_mid]
+    difficulty: 3
+    effectiveness: 4
+    steps:
+      - Start in a push-up position with your hands under your chest, a little narrower than your shoulders.
+      - Bend your elbows and lower your chest towards your hands.
+      - Push the floor away to come back up.
+    cues:
+      - Elbows brush past your ribs, pointing back.
+      - Keep your body in a straight line.
+    common_mistake: Letting your elbows flare out to the sides.
     harder: decline-push-up
 
   - slug: decline-push-up
-    name: Decline Push-Up
+    name: Decline push-up
     category: push
     movement_slot: horizontal_push
     exercise_type: compound
@@ -113,17 +156,101 @@ exercises:
       - Start with a low step; the higher your feet, the harder it gets.
       - Keep your stomach tight the whole time.
     common_mistake: Feet on something that slides. Use a surface that stays put.
-    # The sheet's next rung, archer push-up, isn't seeded yet.
+    harder: archer-push-up
 
-  - slug: dumbbell-bench-press
-    name: Dumbbell Bench Press
+  - slug: archer-push-up
+    name: Archer push-up
     category: push
     movement_slot: horizontal_push
     exercise_type: compound
     primary_muscle: chest
     secondary_muscles: [triceps, shoulders]
     targets: [chest_mid, delt_front, triceps_lateral]
-    # Needs a bench, so home users with dumbbells but no bench don't get it (ADR 0010).
+    difficulty: 5
+    effectiveness: 4
+    steps:
+      - Start in a push-up position with your hands much wider than your shoulders.
+      - Lower your chest towards one hand while the other arm straightens out to the side.
+      - Push back up to the middle.
+      - Repeat on the other side.
+    cues:
+      - The bent arm does most of the work; the straight arm only helps.
+      - Keep your hips level.
+    common_mistake: Twisting your hips instead of keeping your body flat.
+
+  - slug: band-chest-press
+    name: Band chest press
+    category: push
+    movement_slot: horizontal_push
+    exercise_type: compound
+    primary_muscle: chest
+    secondary_muscles: [triceps, shoulders]
+    targets: [chest_mid, delt_front, triceps_lateral]
+    equipment: [resistance_bands]
+    also_needs: Anchor or behind back
+    difficulty: 2
+    effectiveness: 3
+    steps:
+      - Wrap the band around your upper back, or tie it behind you at chest height, holding one end in each hand.
+      - Start with your hands beside your chest, elbows bent.
+      - Push your hands straight forward until your arms are straight.
+      - Bring them back slowly.
+    cues:
+      - Stand in a split stance so the band doesn't pull you backwards.
+      - Squeeze your chest at the front.
+    common_mistake: Letting the band snap your hands back instead of returning slowly.
+
+  - slug: band-resisted-push-up
+    name: Band-resisted push-up
+    category: push
+    movement_slot: horizontal_push
+    exercise_type: compound
+    primary_muscle: chest
+    secondary_muscles: [triceps, shoulders]
+    targets: [chest_mid, delt_front, triceps_lateral]
+    equipment: [resistance_bands]
+    difficulty: 4
+    effectiveness: 4
+    steps:
+      - Wrap the band across your upper back and hold one end under each hand.
+      - Get into a push-up position.
+      - Lower your chest towards the floor.
+      - Push up hard against the band.
+    cues:
+      - Keep your body in a straight line.
+      - The band is hardest at the top; push all the way.
+    common_mistake: Hips sagging as the band adds load.
+
+  - slug: dumbbell-floor-press
+    name: Dumbbell floor press
+    category: push
+    movement_slot: horizontal_push
+    exercise_type: compound
+    primary_muscle: chest
+    secondary_muscles: [triceps, shoulders]
+    targets: [chest_mid, delt_front, triceps_lateral]
+    equipment: [dumbbells]
+    difficulty: 2
+    effectiveness: 3
+    steps:
+      - Lie on your back on the floor with your knees bent and a dumbbell in each hand.
+      - Start with your elbows on the floor and the dumbbells above your chest.
+      - Press the dumbbells straight up until your arms are straight.
+      - Lower slowly until your upper arms touch the floor.
+    cues:
+      - Let your elbows touch the floor lightly; don't bounce.
+      - Elbows point out at an angle, not straight to the sides.
+    common_mistake: Dropping the elbows onto the floor hard.
+    harder: dumbbell-bench-press
+
+  - slug: dumbbell-bench-press
+    name: Dumbbell bench press
+    category: push
+    movement_slot: horizontal_push
+    exercise_type: compound
+    primary_muscle: chest
+    secondary_muscles: [triceps, shoulders]
+    targets: [chest_mid, delt_front, triceps_lateral]
     equipment: [dumbbells, gym]
     also_needs: Bench
     difficulty: 3
@@ -138,10 +265,55 @@ exercises:
       - Keep your feet flat and your shoulder blades pressed back into the bench.
       - Elbows point out at an angle, not straight out to the sides.
     common_mistake: Dropping the dumbbells fast and bouncing them at the bottom.
-    # The sheet's next rung, incline dumbbell press, isn't seeded yet.
+    harder: incline-dumbbell-press
+
+  - slug: incline-dumbbell-press
+    name: Incline dumbbell press
+    category: push
+    movement_slot: horizontal_push
+    exercise_type: compound
+    primary_muscle: chest
+    secondary_muscles: [shoulders, triceps]
+    targets: [chest_upper, delt_front, triceps_lateral]
+    equipment: [dumbbells, gym]
+    also_needs: Adjustable bench
+    difficulty: 3
+    effectiveness: 5
+    steps:
+      - Set a bench to a low incline and sit with a dumbbell on each thigh.
+      - Lie back and bring the dumbbells beside your upper chest.
+      - Press them up until your arms are straight above your chest.
+      - Lower slowly back to your upper chest.
+    cues:
+      - A low incline is enough; too high turns it into a shoulder press.
+      - Keep your shoulder blades pulled back.
+    common_mistake: Setting the bench so steep that your shoulders do the work.
+
+  - slug: machine-chest-press
+    name: Machine chest press
+    category: push
+    movement_slot: horizontal_push
+    exercise_type: compound
+    primary_muscle: chest
+    secondary_muscles: [triceps, shoulders]
+    targets: [chest_mid, delt_front, triceps_lateral]
+    equipment: [gym]
+    also_needs: Machine
+    difficulty: 1
+    effectiveness: 4
+    steps:
+      - Adjust the seat so the handles are level with the middle of your chest.
+      - Sit with your back against the pad and grip the handles.
+      - Push the handles forward until your arms are almost straight.
+      - Bring them back slowly.
+    cues:
+      - Keep your shoulder blades back against the pad.
+      - Don't lock your elbows at the front.
+    common_mistake: Seat set too high or low, so the handles line up with your neck or stomach.
+    harder: barbell-bench-press
 
   - slug: barbell-bench-press
-    name: Barbell Bench Press
+    name: Barbell bench press
     category: push
     movement_slot: horizontal_push
     exercise_type: compound
@@ -162,11 +334,57 @@ exercises:
       - Pull your shoulder blades together and keep them pressed into the bench.
       - Keep your wrists straight, stacked over your elbows.
     common_mistake: Bouncing the bar off your chest to get it moving.
-    # The sheet's next rung, incline bench press, isn't seeded yet.
+    harder: incline-bench-press
 
-  # --- Vertical push ----------------------------------------------------------------
+  - slug: incline-bench-press
+    name: Incline bench press
+    category: push
+    movement_slot: horizontal_push
+    exercise_type: compound
+    primary_muscle: chest
+    secondary_muscles: [shoulders, triceps]
+    targets: [chest_upper, delt_front, triceps_lateral]
+    equipment: [gym]
+    also_needs: Barbell, incline bench
+    difficulty: 4
+    effectiveness: 5
+    steps:
+      - Lie on an incline bench with your eyes under the bar and set the safety bars.
+      - Grip the bar a little wider than your shoulders and lift it off.
+      - Lower it slowly to your upper chest.
+      - Press it back up until your arms are straight.
+    cues:
+      - Keep your shoulder blades pulled back.
+      - Feet flat on the floor.
+    common_mistake: Bouncing the bar off your chest.
+
+  - slug: chest-dip
+    name: Chest dip
+    category: push
+    movement_slot: horizontal_push
+    exercise_type: compound
+    primary_muscle: chest
+    secondary_muscles: [triceps, shoulders]
+    targets: [chest_lower, triceps_lateral]
+    equipment: [gym]
+    also_needs: Dip bars
+    difficulty: 4
+    effectiveness: 5
+    not_suitable_for: [shoulders]
+    steps:
+      - Hold the dip bars with your arms straight.
+      - Lean your body forward a little.
+      - Bend your elbows to lower your body.
+      - Push back up until your arms are straight.
+    cues:
+      - The forward lean moves the work to your chest.
+      - Control the way down.
+    common_mistake: Going so deep that your shoulders hurt.
+
+  # --- Vertical push -----------------------------------------------------------------
+
   - slug: pike-push-up
-    name: Pike Push-Up
+    name: Pike push-up
     category: push
     movement_slot: vertical_push
     exercise_type: compound
@@ -185,10 +403,75 @@ exercises:
       - Keep your hips high the whole time.
       - Your head goes slightly in front of your hands, making a triangle.
     common_mistake: Letting your hips drop so it turns into a normal push-up.
-    # The sheet's next rung, feet-elevated pike push-up, isn't seeded yet.
+    harder: feet-elevated-pike-push-up
+
+  - slug: feet-elevated-pike-push-up
+    name: Feet-elevated pike push-up
+    category: push
+    movement_slot: vertical_push
+    exercise_type: compound
+    primary_muscle: shoulders
+    secondary_muscles: [triceps]
+    targets: [delt_front, delt_side, triceps_lateral]
+    also_needs: Chair
+    difficulty: 4
+    effectiveness: 4
+    not_suitable_for: [shoulders]
+    steps:
+      - Put your feet on a chair and walk your hands back until your hips are high above your shoulders.
+      - Place your hands a little wider than your shoulders.
+      - Lower the top of your head towards the floor between your hands.
+      - Push back up.
+    cues:
+      - Hips stay high, stacked over your shoulders.
+      - Move slowly and with control.
+    common_mistake: Feet on a chair that can slide away. Use a stable one.
+    harder: wall-handstand-push-up
+
+  - slug: wall-handstand-push-up
+    name: Wall handstand push-up
+    category: push
+    movement_slot: vertical_push
+    exercise_type: compound
+    primary_muscle: shoulders
+    secondary_muscles: [triceps]
+    targets: [delt_front, delt_side, triceps_lateral]
+    also_needs: Wall
+    difficulty: 5
+    effectiveness: 4
+    not_suitable_for: [shoulders]
+    steps:
+      - Kick up into a handstand with your heels resting against a wall.
+      - Place your hands a little wider than your shoulders.
+      - Lower the top of your head slowly towards a soft mat on the floor.
+      - Push back up until your arms are straight.
+    cues:
+      - Practise holding a wall handstand first.
+      - Use a folded towel or mat under your head.
+    common_mistake: Dropping fast and hitting your head on the floor.
+
+  - slug: band-overhead-press
+    name: Band overhead press
+    category: push
+    movement_slot: vertical_push
+    exercise_type: compound
+    primary_muscle: shoulders
+    secondary_muscles: [triceps]
+    targets: [delt_front, delt_side, triceps_lateral]
+    equipment: [resistance_bands]
+    difficulty: 2
+    effectiveness: 3
+    steps:
+      - Stand on the middle of the band and hold the ends at your shoulders.
+      - Press your hands straight up until your arms are straight.
+      - Lower them slowly back to your shoulders.
+    cues:
+      - Squeeze your stomach and bottom so your back doesn't arch.
+      - Hands finish above your head, not in front of it.
+    common_mistake: Leaning back to push the band up.
 
   - slug: seated-dumbbell-shoulder-press
-    name: Seated Dumbbell Shoulder Press
+    name: Seated dumbbell shoulder press
     category: push
     movement_slot: vertical_push
     exercise_type: compound
@@ -208,18 +491,547 @@ exercises:
       - Keep your back against the backrest; don't lean back.
       - Squeeze your stomach so your lower back doesn't arch.
     common_mistake: Arching your lower back to push a heavier weight.
-    # The sheet's next rung, standing dumbbell press, isn't seeded yet.
+    harder: standing-dumbbell-press
 
-  # --- Triceps ------------------------------------------------------------------------
+  - slug: standing-dumbbell-press
+    name: Standing dumbbell press
+    category: push
+    movement_slot: vertical_push
+    exercise_type: compound
+    primary_muscle: shoulders
+    secondary_muscles: [triceps, core]
+    targets: [delt_front, delt_side, triceps_lateral]
+    equipment: [dumbbells]
+    difficulty: 3
+    effectiveness: 5
+    not_suitable_for: [back]
+    steps:
+      - Stand with your feet hip-width apart, holding the dumbbells at shoulder height.
+      - Squeeze your stomach and bottom.
+      - Press the dumbbells straight up until your arms are straight.
+      - Lower them slowly back to your shoulders.
+    cues:
+      - Ribs down; don't lean back.
+      - Push your head slightly forward once the dumbbells pass it.
+    common_mistake: Arching your lower back to push heavier.
+    harder: arnold-press
+
+  - slug: arnold-press
+    name: Arnold press
+    category: push
+    movement_slot: vertical_push
+    exercise_type: compound
+    primary_muscle: shoulders
+    secondary_muscles: [triceps]
+    targets: [delt_front, delt_side, triceps_lateral]
+    equipment: [dumbbells]
+    difficulty: 3
+    effectiveness: 4
+    steps:
+      - Sit or stand holding the dumbbells in front of your shoulders, palms facing you.
+      - As you press up, turn your palms to face forward.
+      - Finish with your arms straight above your head.
+      - Reverse the turn as you lower back to the start.
+    cues:
+      - Use lighter weights than your normal press.
+      - Make the turn smooth, not jerky.
+    common_mistake: Rushing the turn and losing control at the top.
+
+  - slug: machine-shoulder-press
+    name: Machine shoulder press
+    category: push
+    movement_slot: vertical_push
+    exercise_type: compound
+    primary_muscle: shoulders
+    secondary_muscles: [triceps]
+    targets: [delt_front, delt_side, triceps_lateral]
+    equipment: [gym]
+    also_needs: Machine
+    difficulty: 1
+    effectiveness: 4
+    steps:
+      - Adjust the seat so the handles are at shoulder height.
+      - Sit with your back against the pad and grip the handles.
+      - Press up until your arms are almost straight.
+      - Lower slowly back to shoulder height.
+    cues:
+      - Keep your back against the pad.
+      - Don't lock your elbows at the top.
+    common_mistake: Arching your back off the pad.
+    harder: barbell-overhead-press
+
+  - slug: barbell-overhead-press
+    name: Barbell overhead press
+    category: push
+    movement_slot: vertical_push
+    exercise_type: compound
+    primary_muscle: shoulders
+    secondary_muscles: [triceps, core]
+    targets: [delt_front, delt_side, triceps_lateral]
+    equipment: [gym]
+    also_needs: Barbell
+    difficulty: 4
+    effectiveness: 5
+    not_suitable_for: [back]
+    steps:
+      - Take the bar from a rack at shoulder height, hands just outside your shoulders.
+      - Stand with your feet hip-width apart and squeeze your stomach and bottom.
+      - Press the bar straight up, moving your head back slightly to let it pass.
+      - Finish with the bar above your head, then lower it slowly to your shoulders.
+    cues:
+      - Keep your ribs down and your body in a straight line.
+      - The bar moves in a straight line up and down.
+    common_mistake: Leaning back into a standing bench press.
+
+  # --- Chest fly ---------------------------------------------------------------------
+
+  - slug: wide-push-up
+    name: Wide push-up
+    category: push
+    movement_slot: chest_fly
+    exercise_type: compound
+    primary_muscle: chest
+    secondary_muscles: [shoulders]
+    targets: [chest_mid, delt_front]
+    difficulty: 3
+    effectiveness: 3
+    steps:
+      - Start in a push-up position with your hands much wider than your shoulders.
+      - Lower your chest towards the floor.
+      - Push back up.
+    cues:
+      - Feel the stretch across your chest at the bottom.
+      - Keep your body in a straight line.
+    common_mistake: Hands so wide that your shoulders feel pinched.
+
+  - slug: band-chest-fly
+    name: Band chest fly
+    category: push
+    movement_slot: chest_fly
+    exercise_type: isolation
+    primary_muscle: chest
+    targets: [chest_mid]
+    equipment: [resistance_bands]
+    also_needs: Anchor
+    difficulty: 2
+    effectiveness: 3
+    steps:
+      - Tie the band behind you at chest height and hold one end in each hand, arms open wide.
+      - Keep a slight bend in your elbows.
+      - Bring your hands together in front of your chest in a hugging motion.
+      - Open your arms back out slowly.
+    cues:
+      - The elbow bend stays the same the whole time.
+      - Squeeze your chest when your hands meet.
+    common_mistake: Bending your elbows more and turning it into a press.
+
+  - slug: dumbbell-fly
+    name: Dumbbell fly
+    category: push
+    movement_slot: chest_fly
+    exercise_type: isolation
+    primary_muscle: chest
+    targets: [chest_mid]
+    equipment: [dumbbells]
+    also_needs: Floor or bench
+    difficulty: 3
+    effectiveness: 4
+    not_suitable_for: [shoulders]
+    steps:
+      - Lie on a bench or the floor with a dumbbell in each hand above your chest, palms facing each other.
+      - Keep a slight bend in your elbows.
+      - Open your arms out to the sides until you feel a stretch in your chest.
+      - Bring the dumbbells back together above your chest.
+    cues:
+      - Use light dumbbells; the stretch does the work.
+      - Imagine hugging a big tree.
+    common_mistake: Going too heavy and lowering too far, which strains the shoulders.
+
+  - slug: pec-deck
+    name: Pec deck
+    category: push
+    movement_slot: chest_fly
+    exercise_type: isolation
+    primary_muscle: chest
+    targets: [chest_mid]
+    equipment: [gym]
+    also_needs: Machine
+    difficulty: 1
+    effectiveness: 4
+    steps:
+      - Adjust the seat so the handles are at chest height.
+      - Sit with your back against the pad and hold the handles with your arms open.
+      - Bring the handles together in front of your chest.
+      - Open your arms back out slowly.
+    cues:
+      - Keep a slight bend in your elbows.
+      - Squeeze your chest at the front.
+    common_mistake: Letting the weights pull your arms too far back.
+
+  - slug: cable-fly
+    name: Cable fly
+    category: push
+    movement_slot: chest_fly
+    exercise_type: isolation
+    primary_muscle: chest
+    targets: [chest_mid]
+    equipment: [gym]
+    also_needs: Cable
+    difficulty: 2
+    effectiveness: 5
+    steps:
+      - Set both pulleys at shoulder height and hold one handle in each hand.
+      - Step forward into a split stance with your arms open wide.
+      - Bring your hands together in front of your chest in a hugging motion.
+      - Open your arms back out slowly.
+    cues:
+      - Keep a slight bend in your elbows.
+      - Lean forward a little from the hips.
+    common_mistake: Bending the elbows more and pressing instead of hugging.
+
+  - slug: low-to-high-band-fly
+    name: Low-to-high band fly
+    category: push
+    movement_slot: chest_fly
+    exercise_type: isolation
+    primary_muscle: chest
+    secondary_muscles: [shoulders]
+    targets: [chest_upper]
+    equipment: [resistance_bands]
+    also_needs: Low anchor
+    difficulty: 2
+    effectiveness: 3
+    steps:
+      - Tie the band low behind you and hold one end in each hand, arms down by your sides.
+      - Keep a slight bend in your elbows.
+      - Sweep your hands up and together to chin height.
+      - Lower them slowly back down.
+    cues:
+      - Squeeze your upper chest at the top.
+      - The elbow bend stays the same.
+    common_mistake: Shrugging your shoulders as your hands rise.
+
+  - slug: incline-dumbbell-fly
+    name: Incline dumbbell fly
+    category: push
+    movement_slot: chest_fly
+    exercise_type: isolation
+    primary_muscle: chest
+    secondary_muscles: [shoulders]
+    targets: [chest_upper]
+    equipment: [dumbbells, gym]
+    also_needs: Incline bench
+    difficulty: 3
+    effectiveness: 4
+    not_suitable_for: [shoulders]
+    steps:
+      - Lie on an incline bench with a dumbbell in each hand above your chest, palms facing each other.
+      - Keep a slight bend in your elbows.
+      - Open your arms out to the sides until you feel a stretch in your upper chest.
+      - Bring the dumbbells back together above your chest.
+    cues:
+      - Use light dumbbells.
+      - Imagine hugging a big tree.
+    common_mistake: Lowering too far and straining the shoulders.
+
+  - slug: low-to-high-cable-fly
+    name: Low-to-high cable fly
+    category: push
+    movement_slot: chest_fly
+    exercise_type: isolation
+    primary_muscle: chest
+    secondary_muscles: [shoulders]
+    targets: [chest_upper]
+    equipment: [gym]
+    also_needs: Cable
+    difficulty: 2
+    effectiveness: 4
+    steps:
+      - Set both pulleys at the bottom and hold one handle in each hand.
+      - Step forward with your arms down by your sides.
+      - Sweep your hands up and together to chin height.
+      - Lower them slowly back down.
+    cues:
+      - Keep a slight bend in your elbows.
+      - Squeeze your upper chest at the top.
+    common_mistake: Bending the elbows more and curling the handles up.
+
+  - slug: high-to-low-cable-fly
+    name: High-to-low cable fly
+    category: push
+    movement_slot: chest_fly
+    exercise_type: isolation
+    primary_muscle: chest
+    targets: [chest_lower]
+    equipment: [gym]
+    also_needs: Cable
+    difficulty: 2
+    effectiveness: 4
+    steps:
+      - Set both pulleys at the top and hold one handle in each hand.
+      - Step forward with your arms open and high.
+      - Sweep your hands down and together in front of your hips.
+      - Let them go back up slowly.
+    cues:
+      - Keep a slight bend in your elbows.
+      - Squeeze your lower chest where your hands meet.
+    common_mistake: Hunching your shoulders forward at the bottom.
+
+  # --- Lateral raise -----------------------------------------------------------------
+
+  - slug: water-bottle-lateral-raise
+    name: Water-bottle lateral raise
+    category: push
+    movement_slot: lateral_raise
+    exercise_type: isolation
+    primary_muscle: shoulders
+    targets: [delt_side]
+    also_needs: Bottles or bag
+    home_only: true
+    difficulty: 1
+    effectiveness: 2
+    steps:
+      - Hold a full water bottle or a loaded bag in each hand by your sides.
+      - Lift your arms out to the sides until they are level with your shoulders.
+      - Lower them slowly back down.
+    cues:
+      - Lead with your elbows, not your hands.
+      - Do lots of reps; the weight is light.
+    common_mistake: Shrugging your shoulders up towards your ears.
+
+  - slug: band-lateral-raise
+    name: Band lateral raise
+    category: push
+    movement_slot: lateral_raise
+    exercise_type: isolation
+    primary_muscle: shoulders
+    targets: [delt_side]
+    equipment: [resistance_bands]
+    difficulty: 2
+    effectiveness: 3
+    steps:
+      - Stand on the middle of the band and hold one end in each hand by your sides.
+      - Lift your arms out to the sides until they are level with your shoulders.
+      - Lower them slowly back down.
+    cues:
+      - Keep a slight bend in your elbows.
+      - Stop at shoulder height.
+    common_mistake: Swinging your body to get the band up.
+
+  - slug: dumbbell-lateral-raise
+    name: Dumbbell lateral raise
+    category: push
+    movement_slot: lateral_raise
+    exercise_type: isolation
+    primary_muscle: shoulders
+    targets: [delt_side]
+    equipment: [dumbbells]
+    difficulty: 2
+    effectiveness: 5
+    steps:
+      - Stand holding a light dumbbell in each hand by your sides.
+      - Lift your arms out to the sides until they are level with your shoulders.
+      - Lower them slowly back down.
+    cues:
+      - Lead with your elbows and keep a slight bend in them.
+      - Go light and strict; this muscle is small.
+    common_mistake: Swinging the dumbbells up with your whole body.
+
+  - slug: cable-lateral-raise
+    name: Cable lateral raise
+    category: push
+    movement_slot: lateral_raise
+    exercise_type: isolation
+    primary_muscle: shoulders
+    targets: [delt_side]
+    equipment: [gym]
+    also_needs: Cable
+    difficulty: 2
+    effectiveness: 5
+    steps:
+      - Set the pulley low and stand side-on to it, holding the handle in the far hand.
+      - Lift your arm out to the side until it is level with your shoulder.
+      - Lower it slowly back down.
+      - Finish all reps, then switch sides.
+    cues:
+      - Lead with your elbow.
+      - Hold the machine with your free hand to stay still.
+    common_mistake: Leaning away from the machine to cheat the weight up.
+
+  - slug: machine-lateral-raise
+    name: Machine lateral raise
+    category: push
+    movement_slot: lateral_raise
+    exercise_type: isolation
+    primary_muscle: shoulders
+    targets: [delt_side]
+    equipment: [gym]
+    also_needs: Machine
+    difficulty: 1
+    effectiveness: 4
+    steps:
+      - Sit in the machine with the pads against the outside of your arms.
+      - Lift your arms out to the sides until they are level with your shoulders.
+      - Lower them slowly back down.
+    cues:
+      - Keep your shoulders down, away from your ears.
+      - Pause at the top.
+    common_mistake: Shrugging to lift the pads.
+
+  # --- Triceps -----------------------------------------------------------------------
+
+  - slug: bench-dip
+    name: Bench dip
+    category: push
+    movement_slot: triceps
+    exercise_type: compound
+    primary_muscle: triceps
+    secondary_muscles: [chest, shoulders]
+    targets: [triceps_long, triceps_lateral, triceps_medial]
+    also_needs: Chair
+    difficulty: 2
+    effectiveness: 3
+    not_suitable_for: [shoulders]
+    steps:
+      - Sit on the edge of a sturdy chair and put your hands next to your hips.
+      - Slide your bottom off the chair with your knees bent and feet flat.
+      - Bend your elbows to lower your body a little.
+      - Push back up until your arms are straight.
+    cues:
+      - Keep your back close to the chair.
+      - Only go a short way down.
+    common_mistake: Going too deep, which strains the front of the shoulders.
+
+  - slug: bodyweight-triceps-extension
+    name: Bodyweight triceps extension
+    category: push
+    movement_slot: triceps
+    exercise_type: isolation
+    primary_muscle: triceps
+    secondary_muscles: [core]
+    targets: [triceps_long, triceps_lateral]
+    also_needs: Table
+    home_only: true
+    difficulty: 3
+    effectiveness: 4
+    steps:
+      - Put your hands on the edge of a sturdy table, shoulder-width apart, and walk your feet back.
+      - Keep your body straight and bend only your elbows to lower your forehead towards your hands.
+      - Straighten your arms to push back up.
+    cues:
+      - Elbows point down, not out.
+      - Walk your feet back to make it harder.
+    common_mistake: Bending at the shoulders so it turns into a push-up.
+
+  - slug: band-pushdown
+    name: Band pushdown
+    category: push
+    movement_slot: triceps
+    exercise_type: isolation
+    primary_muscle: triceps
+    targets: [triceps_lateral, triceps_medial]
+    equipment: [resistance_bands]
+    also_needs: High anchor
+    difficulty: 1
+    effectiveness: 3
+    steps:
+      - Anchor the band over the top of a door and hold one end in each hand.
+      - Tuck your elbows against your sides with your hands at chest height.
+      - Push down until your arms are straight.
+      - Let your hands come back up slowly.
+    cues:
+      - Only your forearms move.
+      - Squeeze at the bottom.
+    common_mistake: Letting your elbows drift forward.
+
+  - slug: band-overhead-extension
+    name: Band overhead extension
+    category: push
+    movement_slot: triceps
+    exercise_type: isolation
+    primary_muscle: triceps
+    targets: [triceps_long]
+    equipment: [resistance_bands]
+    difficulty: 2
+    effectiveness: 3
+    steps:
+      - Stand on one end of the band and hold the other end behind your head with both hands.
+      - Point your elbows up towards the ceiling.
+      - Straighten your arms above your head.
+      - Lower your hands slowly back behind your head.
+    cues:
+      - Keep your elbows close to your head.
+      - Feel the stretch at the bottom.
+    common_mistake: Letting your elbows flare wide.
+
+  - slug: overhead-dumbbell-extension
+    name: Overhead dumbbell extension
+    category: push
+    movement_slot: triceps
+    exercise_type: isolation
+    primary_muscle: triceps
+    targets: [triceps_long]
+    equipment: [dumbbells]
+    difficulty: 2
+    effectiveness: 4
+    steps:
+      - Sit or stand holding one dumbbell with both hands above your head.
+      - Bend your elbows to lower the dumbbell behind your head.
+      - Straighten your arms to lift it back up.
+    cues:
+      - Keep your elbows pointing up and close to your head.
+      - Go slowly; feel the stretch at the bottom.
+    common_mistake: Arching your lower back as the dumbbell goes up.
+
+  - slug: dumbbell-kickback
+    name: Dumbbell kickback
+    category: push
+    movement_slot: triceps
+    exercise_type: isolation
+    primary_muscle: triceps
+    targets: [triceps_lateral, triceps_long]
+    equipment: [dumbbells]
+    difficulty: 2
+    effectiveness: 3
+    steps:
+      - Lean forward with one hand on a chair and hold a dumbbell in the other.
+      - Lift your elbow so your upper arm is level with your body.
+      - Straighten your arm behind you.
+      - Bend it back slowly.
+    cues:
+      - Your upper arm stays still.
+      - Squeeze at the top.
+    common_mistake: Swinging the dumbbell instead of straightening the arm.
+
+  - slug: lying-dumbbell-extension
+    name: Lying dumbbell extension
+    category: push
+    movement_slot: triceps
+    exercise_type: isolation
+    primary_muscle: triceps
+    targets: [triceps_long, triceps_lateral]
+    equipment: [dumbbells]
+    also_needs: Floor or bench
+    difficulty: 3
+    effectiveness: 4
+    steps:
+      - Lie on a bench or the floor with a dumbbell in each hand, arms straight above your chest.
+      - Bend your elbows to lower the dumbbells beside your head.
+      - Straighten your arms to lift them back up.
+    cues:
+      - Elbows stay pointing at the ceiling.
+      - Move slowly near your head.
+    common_mistake: Letting your elbows drift out wide.
+
   - slug: cable-triceps-pushdown
-    name: Cable Triceps Pushdown
+    name: Cable triceps pushdown
     category: push
     movement_slot: triceps
     exercise_type: isolation
     primary_muscle: triceps
     targets: [triceps_lateral, triceps_medial]
     equipment: [gym]
-    also_needs: Cable machine with a bar or rope
+    also_needs: Cable
     difficulty: 1
     effectiveness: 5
     steps:
@@ -231,3 +1043,4355 @@ exercises:
       - Only your forearms move; your elbows stay glued to your sides.
       - Stand tall with a slight lean forward.
     common_mistake: Letting your elbows drift forward and pushing with your shoulders.
+
+  - slug: rope-overhead-extension
+    name: Rope overhead extension
+    category: push
+    movement_slot: triceps
+    exercise_type: isolation
+    primary_muscle: triceps
+    targets: [triceps_long]
+    equipment: [gym]
+    also_needs: Cable
+    difficulty: 2
+    effectiveness: 5
+    steps:
+      - Attach a rope to the low cable and hold it behind your head, facing away from the machine.
+      - Step forward into a split stance and lean forward a little.
+      - Straighten your arms forward and up.
+      - Let the rope come back slowly behind your head.
+    cues:
+      - Elbows stay pointing forward.
+      - Feel the stretch behind your head.
+    common_mistake: Moving your elbows and turning it into a pull.
+
+  - slug: parallel-bar-dip
+    name: Parallel-bar dip
+    category: push
+    movement_slot: triceps
+    exercise_type: compound
+    primary_muscle: triceps
+    secondary_muscles: [chest, shoulders]
+    targets: [triceps_long, triceps_lateral, triceps_medial, chest_lower]
+    equipment: [gym]
+    also_needs: Dip bars
+    difficulty: 4
+    effectiveness: 5
+    not_suitable_for: [shoulders]
+    steps:
+      - Hold the dip bars and jump or step up until your arms are straight.
+      - Bend your elbows to lower your body until your upper arms are about level with the floor.
+      - Push back up until your arms are straight.
+    cues:
+      - Stay upright for more triceps work.
+      - Only go as low as your shoulders feel fine.
+    common_mistake: Dropping too low and straining the front of the shoulders.
+
+  - slug: close-grip-bench-press
+    name: Close-grip bench press
+    category: push
+    movement_slot: triceps
+    exercise_type: compound
+    primary_muscle: triceps
+    secondary_muscles: [chest, shoulders]
+    targets: [triceps_long, triceps_lateral, triceps_medial]
+    equipment: [gym]
+    also_needs: Barbell, bench
+    difficulty: 4
+    effectiveness: 5
+    steps:
+      - Lie on a flat bench with the safety bars set and grip the bar shoulder-width apart.
+      - Lift the bar off and hold it above your chest.
+      - Lower it slowly to your lower chest, elbows close to your body.
+      - Press it back up.
+    cues:
+      - Shoulder-width grip; narrower hurts the wrists.
+      - Elbows stay tucked in.
+    common_mistake: Gripping so narrow that your wrists bend.
+
+  - slug: skull-crusher
+    name: Skull crusher
+    category: push
+    movement_slot: triceps
+    exercise_type: isolation
+    primary_muscle: triceps
+    targets: [triceps_long, triceps_lateral]
+    equipment: [gym]
+    also_needs: EZ bar, bench
+    difficulty: 3
+    effectiveness: 5
+    steps:
+      - Lie on a bench holding an EZ bar above your chest with straight arms.
+      - Bend your elbows to lower the bar towards your forehead or just behind your head.
+      - Straighten your arms to lift it back up.
+    cues:
+      - Upper arms stay still.
+      - Lower the bar slightly behind your head for more stretch.
+    common_mistake: Letting your elbows flare out.
+
+  - slug: reverse-grip-cable-pushdown
+    name: Reverse-grip cable pushdown
+    category: push
+    movement_slot: triceps
+    exercise_type: isolation
+    primary_muscle: triceps
+    targets: [triceps_medial]
+    equipment: [gym]
+    also_needs: Cable
+    difficulty: 2
+    effectiveness: 3
+    steps:
+      - Hold a straight bar on the high cable with your palms facing up.
+      - Tuck your elbows against your sides.
+      - Push down until your arms are straight.
+      - Let the bar come back up slowly.
+    cues:
+      - Use a lighter weight than a normal pushdown.
+      - Only your forearms move.
+    common_mistake: Bending your wrists back under the weight.
+
+  # --- Front raise -------------------------------------------------------------------
+
+  - slug: band-front-raise
+    name: Band front raise
+    category: push
+    movement_slot: front_raise
+    exercise_type: isolation
+    primary_muscle: shoulders
+    targets: [delt_front]
+    equipment: [resistance_bands]
+    difficulty: 1
+    effectiveness: 2
+    steps:
+      - Stand on the band and hold one end in each hand in front of your thighs.
+      - Lift your straight arms forward to shoulder height.
+      - Lower them slowly back down.
+    cues:
+      - Keep a slight bend in your elbows.
+      - Stop at shoulder height.
+    common_mistake: Leaning back to lift the band.
+
+  - slug: dumbbell-front-raise
+    name: Dumbbell front raise
+    category: push
+    movement_slot: front_raise
+    exercise_type: isolation
+    primary_muscle: shoulders
+    targets: [delt_front]
+    equipment: [dumbbells]
+    difficulty: 1
+    effectiveness: 3
+    steps:
+      - Stand holding a light dumbbell in each hand in front of your thighs.
+      - Lift your arms forward to shoulder height.
+      - Lower them slowly back down.
+    cues:
+      - Keep your body still.
+      - Stop at shoulder height.
+    common_mistake: Swinging the dumbbells up with your hips.
+
+  # ===================================================================================
+  # PULL
+  # ===================================================================================
+
+  # --- Horizontal pull ---------------------------------------------------------------
+
+  - slug: loaded-backpack-row
+    name: Loaded backpack row
+    category: pull
+    movement_slot: horizontal_pull
+    exercise_type: compound
+    primary_muscle: back
+    secondary_muscles: [biceps, shoulders]
+    targets: [mid_back, lats, delt_rear]
+    also_needs: Backpack with books
+    home_only: true
+    difficulty: 1
+    effectiveness: 3
+    steps:
+      - Fill a backpack with books and hold it by the top handle in one hand.
+      - Put your other hand and knee on a chair or bed and keep your back flat.
+      - Pull the bag up towards your hip, leading with your elbow.
+      - Lower it slowly until your arm is straight.
+    cues:
+      - Squeeze your shoulder blade back at the top.
+      - Keep your back flat and still.
+    common_mistake: Twisting your body to swing the bag up.
+    harder: table-row
+
+  - slug: table-row
+    name: Table row
+    category: pull
+    movement_slot: horizontal_pull
+    exercise_type: compound
+    primary_muscle: back
+    secondary_muscles: [biceps, shoulders]
+    targets: [mid_back, lats, delt_rear]
+    also_needs: Sturdy table
+    home_only: true
+    difficulty: 3
+    effectiveness: 4
+    steps:
+      - Lie on your back under a sturdy table and grip its edge with both hands, shoulder-width apart.
+      - Bend your knees with your feet flat, or keep your legs straight to make it harder.
+      - Pull your chest up towards the table edge.
+      - Lower yourself slowly until your arms are straight.
+    cues:
+      - Check the table is solid and won't tip before every set.
+      - Keep your body straight from knees to head.
+    common_mistake: Using a light or wobbly table that can tip over onto you.
+    harder: feet-elevated-table-row
+
+  - slug: feet-elevated-table-row
+    name: Feet-elevated table row
+    category: pull
+    movement_slot: horizontal_pull
+    exercise_type: compound
+    primary_muscle: back
+    secondary_muscles: [biceps, shoulders]
+    targets: [mid_back, lats, delt_rear]
+    also_needs: Sturdy table, chair
+    home_only: true
+    difficulty: 4
+    effectiveness: 4
+    steps:
+      - Lie under a sturdy table with your heels resting on a chair.
+      - Grip the table edge with both hands, shoulder-width apart.
+      - Pull your chest up towards the edge, keeping your body straight.
+      - Lower yourself slowly until your arms are straight.
+    cues:
+      - Check the table and chair are both stable first.
+      - Squeeze your shoulder blades together at the top.
+    common_mistake: Letting your hips sag so only your arms move.
+
+  - slug: seated-band-row
+    name: Seated band row
+    category: pull
+    movement_slot: horizontal_pull
+    exercise_type: compound
+    primary_muscle: back
+    secondary_muscles: [biceps, shoulders]
+    targets: [mid_back, lats, delt_rear]
+    equipment: [resistance_bands]
+    difficulty: 1
+    effectiveness: 3
+    steps:
+      - Sit on the floor with your legs straight and loop the band around your feet.
+      - Hold one end in each hand and sit tall.
+      - Pull your hands towards your stomach, elbows close to your body.
+      - Let your arms straighten slowly.
+    cues:
+      - Squeeze your shoulder blades together at the end.
+      - Stay sitting tall; don't lean back.
+    common_mistake: Leaning backwards to pull instead of using your back.
+
+  - slug: bent-over-band-row
+    name: Bent-over band row
+    category: pull
+    movement_slot: horizontal_pull
+    exercise_type: compound
+    primary_muscle: back
+    secondary_muscles: [biceps, shoulders]
+    targets: [mid_back, lats, delt_rear]
+    equipment: [resistance_bands]
+    difficulty: 2
+    effectiveness: 3
+    not_suitable_for: [back]
+    steps:
+      - Stand on the middle of the band with your feet hip-width apart.
+      - Push your hips back and lean forward with a flat back, holding the band ends.
+      - Pull your hands up towards your stomach.
+      - Lower them slowly.
+    cues:
+      - Keep your back flat the whole time.
+      - Elbows go back, close to your body.
+    common_mistake: Standing up as you pull.
+
+  - slug: one-arm-dumbbell-row
+    name: One-arm dumbbell row
+    category: pull
+    movement_slot: horizontal_pull
+    exercise_type: compound
+    primary_muscle: back
+    secondary_muscles: [biceps, shoulders]
+    targets: [mid_back, lats, delt_rear]
+    equipment: [dumbbells]
+    also_needs: Chair or bench
+    difficulty: 2
+    effectiveness: 5
+    steps:
+      - Put one hand and the same knee on a bench or chair, holding a dumbbell in the other hand.
+      - Keep your back flat like a table.
+      - Pull the dumbbell up towards your hip, leading with your elbow.
+      - Lower it slowly until your arm is straight.
+    cues:
+      - Think of pulling your elbow to your back pocket.
+      - Keep your shoulders level.
+    common_mistake: Twisting your body open to lift a heavier dumbbell.
+    harder: bent-over-dumbbell-row
+
+  - slug: bent-over-dumbbell-row
+    name: Bent-over dumbbell row
+    category: pull
+    movement_slot: horizontal_pull
+    exercise_type: compound
+    primary_muscle: back
+    secondary_muscles: [biceps, shoulders]
+    targets: [mid_back, lats, delt_rear]
+    equipment: [dumbbells]
+    difficulty: 3
+    effectiveness: 4
+    not_suitable_for: [back]
+    steps:
+      - Hold a dumbbell in each hand and push your hips back, leaning forward with a flat back.
+      - Let the dumbbells hang below your shoulders.
+      - Pull both dumbbells up towards your stomach.
+      - Lower them slowly.
+    cues:
+      - Keep your back flat and your neck in line.
+      - Squeeze your shoulder blades together at the top.
+    common_mistake: Rounding your back as you get tired.
+
+  - slug: chest-supported-dumbbell-row
+    name: Chest-supported dumbbell row
+    category: pull
+    movement_slot: horizontal_pull
+    exercise_type: compound
+    primary_muscle: back
+    secondary_muscles: [biceps, shoulders]
+    targets: [mid_back, lats, delt_rear]
+    equipment: [dumbbells, gym]
+    also_needs: Incline bench
+    difficulty: 2
+    effectiveness: 5
+    steps:
+      - Set a bench to an incline and lie face down on it with a dumbbell in each hand.
+      - Let your arms hang straight down.
+      - Pull the dumbbells up towards your ribs.
+      - Lower them slowly.
+    cues:
+      - Keep your chest on the bench the whole time.
+      - Squeeze your shoulder blades together at the top.
+    common_mistake: Lifting your chest off the bench to heave the weight.
+
+  - slug: machine-row
+    name: Machine row
+    category: pull
+    movement_slot: horizontal_pull
+    exercise_type: compound
+    primary_muscle: back
+    secondary_muscles: [biceps, shoulders]
+    targets: [mid_back, lats, delt_rear]
+    equipment: [gym]
+    also_needs: Machine
+    difficulty: 1
+    effectiveness: 4
+    steps:
+      - Adjust the seat so the handles are at chest height and put your chest on the pad.
+      - Grip the handles with straight arms.
+      - Pull the handles back towards your body.
+      - Let them go forward slowly.
+    cues:
+      - Keep your chest on the pad.
+      - Squeeze your shoulder blades together at the back.
+    common_mistake: Jerking the handles with your whole body.
+
+  - slug: seated-cable-row
+    name: Seated cable row
+    category: pull
+    movement_slot: horizontal_pull
+    exercise_type: compound
+    primary_muscle: back
+    secondary_muscles: [biceps, shoulders]
+    targets: [mid_back, lats, delt_rear]
+    equipment: [gym]
+    also_needs: Cable
+    difficulty: 2
+    effectiveness: 5
+    steps:
+      - Sit at the cable row with your feet on the plate and knees slightly bent.
+      - Grip the handle and sit tall with straight arms.
+      - Pull the handle to your stomach, keeping your elbows close.
+      - Let your arms go forward slowly.
+    cues:
+      - Chest up, shoulders down.
+      - Your body stays still; your arms and back move.
+    common_mistake: Rocking backwards and forwards to move the weight.
+
+  - slug: inverted-row
+    name: Inverted row
+    category: pull
+    movement_slot: horizontal_pull
+    exercise_type: compound
+    primary_muscle: back
+    secondary_muscles: [biceps, core, shoulders]
+    targets: [mid_back, lats, delt_rear]
+    equipment: [gym]
+    also_needs: Low bar or Smith machine
+    difficulty: 3
+    effectiveness: 4
+    steps:
+      - Set a bar at about hip height and lie under it.
+      - Grip the bar a little wider than your shoulders with your body straight and heels on the floor.
+      - Pull your chest up to the bar.
+      - Lower yourself slowly until your arms are straight.
+    cues:
+      - Keep your body straight from heels to head.
+      - Bend your knees to make it easier.
+    common_mistake: Letting your hips sag towards the floor.
+
+  - slug: barbell-row
+    name: Barbell row
+    category: pull
+    movement_slot: horizontal_pull
+    exercise_type: compound
+    primary_muscle: back
+    secondary_muscles: [biceps, shoulders]
+    targets: [mid_back, lats, delt_rear]
+    equipment: [gym]
+    also_needs: Barbell
+    difficulty: 4
+    effectiveness: 5
+    not_suitable_for: [back]
+    steps:
+      - Hold the bar with your hands a little wider than your shoulders.
+      - Push your hips back and lean forward with a flat back until your chest is almost level with the floor.
+      - Pull the bar to your lower chest.
+      - Lower it slowly until your arms are straight.
+    cues:
+      - Keep your back flat and still.
+      - Brace your stomach before each rep.
+    common_mistake: Standing up more with each rep to swing the bar.
+
+  # --- Vertical pull -----------------------------------------------------------------
+
+  - slug: dead-hang
+    name: Dead hang
+    category: pull
+    movement_slot: vertical_pull
+    exercise_type: compound
+    primary_muscle: back
+    secondary_muscles: [forearms]
+    targets: [forearm_flexors, lats]
+    equipment: [pull_up_bar]
+    difficulty: 1
+    effectiveness: 2
+    is_timed: true
+    steps:
+      - Grip the pull-up bar with your hands shoulder-width apart.
+      - Lift your feet and hang with straight arms.
+      - Hold for the set time, then step down.
+    cues:
+      - Breathe normally.
+      - Use a chair to get up and down safely.
+    common_mistake: Dropping off the bar suddenly instead of stepping down.
+    harder: scapular-pull
+
+  - slug: scapular-pull
+    name: Scapular pull
+    category: pull
+    movement_slot: vertical_pull
+    exercise_type: compound
+    primary_muscle: back
+    secondary_muscles: [forearms, traps]
+    targets: [lower_traps, lats]
+    equipment: [pull_up_bar]
+    difficulty: 2
+    effectiveness: 2
+    steps:
+      - Hang from the pull-up bar with straight arms.
+      - Without bending your elbows, pull your shoulders down away from your ears so your body rises a little.
+      - Relax back to a full hang.
+    cues:
+      - Your arms stay straight the whole time.
+      - It's a small movement.
+    common_mistake: Bending your elbows and turning it into a tiny pull-up.
+    harder: negative-pull-up
+
+  - slug: negative-pull-up
+    name: Negative pull-up
+    category: pull
+    movement_slot: vertical_pull
+    exercise_type: compound
+    primary_muscle: back
+    secondary_muscles: [biceps, traps]
+    targets: [lats, lower_traps]
+    equipment: [pull_up_bar]
+    also_needs: Chair to step up
+    difficulty: 3
+    effectiveness: 4
+    steps:
+      - Stand on a chair and grip the bar with your chin above it.
+      - Step off the chair and hold yourself at the top.
+      - Lower yourself as slowly as you can, taking 3 to 5 seconds, until your arms are straight.
+      - Step back onto the chair and repeat.
+    cues:
+      - Fight the way down the whole time.
+      - Keep your chest up.
+    common_mistake: Dropping down fast, which builds very little.
+    harder: band-assisted-pull-up
+
+  - slug: band-assisted-pull-up
+    name: Band-assisted pull-up
+    category: pull
+    movement_slot: vertical_pull
+    exercise_type: compound
+    primary_muscle: back
+    secondary_muscles: [biceps, traps]
+    targets: [lats, lower_traps]
+    equipment: [pull_up_bar, resistance_bands]
+    also_needs: Loop band
+    difficulty: 3
+    effectiveness: 4
+    steps:
+      - Loop a band over the bar and put one knee or foot in the bottom of the loop.
+      - Grip the bar a little wider than your shoulders.
+      - Pull yourself up until your chin is over the bar.
+      - Lower yourself slowly until your arms are straight.
+    cues:
+      - Use a thinner band as you get stronger.
+      - Lower slowly; don't let the band bounce you.
+    common_mistake: Letting the band fling you up and down.
+    harder: chin-up
+
+  - slug: chin-up
+    name: Chin-up
+    category: pull
+    movement_slot: vertical_pull
+    exercise_type: compound
+    primary_muscle: back
+    secondary_muscles: [biceps]
+    targets: [lats, biceps_long, biceps_short]
+    equipment: [pull_up_bar]
+    difficulty: 4
+    effectiveness: 5
+    steps:
+      - Grip the bar with your palms facing you, shoulder-width apart.
+      - Hang with straight arms.
+      - Pull yourself up until your chin is over the bar.
+      - Lower yourself slowly until your arms are straight.
+    cues:
+      - Pull your elbows down towards your ribs.
+      - No swinging or kicking.
+    common_mistake: Only going halfway down between reps.
+    harder: pull-up
+
+  - slug: pull-up
+    name: Pull-up
+    category: pull
+    movement_slot: vertical_pull
+    exercise_type: compound
+    primary_muscle: back
+    secondary_muscles: [biceps, traps]
+    targets: [lats, lower_traps]
+    equipment: [pull_up_bar]
+    difficulty: 4
+    effectiveness: 5
+    steps:
+      - Grip the bar with your palms facing away, a little wider than your shoulders.
+      - Hang with straight arms.
+      - Pull yourself up until your chin is over the bar.
+      - Lower yourself slowly until your arms are straight.
+    cues:
+      - Pull your elbows down towards your back pockets.
+      - Keep your legs still; no kicking.
+    common_mistake: Swinging your legs to get your chin over the bar.
+
+  - slug: band-lat-pulldown
+    name: Band lat pulldown
+    category: pull
+    movement_slot: vertical_pull
+    exercise_type: compound
+    primary_muscle: back
+    secondary_muscles: [biceps, traps]
+    targets: [lats, lower_traps]
+    equipment: [resistance_bands]
+    also_needs: High anchor
+    difficulty: 1
+    effectiveness: 3
+    steps:
+      - Anchor the band over the top of a door and kneel facing it, holding one end in each hand.
+      - Start with your arms straight up.
+      - Pull your elbows down towards your ribs.
+      - Let your arms go back up slowly.
+    cues:
+      - Lean back very slightly.
+      - Squeeze your back at the bottom.
+    common_mistake: Pulling with your arms only and shrugging your shoulders.
+
+  - slug: band-straight-arm-pulldown
+    name: Band straight-arm pulldown
+    category: pull
+    movement_slot: vertical_pull
+    exercise_type: isolation
+    primary_muscle: back
+    targets: [lats]
+    equipment: [resistance_bands]
+    also_needs: High anchor
+    difficulty: 2
+    effectiveness: 3
+    steps:
+      - Anchor the band high and stand facing it, holding the ends with straight arms in front of you.
+      - Keep your arms straight and push your hands down to your thighs.
+      - Let them come back up slowly.
+    cues:
+      - Arms stay straight the whole time.
+      - Feel it under your armpits.
+    common_mistake: Bending your elbows and turning it into a pushdown.
+
+  - slug: dumbbell-pullover
+    name: Dumbbell pullover
+    category: pull
+    movement_slot: vertical_pull
+    exercise_type: isolation
+    primary_muscle: back
+    secondary_muscles: [chest]
+    targets: [lats, chest_mid]
+    equipment: [dumbbells]
+    also_needs: Floor or bench
+    difficulty: 3
+    effectiveness: 3
+    not_suitable_for: [shoulders]
+    steps:
+      - Lie on a bench or the floor holding one dumbbell with both hands above your chest.
+      - Keep a slight bend in your elbows.
+      - Lower the dumbbell back behind your head until you feel a stretch.
+      - Pull it back up over your chest.
+    cues:
+      - Use a light dumbbell.
+      - Move slowly; the stretch is the point.
+    common_mistake: Lowering too far, which strains the shoulders.
+
+  - slug: lat-pulldown
+    name: Lat pulldown
+    category: pull
+    movement_slot: vertical_pull
+    exercise_type: compound
+    primary_muscle: back
+    secondary_muscles: [biceps, traps]
+    targets: [lats, lower_traps]
+    equipment: [gym]
+    also_needs: Cable machine
+    difficulty: 1
+    effectiveness: 5
+    steps:
+      - Adjust the knee pad so your legs are held firmly.
+      - Grip the bar a little wider than your shoulders.
+      - Pull the bar down to your upper chest.
+      - Let it go back up slowly until your arms are straight.
+    cues:
+      - Lean back very slightly and keep your chest up.
+      - Pull your elbows down to your ribs.
+    common_mistake: Pulling the bar behind your neck.
+    harder: assisted-pull-up-machine
+
+  - slug: assisted-pull-up-machine
+    name: Assisted pull-up machine
+    category: pull
+    movement_slot: vertical_pull
+    exercise_type: compound
+    primary_muscle: back
+    secondary_muscles: [biceps, traps]
+    targets: [lats, lower_traps]
+    equipment: [gym]
+    also_needs: Machine
+    difficulty: 2
+    effectiveness: 4
+    steps:
+      - Set the assistance weight; more weight makes it easier.
+      - Kneel or stand on the platform and grip the handles.
+      - Pull yourself up until your chin is over the handles.
+      - Lower yourself slowly until your arms are straight.
+    cues:
+      - Lower the assistance as you get stronger.
+      - Control the way down.
+    common_mistake: Using so much assistance that it feels effortless.
+
+  # --- Rear delt ---------------------------------------------------------------------
+
+  - slug: prone-y-t-w-raise
+    name: Prone Y-T-W raise
+    category: pull
+    movement_slot: rear_delt
+    exercise_type: isolation
+    primary_muscle: shoulders
+    secondary_muscles: [back, traps]
+    targets: [lower_traps, mid_back, delt_rear]
+    difficulty: 1
+    effectiveness: 3
+    steps:
+      - Lie face down with your arms stretched above your head in a Y shape, thumbs up.
+      - Lift your arms off the floor, hold, then lower.
+      - Move your arms out to the sides in a T and lift again.
+      - Bend your elbows into a W and squeeze your shoulder blades together as you lift.
+    cues:
+      - Keep your forehead resting on a towel.
+      - Small lifts are fine; squeeze your upper back.
+    common_mistake: Lifting your chest high and arching your lower back.
+
+  - slug: reverse-snow-angel
+    name: Reverse snow angel
+    category: pull
+    movement_slot: rear_delt
+    exercise_type: isolation
+    primary_muscle: shoulders
+    secondary_muscles: [back, traps]
+    targets: [lower_traps, mid_back, delt_rear]
+    difficulty: 1
+    effectiveness: 2
+    steps:
+      - Lie face down with your arms by your sides, palms down, and lift them slightly off the floor.
+      - Sweep your arms out wide and up above your head, like a snow angel.
+      - Sweep them back down to your sides.
+    cues:
+      - Keep your arms hovering off the floor the whole time.
+      - Move slowly.
+    common_mistake: Rushing through the movement.
+
+  - slug: band-pull-apart
+    name: Band pull-apart
+    category: pull
+    movement_slot: rear_delt
+    exercise_type: isolation
+    primary_muscle: shoulders
+    secondary_muscles: [back, traps]
+    targets: [delt_rear, mid_back, lower_traps]
+    equipment: [resistance_bands]
+    difficulty: 1
+    effectiveness: 4
+    steps:
+      - Hold the band in front of your chest with straight arms, hands shoulder-width apart.
+      - Pull the band apart by moving your hands out to the sides.
+      - Squeeze your shoulder blades together when the band touches your chest.
+      - Let your hands come back together slowly.
+    cues:
+      - Keep your arms straight.
+      - Shoulders stay down, away from your ears.
+    common_mistake: Bending your elbows to make it easier.
+
+  - slug: band-face-pull
+    name: Band face pull
+    category: pull
+    movement_slot: rear_delt
+    exercise_type: isolation
+    primary_muscle: shoulders
+    secondary_muscles: [back, traps]
+    targets: [delt_rear, mid_back, lower_traps]
+    equipment: [resistance_bands]
+    also_needs: Anchor at face height
+    difficulty: 2
+    effectiveness: 4
+    steps:
+      - Anchor the band at face height and hold one end in each hand, arms straight.
+      - Pull the band towards your forehead, elbows high and out to the sides.
+      - Squeeze your shoulder blades together.
+      - Let your arms straighten slowly.
+    cues:
+      - Elbows stay high, level with your shoulders.
+      - Finish with your hands beside your ears.
+    common_mistake: Pulling to your chest with low elbows, which turns it into a row.
+
+  - slug: dumbbell-reverse-fly
+    name: Dumbbell reverse fly
+    category: pull
+    movement_slot: rear_delt
+    exercise_type: isolation
+    primary_muscle: shoulders
+    secondary_muscles: [back, traps]
+    targets: [delt_rear, mid_back, lower_traps]
+    equipment: [dumbbells]
+    difficulty: 2
+    effectiveness: 4
+    steps:
+      - Hold a light dumbbell in each hand and lean forward with a flat back, or lie chest-down on an incline bench.
+      - Let your arms hang down, palms facing each other.
+      - Lift your arms out to the sides until they are level with your body.
+      - Lower them slowly.
+    cues:
+      - Keep a slight bend in your elbows.
+      - Use light dumbbells.
+    common_mistake: Squeezing your shoulder blades so hard that your back does the work.
+
+  - slug: cable-face-pull
+    name: Cable face pull
+    category: pull
+    movement_slot: rear_delt
+    exercise_type: isolation
+    primary_muscle: shoulders
+    secondary_muscles: [back, traps]
+    targets: [delt_rear, mid_back, lower_traps]
+    equipment: [gym]
+    also_needs: Cable, rope
+    difficulty: 2
+    effectiveness: 5
+    steps:
+      - Attach a rope to the cable at face height and hold the ends with your palms facing down.
+      - Step back until your arms are straight.
+      - Pull the rope towards your forehead, pulling the ends apart.
+      - Let your arms straighten slowly.
+    cues:
+      - Elbows high, level with your shoulders.
+      - Finish with your hands beside your ears.
+    common_mistake: Going so heavy that you lean back and row it.
+
+  - slug: reverse-pec-deck
+    name: Reverse pec deck
+    category: pull
+    movement_slot: rear_delt
+    exercise_type: isolation
+    primary_muscle: shoulders
+    secondary_muscles: [back, traps]
+    targets: [delt_rear, mid_back, lower_traps]
+    equipment: [gym]
+    also_needs: Machine
+    difficulty: 1
+    effectiveness: 5
+    steps:
+      - Sit facing the pec deck with your chest on the pad.
+      - Hold the handles with straight arms in front of you.
+      - Open your arms out to the sides until they are level with your body.
+      - Bring them back slowly.
+    cues:
+      - Keep a slight bend in your elbows.
+      - Shoulders stay down.
+    common_mistake: Shrugging your shoulders as you pull.
+
+  - slug: band-external-rotation
+    name: Band external rotation
+    category: pull
+    movement_slot: rear_delt
+    exercise_type: isolation
+    primary_muscle: shoulders
+    targets: [delt_rear]
+    equipment: [resistance_bands]
+    also_needs: Side anchor
+    difficulty: 1
+    effectiveness: 3
+    steps:
+      - Tie the band at elbow height beside you and hold it in the hand furthest from the anchor.
+      - Pin that elbow to your side, bent at a right angle, with your hand in front of your stomach.
+      - Rotate your forearm outwards, away from your body.
+      - Bring it back slowly.
+    cues:
+      - Your elbow stays pinned to your side.
+      - Use a light band; it's a small movement.
+    common_mistake: Letting your elbow drift away from your side.
+
+  # --- Biceps ------------------------------------------------------------------------
+
+  - slug: backpack-curl
+    name: Backpack curl
+    category: pull
+    movement_slot: biceps
+    exercise_type: isolation
+    primary_muscle: biceps
+    targets: [biceps_long, biceps_short]
+    also_needs: Backpack with books
+    home_only: true
+    difficulty: 1
+    effectiveness: 2
+    steps:
+      - Fill a backpack with books and hold it by the top handle with both hands, arms straight.
+      - Bend your elbows to curl the bag up towards your chest.
+      - Lower it slowly until your arms are straight.
+    cues:
+      - Keep your elbows by your sides.
+      - Stand still; don't swing.
+    common_mistake: Leaning back to swing the bag up.
+
+  - slug: band-curl
+    name: Band curl
+    category: pull
+    movement_slot: biceps
+    exercise_type: isolation
+    primary_muscle: biceps
+    targets: [biceps_long, biceps_short]
+    equipment: [resistance_bands]
+    difficulty: 1
+    effectiveness: 3
+    steps:
+      - Stand on the middle of the band and hold one end in each hand, palms facing forward.
+      - Bend your elbows to curl your hands up towards your shoulders.
+      - Lower them slowly until your arms are straight.
+    cues:
+      - Elbows stay by your sides.
+      - Squeeze at the top.
+    common_mistake: Moving your elbows forward to finish the rep.
+
+  - slug: dumbbell-curl
+    name: Dumbbell curl
+    category: pull
+    movement_slot: biceps
+    exercise_type: isolation
+    primary_muscle: biceps
+    targets: [biceps_long, biceps_short]
+    equipment: [dumbbells]
+    difficulty: 1
+    effectiveness: 5
+    steps:
+      - Stand holding a dumbbell in each hand, palms facing forward.
+      - Bend your elbows to curl the dumbbells up towards your shoulders.
+      - Lower them slowly until your arms are straight.
+    cues:
+      - Elbows stay by your sides.
+      - No swinging; if you have to swing, go lighter.
+    common_mistake: Swinging your body to lift heavier dumbbells.
+
+  - slug: hammer-curl
+    name: Hammer curl
+    category: pull
+    movement_slot: biceps
+    exercise_type: isolation
+    primary_muscle: biceps
+    secondary_muscles: [forearms]
+    targets: [brachialis, brachioradialis, biceps_long]
+    equipment: [dumbbells]
+    difficulty: 1
+    effectiveness: 4
+    steps:
+      - Stand holding a dumbbell in each hand with your thumbs pointing up.
+      - Curl the dumbbells up towards your shoulders, keeping your thumbs up.
+      - Lower them slowly.
+    cues:
+      - Elbows stay by your sides.
+      - Wrists stay straight.
+    common_mistake: Swinging the dumbbells up.
+
+  - slug: incline-dumbbell-curl
+    name: Incline dumbbell curl
+    category: pull
+    movement_slot: biceps
+    exercise_type: isolation
+    primary_muscle: biceps
+    targets: [biceps_long]
+    equipment: [dumbbells, gym]
+    also_needs: Incline bench
+    difficulty: 2
+    effectiveness: 5
+    steps:
+      - Set a bench to an incline and lie back with a dumbbell in each hand.
+      - Let your arms hang straight down behind your body.
+      - Curl the dumbbells up without moving your elbows forward.
+      - Lower them slowly until your arms are fully straight.
+    cues:
+      - Use lighter dumbbells than normal curls.
+      - Feel the stretch at the bottom.
+    common_mistake: Moving your elbows forward, which removes the stretch.
+
+  - slug: barbell-curl
+    name: Barbell curl
+    category: pull
+    movement_slot: biceps
+    exercise_type: isolation
+    primary_muscle: biceps
+    targets: [biceps_long, biceps_short]
+    equipment: [gym]
+    also_needs: Barbell or EZ bar
+    difficulty: 2
+    effectiveness: 5
+    steps:
+      - Stand holding a barbell or EZ bar with your palms facing forward, hands shoulder-width apart.
+      - Curl the bar up towards your shoulders.
+      - Lower it slowly until your arms are straight.
+    cues:
+      - Elbows stay by your sides.
+      - Stand tall; don't lean back.
+    common_mistake: Leaning back and using your hips to swing the bar.
+
+  - slug: cable-curl
+    name: Cable curl
+    category: pull
+    movement_slot: biceps
+    exercise_type: isolation
+    primary_muscle: biceps
+    targets: [biceps_long, biceps_short]
+    equipment: [gym]
+    also_needs: Cable
+    difficulty: 1
+    effectiveness: 4
+    steps:
+      - Attach a straight bar to the low cable and hold it with palms facing up.
+      - Stand tall with your elbows by your sides.
+      - Curl the bar up towards your shoulders.
+      - Lower it slowly.
+    cues:
+      - Keep your elbows still.
+      - Squeeze at the top.
+    common_mistake: Stepping too close so there's no tension at the bottom.
+
+  - slug: preacher-curl
+    name: Preacher curl
+    category: pull
+    movement_slot: biceps
+    exercise_type: isolation
+    primary_muscle: biceps
+    targets: [biceps_short]
+    equipment: [gym]
+    also_needs: Preacher bench or machine
+    difficulty: 2
+    effectiveness: 5
+    steps:
+      - Sit at the preacher bench with the backs of your upper arms on the pad.
+      - Hold the bar or handles with your palms facing up.
+      - Curl the weight up towards your shoulders.
+      - Lower it slowly until your arms are almost straight.
+    cues:
+      - Keep your arms flat on the pad.
+      - Go slowly at the bottom.
+    common_mistake: Dropping the weight fast at the bottom, which strains the elbow.
+
+  - slug: underhand-table-row
+    name: Underhand table row
+    category: pull
+    movement_slot: biceps
+    exercise_type: compound
+    primary_muscle: biceps
+    secondary_muscles: [back]
+    targets: [biceps_long, biceps_short, lats]
+    also_needs: Sturdy table
+    home_only: true
+    difficulty: 3
+    effectiveness: 3
+    steps:
+      - Lie on your back under a sturdy table and grip the edge with your palms facing you.
+      - Keep your body straight from knees or heels to head.
+      - Pull your chest up towards the table, keeping your elbows close.
+      - Lower yourself slowly.
+    cues:
+      - Check the table is solid and won't tip.
+      - Feel your biceps work as you pull.
+    common_mistake: Using a table that can tip over onto you.
+
+  - slug: band-hammer-curl
+    name: Band hammer curl
+    category: pull
+    movement_slot: biceps
+    exercise_type: isolation
+    primary_muscle: biceps
+    secondary_muscles: [forearms]
+    targets: [brachialis, brachioradialis, biceps_long]
+    equipment: [resistance_bands]
+    difficulty: 1
+    effectiveness: 3
+    steps:
+      - Stand on the middle of the band and hold the ends with your thumbs pointing up.
+      - Curl your hands up towards your shoulders, keeping your thumbs up.
+      - Lower them slowly.
+    cues:
+      - Elbows stay by your sides.
+      - Wrists stay straight.
+    common_mistake: Letting the band pull your hands down fast.
+
+  - slug: band-drag-curl
+    name: Band drag curl
+    category: pull
+    movement_slot: biceps
+    exercise_type: isolation
+    primary_muscle: biceps
+    targets: [biceps_long]
+    equipment: [resistance_bands]
+    difficulty: 2
+    effectiveness: 3
+    steps:
+      - Stand on the band and hold the ends in front of your thighs, palms facing forward.
+      - Curl your hands up while sliding them along your body, letting your elbows move back.
+      - Lower them back down the same way.
+    cues:
+      - Hands stay close to your body.
+      - Elbows travel back, not forward.
+    common_mistake: Letting your elbows move forward like a normal curl.
+
+  - slug: band-concentration-curl
+    name: Band concentration curl
+    category: pull
+    movement_slot: biceps
+    exercise_type: isolation
+    primary_muscle: biceps
+    targets: [biceps_short]
+    equipment: [resistance_bands]
+    also_needs: Chair
+    difficulty: 2
+    effectiveness: 3
+    steps:
+      - Sit on a chair and stand on one end of the band.
+      - Rest the back of your elbow against your inner thigh, holding the other end.
+      - Curl your hand up towards your shoulder.
+      - Lower it slowly.
+    cues:
+      - Your elbow stays pressed against your thigh.
+      - Squeeze at the top.
+    common_mistake: Lifting your elbow off your thigh.
+
+  - slug: concentration-curl
+    name: Concentration curl
+    category: pull
+    movement_slot: biceps
+    exercise_type: isolation
+    primary_muscle: biceps
+    targets: [biceps_short]
+    equipment: [dumbbells]
+    also_needs: Chair
+    difficulty: 1
+    effectiveness: 4
+    steps:
+      - Sit on a chair with a dumbbell in one hand.
+      - Rest the back of that elbow against your inner thigh.
+      - Curl the dumbbell up towards your shoulder.
+      - Lower it slowly until your arm is straight.
+    cues:
+      - Squeeze hard at the top.
+      - Only your forearm moves.
+    common_mistake: Swinging your body to help the curl.
+
+  - slug: spider-curl
+    name: Spider curl
+    category: pull
+    movement_slot: biceps
+    exercise_type: isolation
+    primary_muscle: biceps
+    targets: [biceps_short]
+    equipment: [dumbbells, gym]
+    also_needs: Incline bench
+    difficulty: 2
+    effectiveness: 4
+    steps:
+      - Lie chest-down on an incline bench with a dumbbell in each hand, arms hanging straight down.
+      - Curl the dumbbells up towards your shoulders.
+      - Lower them slowly.
+    cues:
+      - Keep your upper arms hanging straight down.
+      - Squeeze at the top.
+    common_mistake: Swinging the elbows forward and back.
+
+  - slug: dumbbell-drag-curl
+    name: Dumbbell drag curl
+    category: pull
+    movement_slot: biceps
+    exercise_type: isolation
+    primary_muscle: biceps
+    targets: [biceps_long]
+    equipment: [dumbbells]
+    difficulty: 2
+    effectiveness: 3
+    steps:
+      - Stand holding a dumbbell in each hand in front of your thighs.
+      - Curl the dumbbells up while sliding them along your body, letting your elbows move back.
+      - Lower them back down the same way.
+    cues:
+      - Dumbbells stay close to your body.
+      - Elbows travel back, not forward.
+    common_mistake: Letting your elbows move forward like a normal curl.
+
+  - slug: cross-body-hammer-curl
+    name: Cross-body hammer curl
+    category: pull
+    movement_slot: biceps
+    exercise_type: isolation
+    primary_muscle: biceps
+    secondary_muscles: [forearms]
+    targets: [brachialis, brachioradialis]
+    equipment: [dumbbells]
+    difficulty: 1
+    effectiveness: 4
+    steps:
+      - Stand holding a dumbbell in each hand with your thumbs pointing up.
+      - Curl one dumbbell across your body towards the opposite shoulder.
+      - Lower it slowly and repeat with the other arm.
+    cues:
+      - Keep your thumb pointing up.
+      - Your upper arm stays by your side.
+    common_mistake: Twisting your body to help the curl.
+
+  - slug: bayesian-cable-curl
+    name: Bayesian cable curl
+    category: pull
+    movement_slot: biceps
+    exercise_type: isolation
+    primary_muscle: biceps
+    targets: [biceps_long]
+    equipment: [gym]
+    also_needs: Cable
+    difficulty: 2
+    effectiveness: 5
+    steps:
+      - Set the pulley low and stand facing away from the machine, holding the handle in one hand.
+      - Step forward until your arm is pulled slightly behind your body.
+      - Curl the handle forward and up without moving your elbow.
+      - Let it go back slowly.
+    cues:
+      - Your arm stays behind your body; feel the stretch.
+      - Use a light weight.
+    common_mistake: Letting your elbow drift forward.
+
+  # --- Forearms ----------------------------------------------------------------------
+
+  - slug: reverse-curl
+    name: Reverse curl
+    category: pull
+    movement_slot: forearms
+    exercise_type: isolation
+    primary_muscle: forearms
+    secondary_muscles: [biceps]
+    targets: [brachioradialis, forearm_extensors]
+    equipment: [dumbbells]
+    difficulty: 1
+    effectiveness: 3
+    steps:
+      - Stand holding a light dumbbell in each hand with your palms facing down.
+      - Curl the dumbbells up towards your shoulders, keeping your palms down.
+      - Lower them slowly.
+    cues:
+      - Keep your wrists straight.
+      - Use lighter weights than a normal curl.
+    common_mistake: Bending your wrists as you lift.
+
+  - slug: dumbbell-wrist-curl
+    name: Dumbbell wrist curl
+    category: pull
+    movement_slot: forearms
+    exercise_type: isolation
+    primary_muscle: forearms
+    targets: [forearm_flexors]
+    equipment: [dumbbells]
+    also_needs: Chair
+    difficulty: 1
+    effectiveness: 3
+    steps:
+      - Sit on a chair and rest your forearm on your thigh, palm up, with your wrist just past your knee.
+      - Hold a light dumbbell and let your wrist bend down.
+      - Curl your wrist up as far as you can.
+      - Lower it slowly.
+    cues:
+      - Only your wrist moves.
+      - Use a light weight and many reps.
+    common_mistake: Lifting your forearm off your thigh.
+
+  - slug: dumbbell-reverse-wrist-curl
+    name: Dumbbell reverse wrist curl
+    category: pull
+    movement_slot: forearms
+    exercise_type: isolation
+    primary_muscle: forearms
+    targets: [forearm_extensors]
+    equipment: [dumbbells]
+    also_needs: Chair
+    difficulty: 1
+    effectiveness: 3
+    steps:
+      - Sit on a chair and rest your forearm on your thigh, palm down, with your wrist just past your knee.
+      - Hold a very light dumbbell and let your wrist bend down.
+      - Lift the back of your hand up as far as you can.
+      - Lower it slowly.
+    cues:
+      - Only your wrist moves.
+      - Use a very light weight.
+    common_mistake: Using a weight so heavy that your forearm lifts.
+
+  - slug: towel-hang
+    name: Towel hang
+    category: pull
+    movement_slot: forearms
+    exercise_type: isolation
+    primary_muscle: forearms
+    secondary_muscles: [back]
+    targets: [forearm_flexors]
+    equipment: [pull_up_bar]
+    also_needs: Towel
+    difficulty: 3
+    effectiveness: 4
+    is_timed: true
+    steps:
+      - Loop one or two towels over the pull-up bar.
+      - Grip the towels tightly and lift your feet off the floor.
+      - Hang for the set time, then step down.
+    cues:
+      - Use a chair to get up and down.
+      - Squeeze the towels as hard as you can.
+    common_mistake: Using thin towels that slip.
+
+  # --- Traps -------------------------------------------------------------------------
+
+  - slug: backpack-shrug
+    name: Backpack shrug
+    category: pull
+    movement_slot: traps
+    exercise_type: isolation
+    primary_muscle: traps
+    targets: [upper_traps]
+    also_needs: Loaded backpack or bags
+    home_only: true
+    difficulty: 1
+    effectiveness: 2
+    steps:
+      - Hold a loaded backpack or a heavy bag in each hand by your sides.
+      - Lift your shoulders straight up towards your ears.
+      - Pause, then lower them slowly.
+    cues:
+      - Straight up and down; no rolling.
+      - Keep your arms straight.
+    common_mistake: Rolling your shoulders in circles.
+
+  - slug: band-shrug
+    name: Band shrug
+    category: pull
+    movement_slot: traps
+    exercise_type: isolation
+    primary_muscle: traps
+    targets: [upper_traps]
+    equipment: [resistance_bands]
+    difficulty: 1
+    effectiveness: 3
+    steps:
+      - Stand on the middle of the band and hold one end in each hand by your sides.
+      - Lift your shoulders straight up towards your ears.
+      - Pause, then lower them slowly.
+    cues:
+      - Keep your arms straight.
+      - Pause at the top.
+    common_mistake: Bending your elbows to pull the band up.
+
+  - slug: dumbbell-shrug
+    name: Dumbbell shrug
+    category: pull
+    movement_slot: traps
+    exercise_type: isolation
+    primary_muscle: traps
+    secondary_muscles: [forearms]
+    targets: [upper_traps]
+    equipment: [dumbbells]
+    difficulty: 1
+    effectiveness: 5
+    steps:
+      - Stand holding a dumbbell in each hand by your sides.
+      - Lift your shoulders straight up towards your ears.
+      - Pause, then lower them slowly.
+    cues:
+      - Straight up and down; no rolling.
+      - Keep your arms straight.
+    common_mistake: Rolling your shoulders in circles.
+
+  - slug: barbell-shrug
+    name: Barbell shrug
+    category: pull
+    movement_slot: traps
+    exercise_type: isolation
+    primary_muscle: traps
+    secondary_muscles: [forearms]
+    targets: [upper_traps]
+    equipment: [gym]
+    also_needs: Barbell
+    difficulty: 2
+    effectiveness: 5
+    steps:
+      - Hold a barbell in front of your thighs, hands just outside your legs.
+      - Lift your shoulders straight up towards your ears.
+      - Pause, then lower them slowly.
+    cues:
+      - Keep your arms straight.
+      - Stand tall.
+    common_mistake: Bouncing the bar with your knees.
+
+  - slug: prone-y-raise
+    name: Prone Y raise
+    category: pull
+    movement_slot: traps
+    exercise_type: isolation
+    primary_muscle: traps
+    secondary_muscles: [shoulders]
+    targets: [lower_traps]
+    difficulty: 1
+    effectiveness: 3
+    steps:
+      - Lie face down with your arms stretched above your head in a Y shape, thumbs pointing up.
+      - Lift your arms off the floor by squeezing between your shoulder blades.
+      - Hold for a second, then lower them slowly.
+    cues:
+      - Rest your forehead on a towel.
+      - Small lifts are fine.
+    common_mistake: Arching your lower back to lift higher.
+
+  # ===================================================================================
+  # LEGS
+  # ===================================================================================
+
+  # --- Squat -------------------------------------------------------------------------
+
+  - slug: chair-squat
+    name: Chair squat
+    category: legs
+    movement_slot: squat
+    exercise_type: compound
+    primary_muscle: quads
+    secondary_muscles: [glutes]
+    targets: [quads_vastus, glute_max]
+    also_needs: Chair
+    home_only: true
+    difficulty: 1
+    effectiveness: 3
+    steps:
+      - Stand in front of a chair with your feet shoulder-width apart.
+      - Push your hips back and bend your knees until you sit lightly on the chair.
+      - Lean forward a little and stand back up by pushing through your whole foot.
+    cues:
+      - Keep your chest up and your knees pointing the same way as your toes.
+      - Touch the chair, don't flop onto it.
+    common_mistake: Rocking backwards and dropping onto the chair instead of lowering with control.
+    harder: bodyweight-squat
+
+  - slug: bodyweight-squat
+    name: Bodyweight squat
+    category: legs
+    movement_slot: squat
+    exercise_type: compound
+    primary_muscle: quads
+    secondary_muscles: [glutes]
+    targets: [quads_vastus, glute_max]
+    difficulty: 2
+    effectiveness: 3
+    steps:
+      - Stand with your feet shoulder-width apart, toes turned out a little.
+      - Push your hips back and bend your knees as if sitting on a low chair.
+      - Go down until your thighs are about level with the floor, or as low as feels good.
+      - Push through your whole foot to stand back up.
+    cues:
+      - Keep your heels on the floor the whole time.
+      - Knees follow the direction of your toes.
+    common_mistake: Letting your knees fall inwards as you stand up.
+    harder: tempo-squat
+
+  - slug: tempo-squat
+    name: Tempo squat
+    category: legs
+    movement_slot: squat
+    exercise_type: compound
+    primary_muscle: quads
+    secondary_muscles: [glutes]
+    targets: [quads_vastus, glute_max]
+    difficulty: 2
+    effectiveness: 3
+    steps:
+      - Stand with your feet shoulder-width apart.
+      - Count three seconds slowly as you squat down.
+      - Pause for one second at the bottom.
+      - Stand back up at normal speed.
+    cues:
+      - The slow way down is the whole point; don't rush it.
+      - Keep your chest up and heels down.
+    common_mistake: Counting fast so the lowering takes one second, not three.
+    harder: one-and-a-half-squat
+
+  - slug: one-and-a-half-squat
+    name: One-and-a-half squat
+    category: legs
+    movement_slot: squat
+    exercise_type: compound
+    primary_muscle: quads
+    secondary_muscles: [glutes]
+    targets: [quads_vastus, glute_max]
+    difficulty: 3
+    effectiveness: 3
+    steps:
+      - Squat all the way down.
+      - Come halfway up, then go back down to the bottom again.
+      - Stand all the way up. That is one rep.
+    cues:
+      - Stay low and controlled during the half rep.
+      - Keep your heels down and chest up.
+    common_mistake: Bouncing at the bottom instead of moving with control.
+    harder: pistol-squat-to-chair
+
+  - slug: pistol-squat-to-chair
+    name: Pistol squat to chair
+    category: legs
+    movement_slot: squat
+    exercise_type: compound
+    primary_muscle: quads
+    secondary_muscles: [glutes]
+    targets: [quads_vastus, glute_max]
+    also_needs: Chair
+    difficulty: 4
+    effectiveness: 4
+    not_suitable_for: [knees]
+    steps:
+      - Stand in front of a chair on one leg, the other leg held out in front.
+      - Push your hips back and lower yourself slowly on one leg until you sit on the chair.
+      - Lean forward and stand back up on the same leg.
+    cues:
+      - Reach your arms forward to help your balance.
+      - Lower slowly; don't drop onto the chair.
+    common_mistake: Letting the standing knee collapse inwards.
+    harder: pistol-squat
+
+  - slug: pistol-squat
+    name: Pistol squat
+    category: legs
+    movement_slot: squat
+    exercise_type: compound
+    primary_muscle: quads
+    secondary_muscles: [glutes]
+    targets: [quads_vastus, glute_max]
+    difficulty: 5
+    effectiveness: 4
+    not_suitable_for: [knees]
+    steps:
+      - Stand on one leg with the other leg held straight out in front of you.
+      - Reach your arms forward and squat down on the standing leg as low as you can control.
+      - Push through your whole foot to stand back up.
+    cues:
+      - Keep your heel down the whole time.
+      - Practise holding onto a door frame first if balance is the problem.
+    common_mistake: Falling backwards at the bottom because the heel lifts.
+
+  - slug: band-squat
+    name: Band squat
+    category: legs
+    movement_slot: squat
+    exercise_type: compound
+    primary_muscle: quads
+    secondary_muscles: [glutes]
+    targets: [quads_vastus, glute_max]
+    equipment: [resistance_bands]
+    difficulty: 2
+    effectiveness: 3
+    steps:
+      - Stand on the middle of the band with your feet shoulder-width apart.
+      - Hold the ends of the band at your shoulders.
+      - Squat down by pushing your hips back and bending your knees.
+      - Stand back up against the band.
+    cues:
+      - Keep your hands at your shoulders the whole time.
+      - Stand all the way up; the band is hardest at the top.
+    common_mistake: Standing with feet too close together so the band slips off.
+    harder: band-front-squat
+
+  - slug: band-front-squat
+    name: Band front squat
+    category: legs
+    movement_slot: squat
+    exercise_type: compound
+    primary_muscle: quads
+    secondary_muscles: [glutes, core]
+    targets: [quads_vastus, glute_max]
+    equipment: [resistance_bands]
+    difficulty: 2
+    effectiveness: 3
+    steps:
+      - Stand on the band with your feet shoulder-width apart.
+      - Bring the band up and hold it across the front of your shoulders.
+      - Squat down, keeping your elbows high.
+      - Stand back up against the band.
+    cues:
+      - Keep your chest tall so the band doesn't pull you forward.
+      - Brace your stomach before each rep.
+    common_mistake: Letting the elbows drop so you tip forward.
+
+  - slug: goblet-squat
+    name: Goblet squat
+    category: legs
+    movement_slot: squat
+    exercise_type: compound
+    primary_muscle: quads
+    secondary_muscles: [glutes, core]
+    targets: [quads_vastus, glute_max]
+    equipment: [dumbbells]
+    difficulty: 2
+    effectiveness: 4
+    steps:
+      - Hold one dumbbell upright against your chest with both hands.
+      - Stand with your feet a little wider than your shoulders.
+      - Squat down between your legs, keeping the dumbbell against your chest.
+      - Push through your whole foot to stand back up.
+    cues:
+      - Elbows point down and stay inside your knees at the bottom.
+      - Keep your chest up so the dumbbell stays close.
+    common_mistake: Letting the dumbbell drift away from your chest and rounding your back.
+    harder: dumbbell-front-squat
+
+  - slug: dumbbell-front-squat
+    name: Dumbbell front squat
+    category: legs
+    movement_slot: squat
+    exercise_type: compound
+    primary_muscle: quads
+    secondary_muscles: [glutes, core]
+    targets: [quads_vastus, glute_max]
+    equipment: [dumbbells]
+    difficulty: 3
+    effectiveness: 4
+    steps:
+      - Hold a dumbbell in each hand and rest one end of each on the front of your shoulders.
+      - Stand with your feet shoulder-width apart.
+      - Squat down, keeping your elbows pointing forward.
+      - Stand back up by pushing through your whole foot.
+    cues:
+      - Stay tall through your upper back.
+      - Brace your stomach before you go down.
+    common_mistake: Letting the dumbbells slide off the shoulders as you get tired.
+
+  - slug: leg-press
+    name: Leg press
+    category: legs
+    movement_slot: squat
+    exercise_type: compound
+    primary_muscle: quads
+    secondary_muscles: [glutes]
+    targets: [quads_vastus, glute_max]
+    equipment: [gym]
+    also_needs: Machine
+    difficulty: 1
+    effectiveness: 4
+    steps:
+      - Sit in the machine and put your feet flat on the plate, shoulder-width apart.
+      - Release the safety handles.
+      - Bend your knees and lower the plate slowly towards your chest.
+      - Push the plate away until your legs are almost straight.
+    cues:
+      - Keep your lower back pressed into the seat.
+      - Never lock your knees straight at the top.
+    common_mistake: Going so deep that your hips lift off the seat.
+    harder: barbell-back-squat
+
+  - slug: hack-squat
+    name: Hack squat
+    category: legs
+    movement_slot: squat
+    exercise_type: compound
+    primary_muscle: quads
+    secondary_muscles: [glutes]
+    targets: [quads_vastus, glute_max]
+    equipment: [gym]
+    also_needs: Machine
+    difficulty: 2
+    effectiveness: 4
+    not_suitable_for: [knees]
+    steps:
+      - Stand in the machine with your back and shoulders against the pads.
+      - Place your feet shoulder-width apart in the middle of the platform.
+      - Release the safety handles and squat down slowly.
+      - Push back up until your legs are almost straight.
+    cues:
+      - Keep your back flat against the pad.
+      - Knees follow the direction of your toes.
+    common_mistake: Rising onto your toes instead of pushing through your whole foot.
+
+  - slug: barbell-back-squat
+    name: Barbell back squat
+    category: legs
+    movement_slot: squat
+    exercise_type: compound
+    primary_muscle: quads
+    secondary_muscles: [glutes, hamstrings, core]
+    targets: [quads_vastus, glute_max]
+    equipment: [gym]
+    also_needs: Barbell, rack
+    difficulty: 4
+    effectiveness: 5
+    not_suitable_for: [knees, back]
+    steps:
+      - Set the bar in the rack at chest height and the safety bars just below your squat depth.
+      - Step under the bar and rest it on your upper back, not your neck.
+      - Stand up to lift it off, take two small steps back and set your feet shoulder-width.
+      - Squat down by pushing your hips back and bending your knees.
+      - Push through your whole foot to stand back up.
+    cues:
+      - Take a big breath and brace your stomach before each rep.
+      - Knees follow your toes; chest stays up.
+    common_mistake: Letting your lower back round at the bottom of the squat.
+    harder: front-squat
+
+  - slug: front-squat
+    name: Front squat
+    category: legs
+    movement_slot: squat
+    exercise_type: compound
+    primary_muscle: quads
+    secondary_muscles: [glutes, core]
+    targets: [quads_vastus, glute_max]
+    equipment: [gym]
+    also_needs: Barbell, rack
+    difficulty: 5
+    effectiveness: 5
+    not_suitable_for: [knees]
+    steps:
+      - Set the bar in the rack at chest height and the safety bars just below your squat depth.
+      - Rest the bar on the front of your shoulders, elbows pointing forward.
+      - Lift it off, step back and set your feet shoulder-width apart.
+      - Squat down, keeping your elbows high.
+      - Stand back up by pushing through your whole foot.
+    cues:
+      - Elbows high keeps the bar in place.
+      - Stay as upright as you can.
+    common_mistake: Elbows dropping so the bar rolls forward.
+
+  # --- Single-leg --------------------------------------------------------------------
+
+  - slug: supported-split-squat
+    name: Supported split squat
+    category: legs
+    movement_slot: single_leg
+    exercise_type: compound
+    primary_muscle: quads
+    secondary_muscles: [glutes]
+    targets: [quads_vastus, glute_max, glute_med]
+    also_needs: Chair or wall
+    difficulty: 1
+    effectiveness: 3
+    steps:
+      - Stand next to a wall or chair and hold it with one hand.
+      - Take a long step forward so your feet are about a stride apart.
+      - Bend both knees and lower your back knee towards the floor.
+      - Push through your front foot to come back up.
+    cues:
+      - Use the support for balance, not to pull yourself up.
+      - Most of your weight stays on the front foot.
+    common_mistake: Taking too short a step so the front knee shoots far forward.
+    harder: split-squat
+
+  - slug: split-squat
+    name: Split squat
+    category: legs
+    movement_slot: single_leg
+    exercise_type: compound
+    primary_muscle: quads
+    secondary_muscles: [glutes]
+    targets: [quads_vastus, glute_max, glute_med]
+    difficulty: 2
+    effectiveness: 4
+    steps:
+      - Take a long step forward so your feet are about a stride apart.
+      - Bend both knees and lower your back knee towards the floor.
+      - Push through your front foot to come back up.
+      - Finish all reps on one side, then switch.
+    cues:
+      - Keep your body upright.
+      - Your feet stay in place the whole time.
+    common_mistake: Standing with both feet in one line, like on a tightrope, which ruins your balance.
+    harder: reverse-lunge
+
+  - slug: reverse-lunge
+    name: Reverse lunge
+    category: legs
+    movement_slot: single_leg
+    exercise_type: compound
+    primary_muscle: quads
+    secondary_muscles: [glutes, hamstrings]
+    targets: [quads_vastus, glute_max, glute_med]
+    difficulty: 2
+    effectiveness: 4
+    steps:
+      - Stand tall with your feet together.
+      - Take a big step backwards with one foot.
+      - Bend both knees and lower your back knee towards the floor.
+      - Push through your front foot to step back to the start.
+    cues:
+      - Most of your weight stays on the front foot.
+      - Keep your chest up.
+    common_mistake: Pushing off the back foot instead of the front foot.
+    harder: walking-lunge
+
+  - slug: walking-lunge
+    name: Walking lunge
+    category: legs
+    movement_slot: single_leg
+    exercise_type: compound
+    primary_muscle: quads
+    secondary_muscles: [glutes, hamstrings]
+    targets: [quads_vastus, glute_max, glute_med]
+    difficulty: 3
+    effectiveness: 4
+    not_suitable_for: [knees]
+    steps:
+      - Stand tall and take a big step forward.
+      - Bend both knees and lower your back knee towards the floor.
+      - Push through your front foot and bring your back foot forward into the next step.
+      - Keep walking forward, switching legs each step.
+    cues:
+      - Take long steps so your front knee stays over your foot.
+      - Keep your chest up.
+    common_mistake: Short, quick steps that push your knee far past your toes.
+    harder: step-up
+
+  - slug: step-up
+    name: Step-up
+    category: legs
+    movement_slot: single_leg
+    exercise_type: compound
+    primary_muscle: quads
+    secondary_muscles: [glutes]
+    targets: [quads_vastus, glute_max, glute_med]
+    also_needs: Step or stair
+    difficulty: 3
+    effectiveness: 4
+    steps:
+      - Stand facing a sturdy step or the bottom stair.
+      - Put one whole foot on the step.
+      - Push through that foot to stand up on the step.
+      - Lower yourself back down slowly with the same leg.
+    cues:
+      - The leg on the step does the work; don't push off the floor.
+      - The higher the step, the harder it gets.
+    common_mistake: Dropping down fast instead of lowering with control.
+    harder: bulgarian-split-squat
+
+  - slug: bulgarian-split-squat
+    name: Bulgarian split squat
+    category: legs
+    movement_slot: single_leg
+    exercise_type: compound
+    primary_muscle: quads
+    secondary_muscles: [glutes]
+    targets: [quads_vastus, glute_max, glute_med]
+    also_needs: Chair
+    difficulty: 4
+    effectiveness: 5
+    not_suitable_for: [knees]
+    steps:
+      - Stand about a big step in front of a chair, facing away from it.
+      - Put the top of one foot on the chair behind you.
+      - Bend your front knee and lower your back knee towards the floor.
+      - Push through your front foot to come back up.
+    cues:
+      - Most of your weight stays on the front leg.
+      - Lean your chest forward a little for more glute work.
+    common_mistake: Standing too close to the chair so the front knee is cramped.
+
+  - slug: band-split-squat
+    name: Band split squat
+    category: legs
+    movement_slot: single_leg
+    exercise_type: compound
+    primary_muscle: quads
+    secondary_muscles: [glutes]
+    targets: [quads_vastus, glute_max, glute_med]
+    equipment: [resistance_bands]
+    difficulty: 2
+    effectiveness: 3
+    steps:
+      - Step one foot onto the middle of the band and hold the ends at your shoulders.
+      - Take a long step back with the other foot.
+      - Bend both knees and lower your back knee towards the floor.
+      - Push through your front foot to come back up.
+    cues:
+      - Keep the band under the middle of your front foot.
+      - Stay upright.
+    common_mistake: Letting the band pull your hands forward away from your shoulders.
+
+  - slug: dumbbell-reverse-lunge
+    name: Dumbbell reverse lunge
+    category: legs
+    movement_slot: single_leg
+    exercise_type: compound
+    primary_muscle: quads
+    secondary_muscles: [glutes, hamstrings]
+    targets: [quads_vastus, glute_max, glute_med]
+    equipment: [dumbbells]
+    difficulty: 3
+    effectiveness: 4
+    steps:
+      - Stand tall with a dumbbell in each hand by your sides.
+      - Take a big step backwards with one foot.
+      - Lower your back knee towards the floor.
+      - Push through your front foot to step back to the start.
+    cues:
+      - Keep the dumbbells hanging straight down.
+      - Most of your weight stays on the front foot.
+    common_mistake: Leaning far forward so the dumbbells pull you off balance.
+    harder: dumbbell-step-up
+
+  - slug: dumbbell-step-up
+    name: Dumbbell step-up
+    category: legs
+    movement_slot: single_leg
+    exercise_type: compound
+    primary_muscle: quads
+    secondary_muscles: [glutes]
+    targets: [quads_vastus, glute_max, glute_med]
+    equipment: [dumbbells]
+    also_needs: Step or bench
+    difficulty: 3
+    effectiveness: 4
+    steps:
+      - Hold a dumbbell in each hand and stand facing a sturdy step or bench.
+      - Put one whole foot on the step.
+      - Push through that foot to stand up on the step.
+      - Lower yourself back down slowly with the same leg.
+    cues:
+      - Don't push off with the back foot.
+      - Control the way down.
+    common_mistake: Using a step so high that you have to jump off the floor to get up.
+    harder: dumbbell-bulgarian-split-squat
+
+  - slug: dumbbell-bulgarian-split-squat
+    name: Dumbbell Bulgarian split squat
+    category: legs
+    movement_slot: single_leg
+    exercise_type: compound
+    primary_muscle: quads
+    secondary_muscles: [glutes]
+    targets: [quads_vastus, glute_max, glute_med]
+    equipment: [dumbbells]
+    also_needs: Bench or chair
+    difficulty: 4
+    effectiveness: 5
+    not_suitable_for: [knees]
+    steps:
+      - Hold a dumbbell in each hand and stand a big step in front of a bench or chair.
+      - Put the top of one foot on the bench behind you.
+      - Lower your back knee towards the floor.
+      - Push through your front foot to come back up.
+    cues:
+      - Most of your weight stays on the front leg.
+      - Let the dumbbells hang straight down.
+    common_mistake: Bouncing the back knee off the floor.
+
+  - slug: smith-machine-split-squat
+    name: Smith machine split squat
+    category: legs
+    movement_slot: single_leg
+    exercise_type: compound
+    primary_muscle: quads
+    secondary_muscles: [glutes]
+    targets: [quads_vastus, glute_max, glute_med]
+    equipment: [gym]
+    also_needs: Smith machine
+    difficulty: 3
+    effectiveness: 4
+    steps:
+      - Set the bar at shoulder height and rest it on your upper back.
+      - Step one foot forward and one back, about a stride apart.
+      - Lift the bar off the hooks and lower your back knee towards the floor.
+      - Push through your front foot to come back up.
+    cues:
+      - Set the safety stops before you start.
+      - Front foot slightly ahead of the bar.
+    common_mistake: Feet too close together so the front knee is cramped.
+
+  - slug: barbell-lunge
+    name: Barbell lunge
+    category: legs
+    movement_slot: single_leg
+    exercise_type: compound
+    primary_muscle: quads
+    secondary_muscles: [glutes, hamstrings]
+    targets: [quads_vastus, glute_max, glute_med]
+    equipment: [gym]
+    also_needs: Barbell
+    difficulty: 4
+    effectiveness: 4
+    not_suitable_for: [knees, back]
+    steps:
+      - Take the bar from the rack onto your upper back and step back.
+      - Take a big step backwards with one foot.
+      - Lower your back knee towards the floor.
+      - Push through your front foot to step back to the start.
+    cues:
+      - Brace your stomach so you don't wobble.
+      - Use a light bar until your balance is solid.
+    common_mistake: Going heavy before the movement is steady.
+
+  - slug: single-leg-leg-press
+    name: Single-leg leg press
+    category: legs
+    movement_slot: single_leg
+    exercise_type: compound
+    primary_muscle: quads
+    secondary_muscles: [glutes]
+    targets: [quads_vastus, glute_max, glute_med]
+    equipment: [gym]
+    also_needs: Machine
+    difficulty: 2
+    effectiveness: 4
+    steps:
+      - Sit in the leg press and put one foot in the middle of the plate.
+      - Release the safety handles.
+      - Lower the plate slowly by bending your knee.
+      - Push it back up until your leg is almost straight.
+    cues:
+      - Use about half the weight you use with two legs.
+      - Keep your lower back on the seat.
+    common_mistake: Locking the knee straight at the top.
+
+  - slug: side-lunge
+    name: Side lunge
+    category: legs
+    movement_slot: single_leg
+    exercise_type: compound
+    primary_muscle: quads
+    secondary_muscles: [adductors, glutes]
+    targets: [adductors, quads_vastus, glute_max]
+    difficulty: 2
+    effectiveness: 3
+    not_suitable_for: [knees]
+    steps:
+      - Stand with your feet together.
+      - Take a big step out to the side.
+      - Bend that knee and sit your hips back, keeping the other leg straight.
+      - Push off the bent leg to come back to the start.
+    cues:
+      - Keep both feet pointing forward.
+      - Keep your chest up.
+    common_mistake: Letting the bent knee cave inwards.
+
+  # --- Hinge -------------------------------------------------------------------------
+
+  - slug: wall-hip-hinge-drill
+    name: Wall hip hinge drill
+    category: legs
+    movement_slot: hinge
+    exercise_type: compound
+    primary_muscle: hamstrings
+    secondary_muscles: [glutes]
+    targets: [hamstrings_hip, glute_max]
+    also_needs: Wall
+    difficulty: 1
+    effectiveness: 2
+    steps:
+      - Stand with your back to a wall, about a foot away from it.
+      - Keep your knees soft and push your hips back until they touch the wall.
+      - Squeeze your bottom to stand back up tall.
+    cues:
+      - Your back stays flat like a table.
+      - Move from the hips, not by bending your back.
+    common_mistake: Bending your knees into a squat instead of pushing your hips back.
+    harder: bodyweight-good-morning
+
+  - slug: bodyweight-good-morning
+    name: Bodyweight good morning
+    category: legs
+    movement_slot: hinge
+    exercise_type: compound
+    primary_muscle: hamstrings
+    secondary_muscles: [glutes, back]
+    targets: [hamstrings_hip, glute_max]
+    difficulty: 1
+    effectiveness: 2
+    steps:
+      - Stand with your feet hip-width apart and your hands behind your head.
+      - Keep your knees slightly bent and push your hips back.
+      - Lean your chest forward until you feel a stretch in the back of your legs.
+      - Squeeze your bottom to stand back up.
+    cues:
+      - Keep your back flat the whole time.
+      - Go only as low as your back stays flat.
+    common_mistake: Rounding your back to reach lower.
+    harder: single-leg-romanian-deadlift
+
+  - slug: single-leg-romanian-deadlift
+    name: Single-leg Romanian deadlift
+    category: legs
+    movement_slot: hinge
+    exercise_type: compound
+    primary_muscle: hamstrings
+    secondary_muscles: [glutes]
+    targets: [hamstrings_hip, glute_max]
+    difficulty: 3
+    effectiveness: 3
+    steps:
+      - Stand on one leg with a slight bend in the knee.
+      - Lean your chest forward while your other leg lifts straight behind you.
+      - Go down until your body is nearly level with the floor or you feel a strong stretch.
+      - Squeeze your bottom to come back up.
+    cues:
+      - Keep your hips level; don't let them twist open.
+      - Hold a wall lightly if balance is hard.
+    common_mistake: Rounding your back to reach the floor.
+
+  - slug: band-pull-through
+    name: Band pull-through
+    category: legs
+    movement_slot: hinge
+    exercise_type: compound
+    primary_muscle: glutes
+    secondary_muscles: [hamstrings]
+    targets: [glute_max]
+    equipment: [resistance_bands]
+    also_needs: Low anchor
+    difficulty: 2
+    effectiveness: 3
+    steps:
+      - Tie the band low behind you and stand facing away, holding the band between your legs.
+      - Walk forward until the band is tight.
+      - Push your hips back and let your hands go between your legs.
+      - Squeeze your bottom to drive your hips forward and stand tall.
+    cues:
+      - Arms stay straight; your hips do the work.
+      - Stand fully tall at the top.
+    common_mistake: Squatting down instead of pushing the hips back.
+
+  - slug: band-romanian-deadlift
+    name: Band Romanian deadlift
+    category: legs
+    movement_slot: hinge
+    exercise_type: compound
+    primary_muscle: hamstrings
+    secondary_muscles: [glutes, back]
+    targets: [hamstrings_hip, glute_max]
+    equipment: [resistance_bands]
+    difficulty: 2
+    effectiveness: 3
+    steps:
+      - Stand on the middle of the band and hold the ends in front of your thighs.
+      - Keep your knees slightly bent and push your hips back.
+      - Lower your hands down your legs until you feel a stretch in the back of your legs.
+      - Squeeze your bottom to stand back up.
+    cues:
+      - Keep your back flat.
+      - Hands stay close to your legs.
+    common_mistake: Bending your knees so much it turns into a squat.
+
+  - slug: band-good-morning
+    name: Band good morning
+    category: legs
+    movement_slot: hinge
+    exercise_type: compound
+    primary_muscle: hamstrings
+    secondary_muscles: [glutes, back]
+    targets: [hamstrings_hip, glute_max]
+    equipment: [resistance_bands]
+    difficulty: 2
+    effectiveness: 3
+    not_suitable_for: [back]
+    steps:
+      - Stand on the band and loop the other end behind your neck, resting on your upper back.
+      - Keep your knees slightly bent and push your hips back.
+      - Lean forward until you feel a stretch in the back of your legs.
+      - Squeeze your bottom to stand back up.
+    cues:
+      - Keep your back flat.
+      - Use a light band; this is about control.
+    common_mistake: Rounding your upper back as you lean forward.
+
+  - slug: dumbbell-romanian-deadlift
+    name: Dumbbell Romanian deadlift
+    category: legs
+    movement_slot: hinge
+    exercise_type: compound
+    primary_muscle: hamstrings
+    secondary_muscles: [glutes, back]
+    targets: [hamstrings_hip, glute_max]
+    equipment: [dumbbells]
+    difficulty: 2
+    effectiveness: 5
+    steps:
+      - Stand holding a dumbbell in each hand in front of your thighs.
+      - Keep your knees slightly bent and push your hips back.
+      - Slide the dumbbells down your legs until you feel a strong stretch in the back of your legs.
+      - Squeeze your bottom to stand back up.
+    cues:
+      - Keep your back flat and the dumbbells close to your legs.
+      - Your hips move back, not down.
+    common_mistake: Rounding your back to reach the dumbbells lower.
+    harder: single-leg-dumbbell-romanian-deadlift
+
+  - slug: single-leg-dumbbell-romanian-deadlift
+    name: Single-leg dumbbell Romanian deadlift
+    category: legs
+    movement_slot: hinge
+    exercise_type: compound
+    primary_muscle: hamstrings
+    secondary_muscles: [glutes]
+    targets: [hamstrings_hip, glute_max]
+    equipment: [dumbbells]
+    difficulty: 4
+    effectiveness: 4
+    steps:
+      - Hold a dumbbell in the hand opposite your standing leg.
+      - Lean your chest forward while your other leg lifts straight behind you.
+      - Lower the dumbbell towards the floor until you feel a strong stretch.
+      - Squeeze your bottom to come back up.
+    cues:
+      - Keep your hips level.
+      - Move slowly; balance is part of the exercise.
+    common_mistake: Twisting your hips open as the back leg lifts.
+
+  - slug: back-extension
+    name: Back extension
+    category: legs
+    movement_slot: hinge
+    exercise_type: compound
+    primary_muscle: back
+    secondary_muscles: [glutes, hamstrings]
+    targets: [spinal_erectors, glute_max, hamstrings_hip]
+    equipment: [gym]
+    also_needs: Back extension bench
+    difficulty: 1
+    effectiveness: 3
+    steps:
+      - Set the pad just below your hip bones and hook your feet under the foot pads.
+      - Cross your arms on your chest.
+      - Lower your upper body forward slowly.
+      - Squeeze your bottom and lower back to lift until your body is in a straight line.
+    cues:
+      - Stop at a straight line; don't arch backwards.
+      - Move slowly in both directions.
+    common_mistake: Swinging up fast and over-arching at the top.
+
+  - slug: cable-pull-through
+    name: Cable pull-through
+    category: legs
+    movement_slot: hinge
+    exercise_type: compound
+    primary_muscle: glutes
+    secondary_muscles: [hamstrings]
+    targets: [glute_max]
+    equipment: [gym]
+    also_needs: Cable
+    difficulty: 2
+    effectiveness: 3
+    steps:
+      - Attach a rope to the low cable and stand facing away, holding the rope between your legs.
+      - Walk forward until there is tension.
+      - Push your hips back and let the rope go between your legs.
+      - Squeeze your bottom to drive your hips forward and stand tall.
+    cues:
+      - Arms stay straight.
+      - Your hips do all the work.
+    common_mistake: Pulling with your arms instead of driving with your hips.
+
+  - slug: barbell-romanian-deadlift
+    name: Barbell Romanian deadlift
+    category: legs
+    movement_slot: hinge
+    exercise_type: compound
+    primary_muscle: hamstrings
+    secondary_muscles: [glutes, back]
+    targets: [hamstrings_hip, glute_max]
+    equipment: [gym]
+    also_needs: Barbell
+    difficulty: 3
+    effectiveness: 5
+    not_suitable_for: [back]
+    steps:
+      - Hold the bar in front of your thighs, hands just outside your legs.
+      - Keep your knees slightly bent and push your hips back.
+      - Slide the bar down your legs until you feel a strong stretch in the back of your legs.
+      - Squeeze your bottom to stand back up.
+    cues:
+      - The bar stays touching or almost touching your legs.
+      - Back flat, shoulders pulled back.
+    common_mistake: Letting the bar drift away from your legs, which pulls on your lower back.
+    harder: trap-bar-deadlift
+
+  - slug: trap-bar-deadlift
+    name: Trap-bar deadlift
+    category: legs
+    movement_slot: hinge
+    exercise_type: compound
+    primary_muscle: glutes
+    secondary_muscles: [hamstrings, quads, back, traps]
+    targets: [glute_max, hamstrings_hip, spinal_erectors, upper_traps]
+    equipment: [gym]
+    also_needs: Trap bar
+    difficulty: 3
+    effectiveness: 5
+    not_suitable_for: [back]
+    steps:
+      - Step inside the trap bar with your feet hip-width apart.
+      - Bend your hips and knees and grip the handles.
+      - Brace your stomach, push the floor away and stand up tall.
+      - Lower the bar back down with control.
+    cues:
+      - Chest up, back flat before you lift.
+      - Push through your whole foot.
+    common_mistake: Jerking the bar off the floor instead of pushing smoothly.
+    harder: barbell-deadlift
+
+  - slug: barbell-deadlift
+    name: Barbell deadlift
+    category: legs
+    movement_slot: hinge
+    exercise_type: compound
+    primary_muscle: glutes
+    secondary_muscles: [hamstrings, back, traps]
+    targets: [glute_max, hamstrings_hip, spinal_erectors, upper_traps]
+    equipment: [gym]
+    also_needs: Barbell
+    difficulty: 5
+    effectiveness: 5
+    not_suitable_for: [back]
+    steps:
+      - Stand with the bar over the middle of your feet, feet hip-width apart.
+      - Bend down and grip the bar just outside your legs.
+      - Brace your stomach, pull your chest up and push the floor away to stand tall.
+      - Lower the bar back down the same way, keeping it close to your legs.
+    cues:
+      - Back flat from start to finish.
+      - The bar stays touching your legs.
+    common_mistake: Rounding your lower back to lift the bar.
+
+  # --- Bridge ------------------------------------------------------------------------
+
+  - slug: glute-bridge
+    name: Glute bridge
+    category: legs
+    movement_slot: bridge
+    exercise_type: compound
+    primary_muscle: glutes
+    secondary_muscles: [hamstrings]
+    targets: [glute_max]
+    difficulty: 1
+    effectiveness: 3
+    steps:
+      - Lie on your back with your knees bent and feet flat on the floor.
+      - Squeeze your bottom and lift your hips until your body is in a straight line from knees to shoulders.
+      - Hold for a second at the top.
+      - Lower your hips slowly back down.
+    cues:
+      - Push through your heels.
+      - Squeeze your bottom, not your lower back.
+    common_mistake: Arching your lower back at the top instead of squeezing your bottom.
+    harder: single-leg-glute-bridge
+
+  - slug: single-leg-glute-bridge
+    name: Single-leg glute bridge
+    category: legs
+    movement_slot: bridge
+    exercise_type: compound
+    primary_muscle: glutes
+    secondary_muscles: [hamstrings]
+    targets: [glute_max]
+    difficulty: 2
+    effectiveness: 3
+    steps:
+      - Lie on your back with one knee bent and that foot flat on the floor.
+      - Lift the other leg straight up or hold the knee to your chest.
+      - Push through the heel on the floor to lift your hips.
+      - Lower your hips slowly back down.
+    cues:
+      - Keep your hips level; don't let one side drop.
+      - Squeeze your bottom at the top.
+    common_mistake: Twisting your hips to one side as you lift.
+    harder: hip-thrust
+
+  - slug: hip-thrust
+    name: Hip thrust
+    category: legs
+    movement_slot: bridge
+    exercise_type: compound
+    primary_muscle: glutes
+    secondary_muscles: [hamstrings]
+    targets: [glute_max]
+    also_needs: Sofa or bench
+    difficulty: 2
+    effectiveness: 4
+    steps:
+      - Sit on the floor with your upper back against the edge of a sofa or bench.
+      - Bend your knees and put your feet flat on the floor.
+      - Push through your heels and lift your hips until your body is flat like a table.
+      - Lower your hips slowly back down.
+    cues:
+      - Tuck your chin and look forward, not at the ceiling.
+      - Shins are straight up and down at the top.
+    common_mistake: Over-arching your lower back at the top.
+    harder: single-leg-hip-thrust
+
+  - slug: single-leg-hip-thrust
+    name: Single-leg hip thrust
+    category: legs
+    movement_slot: bridge
+    exercise_type: compound
+    primary_muscle: glutes
+    secondary_muscles: [hamstrings]
+    targets: [glute_max]
+    also_needs: Sofa or bench
+    difficulty: 3
+    effectiveness: 4
+    steps:
+      - Rest your upper back on the edge of a sofa or bench.
+      - Put one foot flat on the floor and lift the other.
+      - Push through the heel on the floor to lift your hips.
+      - Lower your hips slowly back down.
+    cues:
+      - Keep your hips level.
+      - Squeeze your bottom at the top.
+    common_mistake: Letting the sofa or bench slide away. Make sure it's stable first.
+
+  - slug: banded-glute-bridge
+    name: Banded glute bridge
+    category: legs
+    movement_slot: bridge
+    exercise_type: compound
+    primary_muscle: glutes
+    secondary_muscles: [hamstrings]
+    targets: [glute_max]
+    equipment: [resistance_bands]
+    difficulty: 1
+    effectiveness: 3
+    steps:
+      - Lie on your back, knees bent, and hold a band across your hips with the ends pinned to the floor.
+      - Push through your heels to lift your hips against the band.
+      - Squeeze your bottom at the top.
+      - Lower your hips slowly back down.
+    cues:
+      - Keep the band tight against your hips.
+      - Push through your heels.
+    common_mistake: Arching your lower back instead of squeezing your bottom.
+
+  - slug: banded-side-walk
+    name: Banded side walk
+    category: legs
+    movement_slot: bridge
+    exercise_type: isolation
+    primary_muscle: glutes
+    targets: [glute_med]
+    equipment: [resistance_bands]
+    also_needs: Loop band
+    difficulty: 1
+    effectiveness: 3
+    steps:
+      - Put a loop band around your legs just above your knees or around your ankles.
+      - Bend your knees a little and push your hips back slightly.
+      - Take small steps sideways, keeping tension on the band.
+      - Walk the same number of steps back the other way.
+    cues:
+      - Toes point forward.
+      - Don't let your feet come together.
+    common_mistake: Standing up straight and swinging the legs instead of staying low.
+
+  - slug: band-kickback
+    name: Band kickback
+    category: legs
+    movement_slot: bridge
+    exercise_type: isolation
+    primary_muscle: glutes
+    targets: [glute_max]
+    equipment: [resistance_bands]
+    difficulty: 1
+    effectiveness: 2
+    steps:
+      - Loop the band around one ankle and hold the other end under your hands on all fours, or tie it low.
+      - Keep your knee bent and push your foot back and up towards the ceiling.
+      - Squeeze your bottom at the top.
+      - Lower your leg slowly back down.
+    cues:
+      - Keep your back flat.
+      - Move only the leg.
+    common_mistake: Arching your lower back to lift the leg higher.
+
+  - slug: dumbbell-hip-thrust
+    name: Dumbbell hip thrust
+    category: legs
+    movement_slot: bridge
+    exercise_type: compound
+    primary_muscle: glutes
+    secondary_muscles: [hamstrings]
+    targets: [glute_max]
+    equipment: [dumbbells]
+    also_needs: Sofa or bench
+    difficulty: 2
+    effectiveness: 4
+    steps:
+      - Rest your upper back on the edge of a sofa or bench and place a dumbbell on your hips.
+      - Hold the dumbbell in place with both hands.
+      - Push through your heels and lift your hips until your body is flat like a table.
+      - Lower your hips slowly back down.
+    cues:
+      - Tuck your chin and look forward.
+      - Pause at the top.
+    common_mistake: Letting the dumbbell roll; keep both hands on it.
+
+  - slug: barbell-hip-thrust
+    name: Barbell hip thrust
+    category: legs
+    movement_slot: bridge
+    exercise_type: compound
+    primary_muscle: glutes
+    secondary_muscles: [hamstrings]
+    targets: [glute_max]
+    equipment: [gym]
+    also_needs: Barbell, bench
+    difficulty: 3
+    effectiveness: 5
+    steps:
+      - Sit with your upper back against a bench and roll a padded bar over your hips.
+      - Bend your knees and put your feet flat on the floor.
+      - Push through your heels and lift your hips until your body is flat like a table.
+      - Lower your hips slowly back down.
+    cues:
+      - Use a bar pad or folded towel over your hips.
+      - Chin tucked, eyes forward.
+    common_mistake: Pushing through your toes instead of your heels.
+
+  - slug: cable-kickback
+    name: Cable kickback
+    category: legs
+    movement_slot: bridge
+    exercise_type: isolation
+    primary_muscle: glutes
+    targets: [glute_max]
+    equipment: [gym]
+    also_needs: Cable
+    difficulty: 2
+    effectiveness: 3
+    steps:
+      - Attach an ankle strap to the low cable and strap it around one ankle.
+      - Face the machine and hold it for support.
+      - Push your leg straight back behind you.
+      - Return slowly to the start.
+    cues:
+      - Keep your upper body still.
+      - Squeeze your bottom at the back.
+    common_mistake: Arching your back to swing the leg further.
+
+  - slug: hip-abduction-machine
+    name: Hip abduction machine
+    category: legs
+    movement_slot: bridge
+    exercise_type: isolation
+    primary_muscle: glutes
+    targets: [glute_med]
+    equipment: [gym]
+    also_needs: Machine
+    difficulty: 1
+    effectiveness: 3
+    steps:
+      - Sit in the machine with the pads against the outside of your knees.
+      - Push your knees out against the pads as far as you comfortably can.
+      - Return slowly to the start.
+    cues:
+      - Sit tall against the back rest.
+      - Pause for a second at the widest point.
+    common_mistake: Letting the weights slam back together.
+
+  # --- Leg curl ----------------------------------------------------------------------
+
+  - slug: towel-sliding-leg-curl
+    name: Towel sliding leg curl
+    category: legs
+    movement_slot: leg_curl
+    exercise_type: isolation
+    primary_muscle: hamstrings
+    secondary_muscles: [glutes]
+    targets: [hamstrings_knee]
+    also_needs: Towel, smooth floor
+    home_only: true
+    difficulty: 2
+    effectiveness: 3
+    steps:
+      - Lie on your back on a smooth floor with your heels on a towel.
+      - Lift your hips into a bridge.
+      - Slide your heels in towards your bottom, then slide them back out.
+      - Keep your hips up the whole time.
+    cues:
+      - Squeeze your bottom to keep your hips high.
+      - Slide out slowly; that part is the hardest.
+    common_mistake: Letting your hips drop to the floor between reps.
+    harder: single-leg-sliding-leg-curl
+
+  - slug: single-leg-sliding-leg-curl
+    name: Single-leg sliding leg curl
+    category: legs
+    movement_slot: leg_curl
+    exercise_type: isolation
+    primary_muscle: hamstrings
+    secondary_muscles: [glutes]
+    targets: [hamstrings_knee]
+    also_needs: Towel, smooth floor
+    home_only: true
+    difficulty: 4
+    effectiveness: 4
+    steps:
+      - Lie on your back on a smooth floor with one heel on a towel and the other leg lifted.
+      - Lift your hips into a bridge.
+      - Slide the heel in towards your bottom, then slide it back out.
+      - Keep your hips up and level.
+    cues:
+      - Go slowly on the way out.
+      - Keep your hips level.
+    common_mistake: Letting your hips drop and twist.
+    harder: assisted-nordic-curl
+
+  - slug: assisted-nordic-curl
+    name: Assisted Nordic curl
+    category: legs
+    movement_slot: leg_curl
+    exercise_type: isolation
+    primary_muscle: hamstrings
+    targets: [hamstrings_knee]
+    also_needs: Feet anchored
+    difficulty: 5
+    effectiveness: 5
+    steps:
+      - Kneel on a soft mat and anchor your heels under a sofa or have someone hold them.
+      - Keep your body straight from knees to head.
+      - Lean forward as slowly as you can, using the backs of your legs to resist.
+      - Catch yourself with your hands and push back up to the start.
+    cues:
+      - Keep your hips straight; don't bend at the waist.
+      - Fight the fall for as long as you can.
+    common_mistake: Bending at the hips to make it easier.
+
+  - slug: lying-band-leg-curl
+    name: Lying band leg curl
+    category: legs
+    movement_slot: leg_curl
+    exercise_type: isolation
+    primary_muscle: hamstrings
+    targets: [hamstrings_knee]
+    equipment: [resistance_bands]
+    also_needs: Low anchor
+    difficulty: 2
+    effectiveness: 3
+    steps:
+      - Tie the band low and lie face down with the band around your ankles.
+      - Bend your knees to pull your heels towards your bottom.
+      - Squeeze at the top.
+      - Lower your legs slowly back down.
+    cues:
+      - Keep your hips pressed into the floor.
+      - Move slowly in both directions.
+    common_mistake: Lifting your hips off the floor to pull harder.
+
+  - slug: leg-curl-machine
+    name: Leg curl machine
+    category: legs
+    movement_slot: leg_curl
+    exercise_type: isolation
+    primary_muscle: hamstrings
+    targets: [hamstrings_knee]
+    equipment: [gym]
+    also_needs: Machine
+    difficulty: 1
+    effectiveness: 5
+    steps:
+      - Set the pad so it rests just above your heels.
+      - Sit or lie in the machine and hold the handles.
+      - Bend your knees to pull the pad towards your bottom.
+      - Return slowly to the start.
+    cues:
+      - Keep your hips down on the seat or bench.
+      - Lower slowly; don't let the weight drop.
+    common_mistake: Lifting your hips to swing the weight.
+
+  # --- Leg extension -----------------------------------------------------------------
+
+  - slug: wall-sit
+    name: Wall sit
+    category: legs
+    movement_slot: leg_extension
+    exercise_type: isolation
+    primary_muscle: quads
+    secondary_muscles: [glutes]
+    targets: [quads_vastus]
+    also_needs: Wall
+    difficulty: 1
+    effectiveness: 2
+    is_timed: true
+    steps:
+      - Stand with your back flat against a wall.
+      - Slide down until your knees are bent at about a right angle.
+      - Hold this position for the set time.
+    cues:
+      - Keep your knees above your ankles.
+      - Breathe normally; don't hold your breath.
+    common_mistake: Going lower than is comfortable for your knees.
+    harder: assisted-sissy-squat
+
+  - slug: assisted-sissy-squat
+    name: Assisted sissy squat
+    category: legs
+    movement_slot: leg_extension
+    exercise_type: isolation
+    primary_muscle: quads
+    targets: [rectus_femoris]
+    also_needs: Support to hold
+    difficulty: 4
+    effectiveness: 3
+    not_suitable_for: [knees]
+    steps:
+      - Hold onto a door frame or post with one hand.
+      - Rise onto your toes and lean your body back as you bend your knees forward.
+      - Lower as far as you can control, keeping a straight line from knees to head.
+      - Push back up to the start.
+    cues:
+      - Use the support as much as you need.
+      - Move slowly.
+    common_mistake: Bending at the hips so it turns into a normal squat.
+
+  - slug: band-leg-extension
+    name: Band leg extension
+    category: legs
+    movement_slot: leg_extension
+    exercise_type: isolation
+    primary_muscle: quads
+    targets: [rectus_femoris, quads_vastus]
+    equipment: [resistance_bands]
+    also_needs: Anchor, chair
+    difficulty: 1
+    effectiveness: 2
+    not_suitable_for: [knees]
+    steps:
+      - Sit on a chair and tie the band behind the chair leg, looped around one ankle.
+      - Straighten your knee to lift your foot forward against the band.
+      - Squeeze at the top.
+      - Lower your foot slowly back down.
+    cues:
+      - Sit tall.
+      - Use a light band and high reps.
+    common_mistake: Kicking the leg up fast instead of lifting it with control.
+
+  - slug: leg-extension-machine
+    name: Leg extension machine
+    category: legs
+    movement_slot: leg_extension
+    exercise_type: isolation
+    primary_muscle: quads
+    targets: [rectus_femoris, quads_vastus]
+    equipment: [gym]
+    also_needs: Machine
+    difficulty: 1
+    effectiveness: 4
+    not_suitable_for: [knees]
+    steps:
+      - Sit in the machine with the pad on the front of your ankles.
+      - Hold the handles.
+      - Straighten your knees to lift the pad.
+      - Lower it slowly back down.
+    cues:
+      - Pause for a second at the top.
+      - Keep your back against the seat.
+    common_mistake: Kicking the weight up and letting it drop.
+
+  # --- Calves ------------------------------------------------------------------------
+
+  - slug: calf-raise
+    name: Calf raise
+    category: legs
+    movement_slot: calves
+    exercise_type: isolation
+    primary_muscle: calves
+    targets: [gastrocnemius]
+    difficulty: 1
+    effectiveness: 3
+    steps:
+      - Stand tall with your feet hip-width apart, holding a wall for balance.
+      - Rise up onto your toes as high as you can.
+      - Pause at the top.
+      - Lower your heels slowly back down.
+    cues:
+      - Pause at the top and at the bottom.
+      - Keep your knees straight.
+    common_mistake: Bouncing quickly instead of moving slowly.
+    harder: single-leg-calf-raise
+
+  - slug: single-leg-calf-raise
+    name: Single-leg calf raise
+    category: legs
+    movement_slot: calves
+    exercise_type: isolation
+    primary_muscle: calves
+    targets: [gastrocnemius]
+    also_needs: Step
+    difficulty: 2
+    effectiveness: 4
+    steps:
+      - Stand on one foot on the edge of a step, holding a wall for balance.
+      - Let your heel drop below the step.
+      - Rise up onto your toes as high as you can.
+      - Lower your heel slowly back below the step.
+    cues:
+      - Use the full range, from deep stretch to high on your toes.
+      - Hold on just for balance.
+    common_mistake: Rushing the reps so the calf never stretches.
+
+  - slug: dumbbell-calf-raise
+    name: Dumbbell calf raise
+    category: legs
+    movement_slot: calves
+    exercise_type: isolation
+    primary_muscle: calves
+    targets: [gastrocnemius]
+    equipment: [dumbbells]
+    also_needs: Step
+    difficulty: 2
+    effectiveness: 4
+    steps:
+      - Hold a dumbbell in one hand and stand on the edge of a step.
+      - Hold a wall with your free hand.
+      - Let your heels drop, then rise onto your toes as high as you can.
+      - Lower slowly back down.
+    cues:
+      - Pause at the top.
+      - Do one leg at a time if the dumbbell is light.
+    common_mistake: Bending your knees to bounce the weight up.
+
+  - slug: standing-calf-raise-machine
+    name: Standing calf raise machine
+    category: legs
+    movement_slot: calves
+    exercise_type: isolation
+    primary_muscle: calves
+    targets: [gastrocnemius]
+    equipment: [gym]
+    also_needs: Machine
+    difficulty: 1
+    effectiveness: 5
+    steps:
+      - Stand in the machine with the pads on your shoulders and the balls of your feet on the edge.
+      - Let your heels drop below the edge.
+      - Rise up onto your toes as high as you can.
+      - Lower slowly back down.
+    cues:
+      - Keep your knees straight but not locked.
+      - Pause at the top and the bottom.
+    common_mistake: Bouncing at the bottom.
+
+  - slug: leg-press-calf-raise
+    name: Leg press calf raise
+    category: legs
+    movement_slot: calves
+    exercise_type: isolation
+    primary_muscle: calves
+    targets: [gastrocnemius]
+    equipment: [gym]
+    also_needs: Machine
+    difficulty: 1
+    effectiveness: 4
+    steps:
+      - Sit in the leg press with only the balls of your feet on the bottom edge of the plate.
+      - Keep your legs straight with a soft knee.
+      - Push the plate away by pointing your toes.
+      - Let your heels come back slowly.
+    cues:
+      - Keep the safety handles locked unless you're sure of the weight.
+      - Pause at the top.
+    common_mistake: Bending your knees and turning it into a leg press.
+
+  - slug: bent-knee-calf-raise
+    name: Bent-knee calf raise
+    category: legs
+    movement_slot: calves
+    exercise_type: isolation
+    primary_muscle: calves
+    targets: [soleus]
+    difficulty: 2
+    effectiveness: 2
+    steps:
+      - Stand with your feet hip-width apart, holding a wall for balance.
+      - Bend your knees a little into a quarter squat and hold that.
+      - Rise up onto your toes, then lower slowly.
+    cues:
+      - Keep the knee bend the same the whole time.
+      - Pause at the top.
+    common_mistake: Straightening your knees as you rise.
+
+  - slug: seated-dumbbell-calf-raise
+    name: Seated dumbbell calf raise
+    category: legs
+    movement_slot: calves
+    exercise_type: isolation
+    primary_muscle: calves
+    targets: [soleus]
+    equipment: [dumbbells]
+    also_needs: Chair
+    difficulty: 1
+    effectiveness: 3
+    steps:
+      - Sit on a chair with your feet flat and a dumbbell resting on each knee.
+      - Rise up onto your toes as high as you can.
+      - Pause, then lower your heels slowly.
+    cues:
+      - Put a book under your toes for a bigger range.
+      - Hold the dumbbells still on your knees.
+    common_mistake: Rushing the reps.
+
+  - slug: seated-calf-raise-machine
+    name: Seated calf raise machine
+    category: legs
+    movement_slot: calves
+    exercise_type: isolation
+    primary_muscle: calves
+    targets: [soleus]
+    equipment: [gym]
+    also_needs: Machine
+    difficulty: 1
+    effectiveness: 5
+    steps:
+      - Sit in the machine with the pads on your thighs and the balls of your feet on the edge.
+      - Release the safety lever.
+      - Let your heels drop, then rise onto your toes as high as you can.
+      - Lower slowly back down.
+    cues:
+      - Pause at the top and the bottom.
+      - Keep the movement slow.
+    common_mistake: Bouncing at the bottom.
+
+  # --- Adductors ---------------------------------------------------------------------
+
+  - slug: copenhagen-side-plank
+    name: Copenhagen side plank
+    category: legs
+    movement_slot: adductors
+    exercise_type: isolation
+    primary_muscle: adductors
+    secondary_muscles: [core]
+    targets: [adductors]
+    also_needs: Chair or sofa
+    difficulty: 3
+    effectiveness: 4
+    is_timed: true
+    steps:
+      - Lie on your side and put your top knee on a chair or sofa.
+      - Lean on your bottom elbow.
+      - Lift your hips until your body is in a straight line.
+      - Hold for the set time, then switch sides.
+    cues:
+      - Start with short holds.
+      - Keep your hips stacked.
+    common_mistake: Letting your hips sag towards the floor.
+
+  - slug: hip-adduction-machine
+    name: Hip adduction machine
+    category: legs
+    movement_slot: adductors
+    exercise_type: isolation
+    primary_muscle: adductors
+    targets: [adductors]
+    equipment: [gym]
+    also_needs: Machine
+    difficulty: 1
+    effectiveness: 4
+    steps:
+      - Sit in the machine with the pads against the inside of your knees.
+      - Squeeze your knees together.
+      - Let them open back out slowly.
+    cues:
+      - Sit tall.
+      - Go slowly on the way out.
+    common_mistake: Letting the weights slam back.
+
+  # ===================================================================================
+  # CORE
+  # ===================================================================================
+
+  # --- Brace -------------------------------------------------------------------------
+
+  - slug: dead-bug
+    name: Dead bug
+    category: core
+    movement_slot: brace
+    exercise_type: isolation
+    primary_muscle: core
+    secondary_muscles: [glutes]
+    targets: [upper_abs, lower_abs, deep_core]
+    difficulty: 1
+    effectiveness: 4
+    steps:
+      - Lie on your back with your arms pointing at the ceiling and your knees bent above your hips.
+      - Press your lower back gently into the floor.
+      - Slowly lower one arm behind your head and the opposite leg towards the floor.
+      - Bring them back and repeat on the other side.
+    cues:
+      - Your lower back stays touching the floor.
+      - Breathe out as you lower.
+    common_mistake: Letting your lower back arch off the floor.
+    harder: knee-plank
+
+  - slug: knee-plank
+    name: Knee plank
+    category: core
+    movement_slot: brace
+    exercise_type: isolation
+    primary_muscle: core
+    targets: [upper_abs, lower_abs, deep_core]
+    difficulty: 1
+    effectiveness: 2
+    is_timed: true
+    steps:
+      - Lie face down and rest on your forearms, elbows under your shoulders.
+      - Lift your hips so your body is straight from knees to head.
+      - Hold for the set time.
+    cues:
+      - Squeeze your stomach and bottom.
+      - Breathe normally.
+    common_mistake: Pushing your hips up into the air.
+    harder: plank
+
+  - slug: plank
+    name: Plank
+    category: core
+    movement_slot: brace
+    exercise_type: isolation
+    primary_muscle: core
+    secondary_muscles: [shoulders, glutes]
+    targets: [upper_abs, lower_abs, deep_core]
+    difficulty: 2
+    effectiveness: 3
+    is_timed: true
+    steps:
+      - Rest on your forearms with your elbows under your shoulders.
+      - Step your feet back so your body is straight from heels to head.
+      - Hold for the set time.
+    cues:
+      - Squeeze your stomach and bottom.
+      - Look at the floor just in front of your hands.
+    common_mistake: Letting your hips sag towards the floor.
+    harder: plank-shoulder-taps
+
+  - slug: plank-shoulder-taps
+    name: Plank shoulder taps
+    category: core
+    movement_slot: brace
+    exercise_type: isolation
+    primary_muscle: core
+    secondary_muscles: [shoulders]
+    targets: [upper_abs, lower_abs, deep_core]
+    difficulty: 3
+    effectiveness: 4
+    steps:
+      - Start in a push-up position with your feet a little wider than your hips.
+      - Lift one hand and tap the opposite shoulder.
+      - Put it back down and tap with the other hand.
+    cues:
+      - Keep your hips still; don't rock side to side.
+      - Go slowly.
+    common_mistake: Swaying your hips with every tap.
+    harder: long-lever-plank
+
+  - slug: long-lever-plank
+    name: Long-lever plank
+    category: core
+    movement_slot: brace
+    exercise_type: isolation
+    primary_muscle: core
+    secondary_muscles: [shoulders]
+    targets: [upper_abs, lower_abs, deep_core]
+    difficulty: 4
+    effectiveness: 4
+    is_timed: true
+    steps:
+      - Get into a forearm plank.
+      - Walk your elbows forward a few centimetres in front of your shoulders.
+      - Hold for the set time.
+    cues:
+      - The further forward your elbows, the harder it gets.
+      - Squeeze your stomach and bottom hard.
+    common_mistake: Letting your lower back sag.
+
+  - slug: ab-wheel-rollout
+    name: Ab wheel rollout
+    category: core
+    movement_slot: brace
+    exercise_type: isolation
+    primary_muscle: core
+    secondary_muscles: [shoulders, back]
+    targets: [upper_abs, lower_abs, deep_core]
+    equipment: [gym]
+    also_needs: Ab wheel
+    difficulty: 5
+    effectiveness: 5
+    not_suitable_for: [back]
+    steps:
+      - Kneel on a soft mat and hold the ab wheel under your shoulders.
+      - Roll the wheel forward slowly, letting your hips follow.
+      - Go only as far as you can keep your back flat.
+      - Pull the wheel back to your knees using your stomach.
+    cues:
+      - Squeeze your stomach and bottom the whole time.
+      - Start with short rollouts.
+    common_mistake: Letting your lower back sag as you roll out.
+
+  # --- Curl --------------------------------------------------------------------------
+
+  - slug: crunch
+    name: Crunch
+    category: core
+    movement_slot: ab_curl
+    exercise_type: isolation
+    primary_muscle: core
+    targets: [upper_abs]
+    difficulty: 1
+    effectiveness: 3
+    steps:
+      - Lie on your back with your knees bent and your hands lightly beside your head.
+      - Curl your shoulders off the floor, bringing your ribs towards your hips.
+      - Lower back down slowly.
+    cues:
+      - It's a small movement.
+      - Don't pull on your neck.
+    common_mistake: Yanking your head forward with your hands.
+    harder: reverse-crunch
+
+  - slug: reverse-crunch
+    name: Reverse crunch
+    category: core
+    movement_slot: ab_curl
+    exercise_type: isolation
+    primary_muscle: core
+    targets: [lower_abs]
+    difficulty: 2
+    effectiveness: 4
+    steps:
+      - Lie on your back with your knees bent above your hips and your arms by your sides.
+      - Curl your hips off the floor, bringing your knees towards your chest.
+      - Lower your hips back down slowly.
+    cues:
+      - Lift with your stomach, not by swinging your legs.
+      - Go slowly on the way down.
+    common_mistake: Swinging your legs to throw your hips up.
+    harder: bicycle-crunch
+
+  - slug: bicycle-crunch
+    name: Bicycle crunch
+    category: core
+    movement_slot: ab_curl
+    exercise_type: isolation
+    primary_muscle: core
+    targets: [upper_abs, obliques]
+    difficulty: 2
+    effectiveness: 4
+    steps:
+      - Lie on your back with your hands lightly beside your head and your knees bent above your hips.
+      - Bring one elbow towards the opposite knee while the other leg straightens.
+      - Switch sides in a slow pedalling motion.
+    cues:
+      - Turn your shoulder, not just your elbow.
+      - Slow and controlled beats fast.
+    common_mistake: Going so fast that you just flap your elbows.
+    harder: lying-leg-raise
+
+  - slug: lying-leg-raise
+    name: Lying leg raise
+    category: core
+    movement_slot: ab_curl
+    exercise_type: isolation
+    primary_muscle: core
+    targets: [lower_abs]
+    difficulty: 3
+    effectiveness: 4
+    not_suitable_for: [back]
+    steps:
+      - Lie on your back with your legs straight and your hands under your bottom.
+      - Press your lower back into the floor.
+      - Lift your legs until they point at the ceiling.
+      - Lower them slowly, stopping before your back arches.
+    cues:
+      - Lower back stays on the floor.
+      - Bend your knees to make it easier.
+    common_mistake: Lowering your legs so far that your lower back lifts.
+
+  - slug: hanging-knee-raise
+    name: Hanging knee raise
+    category: core
+    movement_slot: ab_curl
+    exercise_type: isolation
+    primary_muscle: core
+    secondary_muscles: [forearms]
+    targets: [lower_abs]
+    equipment: [pull_up_bar]
+    difficulty: 3
+    effectiveness: 5
+    steps:
+      - Hang from the pull-up bar with straight arms.
+      - Lift your knees up towards your chest.
+      - Lower them slowly.
+    cues:
+      - No swinging; pause at the bottom if needed.
+      - Curl your hips up at the top.
+    common_mistake: Swinging your body to throw the knees up.
+    harder: hanging-leg-raise
+
+  - slug: hanging-leg-raise
+    name: Hanging leg raise
+    category: core
+    movement_slot: ab_curl
+    exercise_type: isolation
+    primary_muscle: core
+    secondary_muscles: [forearms]
+    targets: [lower_abs]
+    equipment: [pull_up_bar]
+    difficulty: 5
+    effectiveness: 5
+    steps:
+      - Hang from the pull-up bar with straight arms.
+      - Keep your legs straight and lift them to hip height or higher.
+      - Lower them slowly.
+    cues:
+      - No swinging.
+      - Curl your hips up at the top.
+    common_mistake: Using momentum instead of your stomach.
+
+  - slug: cable-crunch
+    name: Cable crunch
+    category: core
+    movement_slot: ab_curl
+    exercise_type: isolation
+    primary_muscle: core
+    targets: [upper_abs]
+    equipment: [gym]
+    also_needs: Cable, rope
+    difficulty: 2
+    effectiveness: 5
+    steps:
+      - Attach a rope to the high cable and kneel facing it, holding the rope beside your head.
+      - Curl your chest down towards your knees, rounding your back.
+      - Come back up slowly.
+    cues:
+      - Your hips stay still; your stomach does the curling.
+      - Keep your hands beside your head.
+    common_mistake: Sitting back on your heels to pull with your body weight.
+
+  # --- Side and rotation -------------------------------------------------------------
+
+  - slug: bird-dog
+    name: Bird dog
+    category: core
+    movement_slot: side_and_rotation
+    exercise_type: isolation
+    primary_muscle: back
+    secondary_muscles: [core, glutes]
+    targets: [spinal_erectors, glute_max, deep_core]
+    difficulty: 1
+    effectiveness: 3
+    steps:
+      - Kneel on all fours with your hands under your shoulders and knees under your hips.
+      - Reach one arm forward and the opposite leg back until both are straight.
+      - Hold for a second, then bring them back.
+      - Repeat on the other side.
+    cues:
+      - Keep your back flat; imagine a cup of tea on it.
+      - Move slowly.
+    common_mistake: Lifting the leg too high and arching your back.
+    harder: knee-side-plank
+
+  - slug: knee-side-plank
+    name: Knee side plank
+    category: core
+    movement_slot: side_and_rotation
+    exercise_type: isolation
+    primary_muscle: core
+    targets: [obliques]
+    difficulty: 1
+    effectiveness: 3
+    is_timed: true
+    steps:
+      - Lie on your side with your knees bent and rest on your bottom elbow.
+      - Lift your hips so your body is straight from knees to head.
+      - Hold for the set time, then switch sides.
+    cues:
+      - Elbow under your shoulder.
+      - Push your hips forward a little.
+    common_mistake: Letting your hips sag towards the floor.
+    harder: side-plank
+
+  - slug: side-plank
+    name: Side plank
+    category: core
+    movement_slot: side_and_rotation
+    exercise_type: isolation
+    primary_muscle: core
+    secondary_muscles: [shoulders, glutes]
+    targets: [obliques]
+    difficulty: 2
+    effectiveness: 4
+    is_timed: true
+    steps:
+      - Lie on your side with your legs straight and rest on your bottom elbow.
+      - Lift your hips so your body is straight from head to feet.
+      - Hold for the set time, then switch sides.
+    cues:
+      - Elbow under your shoulder.
+      - Stack your feet or put one in front of the other.
+    common_mistake: Letting your hips drop or push backwards.
+    harder: side-plank-with-reach
+
+  - slug: side-plank-with-reach
+    name: Side plank with reach
+    category: core
+    movement_slot: side_and_rotation
+    exercise_type: isolation
+    primary_muscle: core
+    secondary_muscles: [shoulders]
+    targets: [obliques]
+    difficulty: 3
+    effectiveness: 4
+    steps:
+      - Get into a side plank on your elbow.
+      - Reach your top arm up to the ceiling.
+      - Thread it under your body, turning your chest towards the floor.
+      - Reach back up and repeat.
+    cues:
+      - Keep your hips up the whole time.
+      - Move slowly.
+    common_mistake: Letting your hips drop as you twist.
+
+  - slug: russian-twist
+    name: Russian twist
+    category: core
+    movement_slot: side_and_rotation
+    exercise_type: isolation
+    primary_muscle: core
+    targets: [obliques]
+    difficulty: 2
+    effectiveness: 3
+    not_suitable_for: [back]
+    steps:
+      - Sit with your knees bent, lean back a little and hold your hands together in front of your chest.
+      - Turn your shoulders to one side.
+      - Turn to the other side.
+    cues:
+      - Turn your shoulders, not just your arms.
+      - Keep your chest up.
+    common_mistake: Rounding your back and swinging your arms fast.
+
+  - slug: band-pallof-press
+    name: Band Pallof press
+    category: core
+    movement_slot: side_and_rotation
+    exercise_type: isolation
+    primary_muscle: core
+    targets: [obliques]
+    equipment: [resistance_bands]
+    also_needs: Side anchor
+    difficulty: 2
+    effectiveness: 4
+    steps:
+      - Tie the band at chest height beside you and hold the end with both hands at your chest.
+      - Step away until the band is tight.
+      - Push your hands straight out in front of you and hold for two seconds.
+      - Bring them back to your chest.
+    cues:
+      - Don't let the band turn you.
+      - Stand tall with your stomach tight.
+    common_mistake: Standing too close so there's no tension.
+
+  - slug: cable-woodchop
+    name: Cable woodchop
+    category: core
+    movement_slot: side_and_rotation
+    exercise_type: isolation
+    primary_muscle: core
+    secondary_muscles: [shoulders]
+    targets: [obliques]
+    equipment: [gym]
+    also_needs: Cable
+    difficulty: 2
+    effectiveness: 4
+    steps:
+      - Set the pulley high and hold the handle with both hands, standing side-on.
+      - Pull the handle down and across your body to the opposite hip.
+      - Let it go back up slowly.
+    cues:
+      - Turn through your hips and chest together.
+      - Keep your arms almost straight.
+    common_mistake: Twisting from your lower back alone.
+
+  # --- Lower back --------------------------------------------------------------------
+
+  - slug: superman
+    name: Superman
+    category: core
+    movement_slot: lower_back
+    exercise_type: isolation
+    primary_muscle: back
+    secondary_muscles: [glutes]
+    targets: [spinal_erectors, glute_max]
+    difficulty: 1
+    effectiveness: 2
+    not_suitable_for: [back]
+    steps:
+      - Lie face down with your arms stretched above your head.
+      - Lift your arms, chest and legs a little off the floor.
+      - Hold for a second, then lower slowly.
+    cues:
+      - Small lift; don't crank your back.
+      - Look at the floor.
+    common_mistake: Arching as high as possible, which pinches the lower back.
+
+  # --- Carry -------------------------------------------------------------------------
+
+  - slug: loaded-bag-carry
+    name: Loaded bag carry
+    category: core
+    movement_slot: carry
+    exercise_type: compound
+    primary_muscle: core
+    secondary_muscles: [forearms, shoulders, traps]
+    targets: [obliques, forearm_flexors, upper_traps]
+    also_needs: Heavy bag
+    home_only: true
+    difficulty: 1
+    effectiveness: 3
+    is_timed: true
+    steps:
+      - Pick up a heavy bag in one hand.
+      - Stand tall and walk slowly for the set time or distance.
+      - Switch hands and walk back.
+    cues:
+      - Don't lean towards or away from the bag.
+      - Shoulders level.
+    common_mistake: Leaning to the side to balance the bag.
+
+  - slug: dumbbell-farmer-carry
+    name: Dumbbell farmer carry
+    category: core
+    movement_slot: carry
+    exercise_type: compound
+    primary_muscle: core
+    secondary_muscles: [forearms, back, traps]
+    targets: [upper_traps, forearm_flexors, deep_core]
+    equipment: [dumbbells]
+    difficulty: 2
+    effectiveness: 4
+    is_timed: true
+    steps:
+      - Pick up a heavy dumbbell in each hand.
+      - Stand tall with your shoulders back.
+      - Walk with short, steady steps for the set time or distance.
+    cues:
+      - Squeeze the handles hard.
+      - Keep your chest up.
+    common_mistake: Letting your shoulders round forward.
+
+  - slug: suitcase-carry
+    name: Suitcase carry
+    category: core
+    movement_slot: carry
+    exercise_type: compound
+    primary_muscle: core
+    secondary_muscles: [forearms, traps]
+    targets: [obliques, forearm_flexors, upper_traps]
+    equipment: [dumbbells]
+    difficulty: 2
+    effectiveness: 4
+    is_timed: true
+    steps:
+      - Pick up one heavy dumbbell in one hand.
+      - Stand tall and walk for the set time or distance.
+      - Switch hands and repeat.
+    cues:
+      - Stay perfectly upright.
+      - Tighten your stomach.
+    common_mistake: Leaning towards the weight.
+
+  # ===================================================================================
+  # CARDIO
+  # ===================================================================================
+
+  # --- Conditioning ------------------------------------------------------------------
+
+  - slug: march-in-place
+    name: March in place
+    category: cardio
+    movement_slot: conditioning
+    exercise_type: cardio
+    difficulty: 1
+    effectiveness: 2
+    impact: low
+    is_timed: true
+    steps:
+      - Stand tall.
+      - March on the spot, lifting your knees and swinging your arms.
+      - Keep going for the set time.
+    cues:
+      - Lift your knees higher to work harder.
+      - Breathe steadily.
+    common_mistake: Shuffling with tiny steps that barely raise the pulse.
+
+  - slug: step-jacks
+    name: Step jacks
+    category: cardio
+    movement_slot: conditioning
+    exercise_type: cardio
+    difficulty: 1
+    effectiveness: 2
+    impact: low
+    is_timed: true
+    steps:
+      - Stand with your feet together and arms by your sides.
+      - Step one foot out to the side while raising both arms overhead.
+      - Bring them back and step out with the other foot.
+    cues:
+      - Keep it quick but controlled.
+      - No jumping needed.
+    common_mistake: Moving so slowly that your heart rate doesn't rise.
+
+  - slug: side-steps
+    name: Side steps
+    category: cardio
+    movement_slot: conditioning
+    exercise_type: cardio
+    difficulty: 1
+    effectiveness: 2
+    impact: low
+    is_timed: true
+    steps:
+      - Stand with your knees slightly bent.
+      - Step quickly to one side, bring your feet together, then step back.
+      - Keep moving side to side for the set time.
+    cues:
+      - Stay light on your feet.
+      - Swing your arms.
+    common_mistake: Standing up straight and stiff.
+
+  - slug: low-impact-high-knees
+    name: Low-impact high knees
+    category: cardio
+    movement_slot: conditioning
+    exercise_type: cardio
+    difficulty: 1
+    effectiveness: 3
+    impact: low
+    is_timed: true
+    steps:
+      - Stand tall with your hands out in front at hip height.
+      - Lift one knee up to your hand, then the other.
+      - Keep one foot on the floor at all times and move quickly.
+    cues:
+      - Drive the knees up fast.
+      - Stay on the balls of your feet.
+    common_mistake: Leaning back as you lift your knees.
+
+  - slug: shadow-boxing
+    name: Shadow boxing
+    category: cardio
+    movement_slot: conditioning
+    exercise_type: cardio
+    difficulty: 1
+    effectiveness: 3
+    impact: low
+    is_timed: true
+    steps:
+      - Stand with one foot slightly in front of the other and your fists up by your chin.
+      - Throw quick punches straight ahead, switching arms.
+      - Keep moving your feet and punching for the set time.
+    cues:
+      - Turn your body a little with each punch.
+      - Bring your fists back to your chin.
+    common_mistake: Locking your elbows hard at the end of each punch.
+
+  - slug: squat-to-reach
+    name: Squat to reach
+    category: cardio
+    movement_slot: conditioning
+    exercise_type: cardio
+    difficulty: 1
+    effectiveness: 3
+    impact: low
+    is_timed: true
+    steps:
+      - Stand with your feet shoulder-width apart.
+      - Squat down and touch your hands towards the floor.
+      - Stand up quickly and reach both arms overhead.
+    cues:
+      - Keep a steady rhythm.
+      - Heels stay on the floor.
+    common_mistake: Rounding your back to reach the floor.
+
+  - slug: slow-mountain-climbers
+    name: Slow mountain climbers
+    category: cardio
+    movement_slot: conditioning
+    exercise_type: cardio
+    difficulty: 2
+    effectiveness: 3
+    impact: low
+    is_timed: true
+    steps:
+      - Start in a push-up position.
+      - Step one knee in towards your chest, then step it back.
+      - Repeat with the other leg.
+    cues:
+      - Hips stay level.
+      - Step, don't hop.
+    common_mistake: Lifting your hips high in the air.
+
+  - slug: fast-step-ups
+    name: Fast step-ups
+    category: cardio
+    movement_slot: conditioning
+    exercise_type: cardio
+    also_needs: Step or stair
+    difficulty: 2
+    effectiveness: 4
+    impact: low
+    is_timed: true
+    steps:
+      - Stand facing a sturdy step or stair.
+      - Step up with one foot, then the other, and step back down.
+      - Keep going quickly for the set time.
+    cues:
+      - Use the whole foot on the step.
+      - Pick up the pace once you're warm.
+    common_mistake: Using a step that wobbles.
+
+  - slug: inchworm
+    name: Inchworm
+    category: cardio
+    movement_slot: conditioning
+    exercise_type: cardio
+    difficulty: 2
+    effectiveness: 3
+    impact: low
+    steps:
+      - Stand tall, then bend forward and put your hands on the floor.
+      - Walk your hands out until you're in a push-up position.
+      - Walk your hands back to your feet and stand up.
+    cues:
+      - Bend your knees as much as you need.
+      - Keep your stomach tight in the plank.
+    common_mistake: Letting your hips sag when your hands are out front.
+
+  - slug: bear-crawl-hold
+    name: Bear crawl hold
+    category: cardio
+    movement_slot: conditioning
+    exercise_type: cardio
+    difficulty: 3
+    effectiveness: 3
+    impact: low
+    is_timed: true
+    steps:
+      - Kneel on all fours with your hands under your shoulders and knees under your hips.
+      - Lift your knees just off the floor.
+      - Hold for the set time.
+    cues:
+      - Back flat, knees hovering.
+      - Breathe normally.
+    common_mistake: Lifting your hips high to make it easier.
+
+  - slug: mountain-climbers
+    name: Mountain climbers
+    category: cardio
+    movement_slot: conditioning
+    exercise_type: cardio
+    difficulty: 2
+    effectiveness: 4
+    impact: medium
+    is_timed: true
+    steps:
+      - Start in a push-up position.
+      - Drive one knee towards your chest, then switch legs quickly.
+      - Keep switching for the set time.
+    cues:
+      - Hips stay level.
+      - Hands under your shoulders.
+    common_mistake: Bouncing your hips up and down.
+
+  - slug: jumping-jacks
+    name: Jumping jacks
+    category: cardio
+    movement_slot: conditioning
+    exercise_type: cardio
+    difficulty: 1
+    effectiveness: 3
+    impact: medium
+    not_suitable_for: [knees]
+    is_timed: true
+    steps:
+      - Stand with your feet together and arms by your sides.
+      - Jump your feet out wide while raising your arms overhead.
+      - Jump back to the start.
+    cues:
+      - Land softly on the balls of your feet.
+      - Keep a steady rhythm.
+    common_mistake: Landing heavily on your heels.
+
+  - slug: high-knees
+    name: High knees
+    category: cardio
+    movement_slot: conditioning
+    exercise_type: cardio
+    difficulty: 2
+    effectiveness: 4
+    impact: medium
+    not_suitable_for: [knees]
+    is_timed: true
+    steps:
+      - Stand tall.
+      - Run on the spot, lifting your knees up to hip height.
+      - Pump your arms and keep going for the set time.
+    cues:
+      - Stay on the balls of your feet.
+      - Stand tall; don't lean back.
+    common_mistake: Leaning back so your knees barely lift.
+
+  - slug: butt-kicks
+    name: Butt kicks
+    category: cardio
+    movement_slot: conditioning
+    exercise_type: cardio
+    difficulty: 1
+    effectiveness: 3
+    impact: medium
+    not_suitable_for: [knees]
+    is_timed: true
+    steps:
+      - Stand tall.
+      - Run on the spot, kicking your heels up towards your bottom.
+      - Keep going for the set time.
+    cues:
+      - Stay light on your feet.
+      - Pump your arms.
+    common_mistake: Leaning forward as you run.
+
+  - slug: skater-hops
+    name: Skater hops
+    category: cardio
+    movement_slot: conditioning
+    exercise_type: cardio
+    difficulty: 3
+    effectiveness: 4
+    impact: medium
+    not_suitable_for: [knees]
+    is_timed: true
+    steps:
+      - Stand on one leg with a slight bend in the knee.
+      - Jump sideways onto the other leg, swinging the first leg behind you.
+      - Jump back the other way.
+    cues:
+      - Land softly with a bent knee.
+      - Start with small jumps.
+    common_mistake: Landing with a straight, stiff leg.
+
+  - slug: squat-thrust
+    name: Squat thrust
+    category: cardio
+    movement_slot: conditioning
+    exercise_type: cardio
+    difficulty: 3
+    effectiveness: 4
+    impact: medium
+    not_suitable_for: [back]
+    is_timed: true
+    steps:
+      - Stand tall, then squat down and put your hands on the floor.
+      - Step or jump your feet back into a push-up position.
+      - Step or jump your feet back to your hands.
+      - Stand up.
+    cues:
+      - Keep your stomach tight in the push-up position.
+      - Step instead of jumping to make it gentler.
+    common_mistake: Letting your hips sag when your feet go back.
+
+  - slug: jump-rope
+    name: Jump rope
+    category: cardio
+    movement_slot: conditioning
+    exercise_type: cardio
+    also_needs: Rope
+    difficulty: 2
+    effectiveness: 5
+    impact: medium
+    not_suitable_for: [knees]
+    is_timed: true
+    steps:
+      - Hold the rope handles at your hips with the rope behind you.
+      - Swing the rope over your head with your wrists.
+      - Jump just high enough for the rope to pass under your feet.
+    cues:
+      - Small jumps on the balls of your feet.
+      - Turn the rope with your wrists, not your arms.
+    common_mistake: Jumping far too high.
+
+  - slug: burpee
+    name: Burpee
+    category: cardio
+    movement_slot: conditioning
+    exercise_type: cardio
+    difficulty: 4
+    effectiveness: 5
+    impact: high
+    not_suitable_for: [knees, back]
+    is_timed: true
+    steps:
+      - Squat down and put your hands on the floor.
+      - Jump your feet back into a push-up position and do a push-up.
+      - Jump your feet back to your hands.
+      - Jump up with your arms overhead.
+    cues:
+      - Land softly.
+      - Keep your body straight in the push-up.
+    common_mistake: Letting your hips sag in the push-up part.
+
+  - slug: jump-squat
+    name: Jump squat
+    category: cardio
+    movement_slot: conditioning
+    exercise_type: cardio
+    difficulty: 3
+    effectiveness: 4
+    impact: high
+    not_suitable_for: [knees]
+    is_timed: true
+    steps:
+      - Stand with your feet shoulder-width apart.
+      - Squat down, then jump up as high as you can.
+      - Land softly and go straight into the next squat.
+    cues:
+      - Land on the balls of your feet and bend your knees.
+      - Swing your arms to help the jump.
+    common_mistake: Landing with straight legs.
+
+  - slug: jump-lunge
+    name: Jump lunge
+    category: cardio
+    movement_slot: conditioning
+    exercise_type: cardio
+    difficulty: 4
+    effectiveness: 4
+    impact: high
+    not_suitable_for: [knees]
+    is_timed: true
+    steps:
+      - Start in a lunge position with one foot forward.
+      - Jump up and switch legs in the air.
+      - Land softly in a lunge with the other foot forward.
+    cues:
+      - Land softly with bent knees.
+      - Keep your chest up.
+    common_mistake: Landing so hard that your back knee hits the floor.
+
+  - slug: tuck-jump
+    name: Tuck jump
+    category: cardio
+    movement_slot: conditioning
+    exercise_type: cardio
+    difficulty: 5
+    effectiveness: 4
+    impact: high
+    not_suitable_for: [knees]
+    is_timed: true
+    steps:
+      - Stand with your feet hip-width apart.
+      - Jump up and pull your knees towards your chest.
+      - Land softly and go straight into the next jump.
+    cues:
+      - Land softly with bent knees.
+      - Only for experienced users.
+    common_mistake: Landing on straight legs.
+
+  - slug: sprints
+    name: Sprints
+    category: cardio
+    movement_slot: conditioning
+    exercise_type: cardio
+    also_needs: Outdoor space
+    difficulty: 4
+    effectiveness: 5
+    impact: high
+    not_suitable_for: [knees]
+    is_timed: true
+    steps:
+      - Warm up well with a few minutes of jogging.
+      - Run as fast as you safely can for the set time or distance.
+      - Walk to recover, then repeat.
+    cues:
+      - Pump your arms.
+      - Start at three-quarter speed for the first few.
+    common_mistake: Sprinting flat out without a proper warm-up.
+
+  - slug: brisk-walk
+    name: Brisk walk
+    category: cardio
+    movement_slot: conditioning
+    exercise_type: cardio
+    also_needs: Outdoor or treadmill
+    difficulty: 1
+    effectiveness: 4
+    impact: low
+    is_timed: true
+    steps:
+      - Walk at a pace where you can still talk but not sing.
+      - Swing your arms naturally.
+      - Keep going for the set time.
+    cues:
+      - Stand tall.
+      - Pick up the pace a little once warm.
+    common_mistake: Strolling so slowly that your breathing doesn't change.
+
+  - slug: jog
+    name: Jog
+    category: cardio
+    movement_slot: conditioning
+    exercise_type: cardio
+    also_needs: Outdoor or treadmill
+    difficulty: 2
+    effectiveness: 4
+    impact: medium
+    not_suitable_for: [knees]
+    is_timed: true
+    steps:
+      - Start with a few minutes of brisk walking.
+      - Jog at a pace where you can still talk in short sentences.
+      - Keep going for the set time.
+    cues:
+      - Short, light steps.
+      - Relax your shoulders.
+    common_mistake: Starting too fast and running out of breath early.
+
+  - slug: run-intervals
+    name: Run intervals
+    category: cardio
+    movement_slot: conditioning
+    exercise_type: cardio
+    also_needs: Outdoor or treadmill
+    difficulty: 4
+    effectiveness: 5
+    impact: high
+    not_suitable_for: [knees]
+    is_timed: true
+    steps:
+      - Warm up with a few minutes of easy jogging.
+      - Run hard for the set time.
+      - Walk or jog slowly to recover, then repeat.
+    cues:
+      - Hard means you can only say a word or two.
+      - Keep the recovery easy.
+    common_mistake: Running the hard parts so fast that you can't finish the session.
+
+  - slug: cycling
+    name: Cycling
+    category: cardio
+    movement_slot: conditioning
+    exercise_type: cardio
+    also_needs: Bicycle or gym bike
+    difficulty: 1
+    effectiveness: 4
+    impact: low
+    is_timed: true
+    steps:
+      - Set the seat so your leg is almost straight at the bottom of the pedal.
+      - Pedal at a steady pace for the set time.
+      - Add short faster parts once you're warm.
+    cues:
+      - Keep your shoulders relaxed.
+      - Steady breathing.
+    common_mistake: Seat set too low, which strains the knees.
+
+  - slug: stair-climbing
+    name: Stair climbing
+    category: cardio
+    movement_slot: conditioning
+    exercise_type: cardio
+    also_needs: Stairs
+    difficulty: 2
+    effectiveness: 4
+    impact: low
+    is_timed: true
+    steps:
+      - Walk up the stairs at a steady pace.
+      - Walk back down slowly.
+      - Repeat for the set time.
+    cues:
+      - Use the handrail on the way down.
+      - Every step with your whole foot.
+    common_mistake: Rushing down the stairs.
+
+  - slug: exercise-bike
+    name: Exercise bike
+    category: cardio
+    movement_slot: conditioning
+    exercise_type: cardio
+    equipment: [gym]
+    also_needs: Machine
+    difficulty: 1
+    effectiveness: 4
+    impact: low
+    is_timed: true
+    steps:
+      - Set the seat so your leg is almost straight at the bottom of the pedal.
+      - Pedal at a steady pace for the set time.
+      - Raise the resistance for harder parts.
+    cues:
+      - Sit tall.
+      - Adjust the resistance, not just your speed.
+    common_mistake: Seat set too low.
+
+  - slug: elliptical
+    name: Elliptical
+    category: cardio
+    movement_slot: conditioning
+    exercise_type: cardio
+    equipment: [gym]
+    also_needs: Machine
+    difficulty: 1
+    effectiveness: 4
+    impact: low
+    is_timed: true
+    steps:
+      - Step onto the pedals and hold the handles.
+      - Move your legs and arms in a smooth, steady rhythm.
+      - Keep going for the set time.
+    cues:
+      - Stand tall.
+      - Push and pull with your arms too.
+    common_mistake: Leaning heavily on the handles.
+
+  - slug: rowing-machine
+    name: Rowing machine
+    category: cardio
+    movement_slot: conditioning
+    exercise_type: cardio
+    equipment: [gym]
+    also_needs: Machine
+    difficulty: 2
+    effectiveness: 5
+    impact: low
+    not_suitable_for: [back]
+    is_timed: true
+    steps:
+      - Strap your feet in and hold the handle with straight arms.
+      - Push with your legs first, then lean back slightly, then pull the handle to your ribs.
+      - Return in the opposite order; arms, body, then legs.
+    cues:
+      - Legs, body, arms on the way back; arms, body, legs on the way forward.
+      - Most of the power comes from your legs.
+    common_mistake: Pulling with your arms before your legs have pushed.
+
+  - slug: stair-climber
+    name: Stair climber
+    category: cardio
+    movement_slot: conditioning
+    exercise_type: cardio
+    equipment: [gym]
+    also_needs: Machine
+    difficulty: 2
+    effectiveness: 4
+    impact: low
+    is_timed: true
+    steps:
+      - Step onto the machine and hold the rails lightly.
+      - Step steadily at a pace you can keep.
+      - Keep going for the set time.
+    cues:
+      - Stand tall.
+      - Use the rails for balance only.
+    common_mistake: Leaning on the rails and taking your weight off your legs.
+
+  - slug: battle-ropes
+    name: Battle ropes
+    category: cardio
+    movement_slot: conditioning
+    exercise_type: cardio
+    equipment: [gym]
+    also_needs: Ropes
+    difficulty: 3
+    effectiveness: 4
+    impact: low
+    is_timed: true
+    steps:
+      - Hold one rope end in each hand and stand with your knees slightly bent.
+      - Move your arms up and down quickly to make waves in the ropes.
+      - Keep going for the set time.
+    cues:
+      - Stay low with a tight stomach.
+      - Make the waves reach the anchor.
+    common_mistake: Standing up straight and using only your wrists.
+
+  - slug: sled-push
+    name: Sled push
+    category: cardio
+    movement_slot: conditioning
+    exercise_type: cardio
+    equipment: [gym]
+    also_needs: Sled
+    difficulty: 3
+    effectiveness: 5
+    impact: low
+    is_timed: true
+    steps:
+      - Hold the sled handles with your arms straight and lean forward.
+      - Drive the sled forward with short, powerful steps.
+      - Push for the set distance, then rest.
+    cues:
+      - Keep your back flat.
+      - Push through the balls of your feet.
+    common_mistake: Standing too upright, so you can't push.
+
+  - slug: kettlebell-swing
+    name: Kettlebell swing
+    category: cardio
+    movement_slot: conditioning
+    exercise_type: cardio
+    equipment: [gym]
+    also_needs: Kettlebell
+    difficulty: 3
+    effectiveness: 5
+    impact: low
+    not_suitable_for: [back]
+    is_timed: true
+    steps:
+      - Stand with your feet a little wider than your shoulders and the kettlebell on the floor in front of you.
+      - Push your hips back and hike the kettlebell back between your legs.
+      - Snap your hips forward to swing it up to chest height.
+      - Let it swing back down between your legs and repeat.
+    cues:
+      - Your hips do the work; your arms just hold on.
+      - Stand tall and squeeze your bottom at the top.
+    common_mistake: Squatting down and lifting the kettlebell with your arms.
+
+  # ===================================================================================
+  # MOBILITY
+  # ===================================================================================
+
+  # --- Warm-up -----------------------------------------------------------------------
+
+  - slug: arm-circles
+    name: Arm circles
+    category: mobility
+    movement_slot: warm_up
+    exercise_type: mobility
+    primary_muscle: shoulders
+    difficulty: 1
+    is_timed: true
+    steps:
+      - Stand tall with your arms straight out to the sides.
+      - Make small circles, slowly making them bigger.
+      - Switch direction halfway through.
+    cues:
+      - Keep your shoulders relaxed.
+      - Move smoothly.
+    common_mistake: Swinging the arms wildly from the start.
+
+  - slug: cat-cow
+    name: Cat-cow
+    category: mobility
+    movement_slot: warm_up
+    exercise_type: mobility
+    primary_muscle: back
+    difficulty: 1
+    is_timed: true
+    steps:
+      - Kneel on all fours with your hands under your shoulders.
+      - Round your back up towards the ceiling and tuck your chin.
+      - Slowly let your stomach drop and lift your chest and head.
+      - Keep moving slowly between the two.
+    cues:
+      - Breathe out as you round, in as you arch.
+      - Move slowly.
+    common_mistake: Rushing through the movement.
+
+  - slug: thoracic-rotation
+    name: Thoracic rotation
+    category: mobility
+    movement_slot: warm_up
+    exercise_type: mobility
+    primary_muscle: back
+    difficulty: 1
+    steps:
+      - Kneel on all fours and put one hand behind your head.
+      - Turn your elbow down towards the opposite arm.
+      - Turn it open up towards the ceiling, following it with your eyes.
+      - Finish your reps, then switch sides.
+    cues:
+      - Keep your hips still.
+      - Turn from your upper back.
+    common_mistake: Twisting your hips instead of your upper back.
+
+  - slug: hip-circles
+    name: Hip circles
+    category: mobility
+    movement_slot: warm_up
+    exercise_type: mobility
+    primary_muscle: glutes
+    difficulty: 1
+    is_timed: true
+    steps:
+      - Stand with your hands on your hips and feet shoulder-width apart.
+      - Draw big, slow circles with your hips.
+      - Switch direction halfway through.
+    cues:
+      - Keep your knees soft.
+      - Make the circles as big as feels comfortable.
+    common_mistake: Moving your shoulders instead of your hips.
+
+  - slug: leg-swings
+    name: Leg swings
+    category: mobility
+    movement_slot: warm_up
+    exercise_type: mobility
+    primary_muscle: glutes
+    secondary_muscles: [hamstrings]
+    also_needs: Wall for balance
+    difficulty: 1
+    steps:
+      - Stand side-on to a wall and hold it with one hand.
+      - Swing your outside leg forward and back in a smooth, relaxed way.
+      - Then face the wall and swing the leg side to side.
+      - Switch legs.
+    cues:
+      - Start small and let the swings grow.
+      - Stand tall.
+    common_mistake: Kicking hard instead of swinging loosely.
+
+  - slug: ankle-rocks
+    name: Ankle rocks
+    category: mobility
+    movement_slot: warm_up
+    exercise_type: mobility
+    primary_muscle: calves
+    difficulty: 1
+    steps:
+      - Kneel on one knee with the other foot flat in front of you.
+      - Rock your front knee forward over your toes, keeping your heel down.
+      - Rock back and repeat, then switch sides.
+    cues:
+      - Your heel stays on the floor.
+      - Move slowly.
+    common_mistake: Letting your heel lift.
+
+  - slug: world-s-greatest-stretch
+    name: World's greatest stretch
+    category: mobility
+    movement_slot: warm_up
+    exercise_type: mobility
+    primary_muscle: glutes
+    secondary_muscles: [back, hamstrings]
+    difficulty: 2
+    steps:
+      - Step into a long lunge and put both hands on the floor inside your front foot.
+      - Drop your inside elbow towards the floor.
+      - Turn your chest open and reach that arm up to the ceiling.
+      - Put your hand back down and switch sides.
+    cues:
+      - Keep your back leg straight.
+      - Breathe as you turn.
+    common_mistake: Rushing through it without holding each position.
+
+  # --- Cool-down ---------------------------------------------------------------------
+
+  - slug: hamstring-stretch
+    name: Hamstring stretch
+    category: mobility
+    movement_slot: cool_down
+    exercise_type: mobility
+    primary_muscle: hamstrings
+    difficulty: 1
+    is_timed: true
+    steps:
+      - Sit on the floor with one leg straight and the other foot against your inner thigh.
+      - Lean forward over the straight leg until you feel a stretch behind the knee and thigh.
+      - Hold for 20 to 30 seconds, then switch sides.
+    cues:
+      - Keep your back long; lean from the hips.
+      - Breathe slowly.
+    common_mistake: Rounding your back to reach your toes.
+
+  - slug: quad-stretch
+    name: Quad stretch
+    category: mobility
+    movement_slot: cool_down
+    exercise_type: mobility
+    primary_muscle: quads
+    difficulty: 1
+    is_timed: true
+    steps:
+      - Stand holding a wall and bend one knee to hold that ankle behind you.
+      - Pull your heel gently towards your bottom.
+      - Hold for 20 to 30 seconds, then switch sides.
+    cues:
+      - Keep your knees close together.
+      - Squeeze your bottom for a bigger stretch.
+    common_mistake: Arching your lower back.
+
+  - slug: hip-flexor-stretch
+    name: Hip flexor stretch
+    category: mobility
+    movement_slot: cool_down
+    exercise_type: mobility
+    primary_muscle: quads
+    difficulty: 1
+    is_timed: true
+    steps:
+      - Kneel on one knee with the other foot flat in front of you.
+      - Tuck your hips under and squeeze the bottom of the back leg.
+      - Shift your weight forward a little until you feel a stretch at the front of the back hip.
+      - Hold for 20 to 30 seconds, then switch sides.
+    cues:
+      - Stay tall.
+      - Small movement; the tuck does the work.
+    common_mistake: Leaning far forward and arching your back.
+
+  - slug: figure-four-glute-stretch
+    name: Figure-four glute stretch
+    category: mobility
+    movement_slot: cool_down
+    exercise_type: mobility
+    primary_muscle: glutes
+    difficulty: 1
+    is_timed: true
+    steps:
+      - Lie on your back with your knees bent.
+      - Cross one ankle over the opposite knee.
+      - Pull the bottom leg towards your chest until you feel a stretch in your bottom.
+      - Hold for 20 to 30 seconds, then switch sides.
+    cues:
+      - Keep your head on the floor.
+      - Push the top knee away gently for more stretch.
+    common_mistake: Lifting your head and shoulders off the floor.
+
+  - slug: calf-stretch
+    name: Calf stretch
+    category: mobility
+    movement_slot: cool_down
+    exercise_type: mobility
+    primary_muscle: calves
+    also_needs: Wall
+    difficulty: 1
+    is_timed: true
+    steps:
+      - Stand facing a wall with your hands on it.
+      - Step one foot back and keep that heel on the floor.
+      - Lean into the wall until you feel a stretch in the back calf.
+      - Hold for 20 to 30 seconds, then switch sides.
+    cues:
+      - Back leg straight, heel down.
+      - Toes point forward.
+    common_mistake: Letting the back heel lift.
+
+  - slug: doorway-chest-stretch
+    name: Doorway chest stretch
+    category: mobility
+    movement_slot: cool_down
+    exercise_type: mobility
+    primary_muscle: chest
+    secondary_muscles: [shoulders]
+    also_needs: Doorway
+    difficulty: 1
+    is_timed: true
+    steps:
+      - Stand in a doorway and put your forearm on the door frame at shoulder height.
+      - Step forward and turn your body away until you feel a stretch across your chest.
+      - Hold for 20 to 30 seconds, then switch sides.
+    cues:
+      - Keep your shoulder down.
+      - Gentle stretch, never pain.
+    common_mistake: Pushing so far that the front of the shoulder hurts.
+
+  - slug: lat-stretch
+    name: Lat stretch
+    category: mobility
+    movement_slot: cool_down
+    exercise_type: mobility
+    primary_muscle: back
+    also_needs: Table or door frame
+    difficulty: 1
+    is_timed: true
+    steps:
+      - Hold a table edge or door frame with both hands.
+      - Walk back and sit your hips back until your arms are straight and you feel a stretch under your arms.
+      - Hold for 20 to 30 seconds.
+    cues:
+      - Let your chest sink towards the floor.
+      - Breathe slowly.
+    common_mistake: Rounding your back instead of reaching through your arms.
+
+  - slug: child-s-pose
+    name: Child's pose
+    category: mobility
+    movement_slot: cool_down
+    exercise_type: mobility
+    primary_muscle: back
+    secondary_muscles: [glutes]
+    difficulty: 1
+    is_timed: true
+    steps:
+      - Kneel with your big toes together and knees apart.
+      - Sit back on your heels and reach your arms forward on the floor.
+      - Rest your forehead down and breathe slowly.
+      - Hold for 20 to 30 seconds or longer.
+    cues:
+      - Let your body relax with each breath out.
+      - Put a pillow under your hips if your knees are tight.
+    common_mistake: Holding your breath.
