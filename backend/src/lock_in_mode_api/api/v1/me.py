@@ -1,22 +1,82 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lock_in_mode_api.api.deps import AppleIdentity, CurrentUser, DbSession, GoogleIdentity
-from lock_in_mode_api.api.errors import ProviderAccountInUse, ProviderAlreadyLinked
+from lock_in_mode_api.api.errors import (
+    ProfileNotFound,
+    ProviderAccountInUse,
+    ProviderAlreadyLinked,
+)
 from lock_in_mode_api.models import User
-from lock_in_mode_api.schemas.user import UserRead
+from lock_in_mode_api.schemas.profile import ProfileRead, ProfileWrite, SafetyScreen
+from lock_in_mode_api.schemas.user import UserRead, UserUpdate
 from lock_in_mode_api.services import auth as auth_service
+from lock_in_mode_api.services import profile as profile_service
 from lock_in_mode_api.services.auth import Provider
 
 router = APIRouter(prefix="/me", tags=["me"])
 
 # Note on parameter order: FastAPI resolves dependencies in the order they're written.
 # `user` comes first so an unauthenticated call gets 401 before any token verification.
+# Every endpoint here works for guests: no sign-in is needed to onboard or train.
 
 
 @router.get("")
 async def read_me(user: CurrentUser) -> UserRead:
     return UserRead.model_validate(user)
+
+
+@router.patch("")
+async def update_me(user: CurrentUser, body: UserUpdate, session: DbSession) -> UserRead:
+    """Set or clear the optional name from the welcome screen."""
+    user = await profile_service.set_display_name(session, user, body.display_name)
+    return UserRead.model_validate(user)
+
+
+# --- onboarding (ADR 0012) ----------------------------------------------------------
+
+
+@router.get("/profile")
+async def read_profile(user: CurrentUser, session: DbSession) -> ProfileRead:
+    """404 `profile_not_found` means "show onboarding"."""
+    try:
+        profile = await profile_service.get_profile(session, user.id)
+    except profile_service.ProfileNotFoundError as exc:
+        raise ProfileNotFound("Finish onboarding first") from exc
+    return ProfileRead.model_validate(profile)
+
+
+@router.put(
+    "/profile",
+    responses={status.HTTP_201_CREATED: {"model": ProfileRead, "description": "Created"}},
+)
+async def save_profile(
+    user: CurrentUser, body: ProfileWrite, session: DbSession, response: Response
+) -> ProfileRead:
+    """Save every onboarding answer. 201 the first time, 200 when replacing.
+
+    The safety fields are never changed here; use `POST /me/safety-screen`.
+    """
+    profile, created = await profile_service.save_profile(session, user.id, body)
+    response.status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
+    return ProfileRead.model_validate(profile)
+
+
+@router.post("/safety-screen")
+async def take_safety_screen(
+    user: CurrentUser, body: SafetyScreen, session: DbSession
+) -> ProfileRead:
+    """Required before workout 1. Any "yes" → `needs_low_intensity`: the app shows
+    "please check with a doctor first" and the plan stays gentle. Answers aren't stored.
+    """
+    try:
+        profile = await profile_service.record_safety_screen(session, user.id, body)
+    except profile_service.ProfileNotFoundError as exc:
+        raise ProfileNotFound("Save the profile before the safety screen") from exc
+    return ProfileRead.model_validate(profile)
+
+
+# --- linking a guest to Google / Apple (ADR 0006) ------------------------------------
 
 
 @router.post("/link/google")

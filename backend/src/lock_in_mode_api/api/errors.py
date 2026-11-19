@@ -88,6 +88,14 @@ class NotFound(ApiError):
     title = "Not found"
 
 
+class ProfileNotFound(ApiError):
+    """The user hasn't onboarded yet: the app shows onboarding (ADR 0012)."""
+
+    status_code = 404
+    code = "profile_not_found"
+    title = "Profile not found"
+
+
 class MethodNotAllowed(ApiError):
     status_code = 405
     code = "method_not_allowed"

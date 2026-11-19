@@ -24,6 +24,7 @@ problem document, sent as `Content-Type: application/problem+json`
 | [`invalid_refresh_token`](#invalid_refresh_token) | 401 | Refresh token unknown, expired, revoked or reused | Sign in again |
 | [`invalid_id_token`](#invalid_id_token) | 401 | Google/Apple token didn't verify (or wrong nonce) | Restart the Google/Apple sign-in |
 | [`not_found`](#not_found) | 404 | No such endpoint or resource | Bug in the app |
+| [`profile_not_found`](#profile_not_found) | 404 | The user hasn't finished onboarding | Show onboarding |
 | [`method_not_allowed`](#method_not_allowed) | 405 | Wrong HTTP method | Bug in the app |
 | [`provider_account_in_use`](#provider_account_in_use) | 409 | That Google/Apple account belongs to another user | Warn that guest progress stays behind; if confirmed, call `/auth/{provider}` |
 | [`provider_already_linked`](#provider_already_linked) | 409 | A different account of that provider is already linked | Don't offer linking again |
@@ -54,6 +55,12 @@ expired, or, for Apple, a nonce that doesn't match. Sent with `WWW-Authenticate:
 
 ## not_found
 No endpoint at this path, or the requested resource doesn't exist.
+
+## profile_not_found
+`GET /api/v1/me/profile` or `POST /api/v1/me/safety-screen` before the user has saved a
+profile with `PUT /api/v1/me/profile`. Not a bug: on app start, this is how the app knows
+to show onboarding instead of the home screen
+([ADR 0012](decisions/0012-onboarding-and-profile-v2.md)).
 
 ## method_not_allowed
 The path exists but not with this HTTP method. The `Allow` header lists valid methods.
