@@ -3,7 +3,7 @@ from typing import Any
 from fastapi import APIRouter
 
 from lock_in_mode_api.api.errors import PROBLEM_JSON
-from lock_in_mode_api.api.v1 import auth, me
+from lock_in_mode_api.api.v1 import auth, exercises, me
 from lock_in_mode_api.schemas.problem import Problem, ValidationProblem
 
 
@@ -26,3 +26,4 @@ _ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
 router = APIRouter(prefix="/api/v1", responses=_ERROR_RESPONSES)
 router.include_router(auth.router)
 router.include_router(me.router)
+router.include_router(exercises.router)

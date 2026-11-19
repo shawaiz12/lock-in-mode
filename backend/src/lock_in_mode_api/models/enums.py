@@ -62,6 +62,19 @@ class BodyLimit(StrEnum):
     SHOULDERS = "shoulders"
 
 
+class Caution(StrEnum):
+    """Why an exercise may not suit this user (ADR 0013). Shown as a warning, not hidden.
+
+    The first three match BodyLimit. The plan generator never picks a cautioned exercise.
+    """
+
+    KNEES = "knees"
+    BACK = "back"
+    SHOULDERS = "shoulders"
+    LOW_INTENSITY = "low_intensity"  # too intense after a "yes" on the safety screen
+    NOT_QUIET = "not_quiet"  # jumping: not for the quiet, small-space track
+
+
 class ExerciseCategory(StrEnum):
     PUSH = "push"
     PULL = "pull"

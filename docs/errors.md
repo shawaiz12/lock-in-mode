@@ -57,8 +57,9 @@ expired, or, for Apple, a nonce that doesn't match. Sent with `WWW-Authenticate:
 No endpoint at this path, or the requested resource doesn't exist.
 
 ## profile_not_found
-`GET /api/v1/me/profile` or `POST /api/v1/me/safety-screen` before the user has saved a
-profile with `PUT /api/v1/me/profile`. Not a bug: on app start, this is how the app knows
+`GET /api/v1/me/profile`, `POST /api/v1/me/safety-screen` or
+`GET /api/v1/exercises?for_me=true` before the user has saved a profile with
+`PUT /api/v1/me/profile`. Not a bug: on app start, this is how the app knows
 to show onboarding instead of the home screen
 ([ADR 0012](decisions/0012-onboarding-and-profile-v2.md)).
 
