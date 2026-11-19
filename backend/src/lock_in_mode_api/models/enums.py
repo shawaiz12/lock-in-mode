@@ -2,6 +2,7 @@ from enum import StrEnum
 
 
 class Goal(StrEnum):
+    BUILD_MUSCLE = "build_muscle"
     STRENGTH = "strength"
     LOSE_FAT = "lose_fat"
     STAMINA = "stamina"
@@ -9,6 +10,12 @@ class Goal(StrEnum):
 
 
 class FitnessLevel(StrEnum):
+    """Set from training history, never self-rating (ADR 0012).
+
+    beginner: never, on and off, or under 6 months of steady training.
+    some_experience: 6 months to 2 years. experienced: 2+ years, still progressing.
+    """
+
     BEGINNER = "beginner"
     SOME_EXPERIENCE = "some_experience"
     EXPERIENCED = "experienced"
@@ -17,6 +24,22 @@ class FitnessLevel(StrEnum):
 class Location(StrEnum):
     HOME = "home"
     GYM = "gym"
+
+
+class ShoulderDay(StrEnum):
+    """Push pull legs only: which day trains shoulders (KB section 5, ADR 0012)."""
+
+    PUSH = "push"
+    LEGS = "legs"
+
+
+class Obstacle(StrEnum):
+    """Answers to "What's made it hard before?". Changes tips, reminders, quests; not the plan."""
+
+    NO_TIME = "no_time"
+    DONT_KNOW_WHAT_TO_DO = "dont_know_what_to_do"
+    LOSE_MOTIVATION = "lose_motivation"
+    GET_BORED = "get_bored"
 
 
 class Equipment(StrEnum):
