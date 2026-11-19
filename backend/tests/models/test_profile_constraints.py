@@ -1,11 +1,12 @@
 import uuid
 
 import pytest
+from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lock_in_mode_api.models import Profile, User
-from lock_in_mode_api.models.enums import FitnessLevel, Goal, Location
+from lock_in_mode_api.models.enums import FitnessLevel, Goal, Location, ShoulderDay
 
 
 async def _create_user(session: AsyncSession) -> User:
@@ -53,12 +54,53 @@ async def test_days_per_week_rejects_out_of_range(db_session: AsyncSession, days
         await db_session.flush()
 
 
-async def test_minutes_per_session_rejects_unlisted_value(db_session: AsyncSession) -> None:
+@pytest.mark.parametrize("minutes", [10, 45, 60, 90, None])
+async def test_minutes_per_session_accepts_listed_values_and_no_limit(
+    db_session: AsyncSession, minutes: int | None
+) -> None:
+    # None means "no limit" (ADR 0012).
     user = await _create_user(db_session)
-    db_session.add(_valid_profile(user.id, minutes_per_session=15))
+
+    db_session.add(_valid_profile(user.id, minutes_per_session=minutes))
+    await db_session.flush()
+
+
+@pytest.mark.parametrize("minutes", [0, 15, 100])
+async def test_minutes_per_session_rejects_unlisted_value(
+    db_session: AsyncSession, minutes: int
+) -> None:
+    user = await _create_user(db_session)
+    db_session.add(_valid_profile(user.id, minutes_per_session=minutes))
 
     with pytest.raises(IntegrityError, match="ck_profiles_minutes_per_session_allowed"):
         await db_session.flush()
+
+
+async def test_new_columns_have_database_defaults(db_session: AsyncSession) -> None:
+    # Rows written before profile v2 (or by plain SQL) must get the same defaults as Python.
+    user = await _create_user(db_session)
+    await db_session.execute(
+        text(
+            "INSERT INTO profiles (user_id, goal, level, location, days_per_week) "
+            "VALUES (:id, 'build_muscle', 'beginner', 'gym', 4)"
+        ),
+        {"id": user.id},
+    )
+
+    row = (
+        await db_session.execute(
+            text(
+                "SELECT shoulder_day, prefers_bro_split, obstacles, minutes_per_session "
+                "FROM profiles WHERE user_id = :id"
+            ),
+            {"id": user.id},
+        )
+    ).one()
+
+    assert row.shoulder_day == ShoulderDay.PUSH.value
+    assert row.prefers_bro_split is False
+    assert row.obstacles == []
+    assert row.minutes_per_session is None
 
 
 async def test_profile_requires_existing_user(db_session: AsyncSession) -> None:
