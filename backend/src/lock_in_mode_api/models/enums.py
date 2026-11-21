@@ -62,6 +62,40 @@ class BodyLimit(StrEnum):
     SHOULDERS = "shoulders"
 
 
+class RoutineKind(StrEnum):
+    """The shape of a user's week (Knowledge Base section 4, ADR 0014)."""
+
+    FULL_BODY = "full_body"
+    UPPER_LOWER = "upper_lower"
+    PUSH_PULL_LEGS = "push_pull_legs"
+    UPPER_LOWER_PPL = "upper_lower_ppl"  # 5 days: mixes upper/lower with push pull legs
+    BRO_SPLIT = "bro_split"
+    STRENGTH_AND_CARDIO = "strength_and_cardio"  # lose fat, 4+ days
+    CIRCUITS_AND_CARDIO = "circuits_and_cardio"  # improve stamina
+
+
+class SessionKind(StrEnum):
+    """One session in the queue. Letters (full body A/B/C, upper A/B...) rotate in stage 2."""
+
+    FULL_BODY = "full_body"
+    UPPER = "upper"
+    LOWER = "lower"
+    PUSH = "push"
+    PULL = "pull"
+    LEGS = "legs"
+    BRO_CHEST = "bro_chest"
+    BRO_BACK = "bro_back"
+    BRO_LEGS = "bro_legs"
+    BRO_SHOULDERS = "bro_shoulders"
+    BRO_ARMS = "bro_arms"
+    CIRCUIT = "circuit"
+    HIIT = "hiit"
+    STEADY_CARDIO = "steady_cardio"
+    LONG_CARDIO = "long_cardio"
+    EASY_CARDIO = "easy_cardio"
+    MOBILITY = "mobility"
+
+
 class Caution(StrEnum):
     """Why an exercise may not suit this user (ADR 0013). Shown as a warning, not hidden.
 
