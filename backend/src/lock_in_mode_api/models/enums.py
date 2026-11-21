@@ -96,6 +96,15 @@ class SessionKind(StrEnum):
     MOBILITY = "mobility"
 
 
+class WorkoutFormat(StrEnum):
+    """How a session's exercises are done (KB section 9)."""
+
+    STRAIGHT_SETS = "straight_sets"  # all sets of one exercise, then the next
+    SUPERSETS = "supersets"  # pairs done back to back, sharing the rest
+    FIRST_STRAIGHT_THEN_SUPERSETS = "first_straight_then_supersets"  # 30-minute sessions
+    CIRCUIT = "circuit"  # every exercise in a row, then repeat the round
+
+
 class Caution(StrEnum):
     """Why an exercise may not suit this user (ADR 0013). Shown as a warning, not hidden.
 

@@ -8,7 +8,9 @@ import argparse
 from dataclasses import dataclass
 
 from lock_in_mode_api.models.enums import FitnessLevel, Goal, Location, ShoulderDay
+from lock_in_mode_api.seed.schema import load_library
 from lock_in_mode_api.training.routine import choose_routine
+from lock_in_mode_api.training.sessions import Workout, build_block
 
 WEEKDAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 
@@ -24,9 +26,11 @@ class _Answers:
     needs_low_intensity: bool
     prefers_bro_split: bool
     shoulder_day: ShoulderDay
+    limits: list[str]
+    women_home_track: bool
 
 
-def _parse(argv: list[str] | None) -> _Answers:
+def _parse(argv: list[str] | None) -> tuple[_Answers, int]:
     parser = argparse.ArgumentParser(description="Preview a Lock In Mode routine.")
     parser.add_argument("--goal", type=Goal, choices=list(Goal), default=Goal.BUILD_MUSCLE)
     parser.add_argument(
@@ -39,6 +43,9 @@ def _parse(argv: list[str] | None) -> _Answers:
     parser.add_argument("--low-intensity", action="store_true")
     parser.add_argument("--bro-split", action="store_true")
     parser.add_argument("--shoulders-on-legs", action="store_true")
+    parser.add_argument("--limits", nargs="*", default=[], help="knees back shoulders")
+    parser.add_argument("--quiet-track", action="store_true", help="women-at-home track")
+    parser.add_argument("--weeks", type=int, default=1, help="weeks of workouts to show")
     args = parser.parse_args(argv)
     return _Answers(
         goal=args.goal,
@@ -50,11 +57,32 @@ def _parse(argv: list[str] | None) -> _Answers:
         needs_low_intensity=args.low_intensity,
         prefers_bro_split=args.bro_split,
         shoulder_day=ShoulderDay.LEGS if args.shoulders_on_legs else ShoulderDay.PUSH,
-    )
+        limits=args.limits,
+        women_home_track=args.quiet_track,
+    ), args.weeks
+
+
+def _workout_lines(workout: Workout) -> list[str]:
+    head = f"  {workout.title}  ({workout.format.value.replace('_', ' ')}"
+    head += f", about {workout.main_minutes} min)" if workout.exercises else ")"
+    if workout.finisher:
+        head += " + finisher"
+    lines = [head]
+    for e in workout.exercises:
+        amount = f"{e.reps_min}-{e.reps_max} reps" if e.seconds is None else f"{e.seconds} s"
+        pair = f"[{e.group + 1}] " if workout.format.value != "straight_sets" else ""
+        lines.append(
+            f"      {pair}{e.name}: {e.sets} x {amount}, rest {e.rest_seconds} s, "
+            f"stop {e.reps_in_reserve} short"
+        )
+    if not workout.exercises:
+        lines.append("      (filled in stage 2b)")
+    return lines
 
 
 def main(argv: list[str] | None = None) -> str:
-    routine = choose_routine(_parse(argv))
+    answers, weeks = _parse(argv)
+    routine = choose_routine(answers)
     by_day = dict(zip(routine.weekdays, routine.sessions, strict=True))
     lines = [f"Routine: {routine.kind.value}", ""]
     for day, name in enumerate(WEEKDAYS):
@@ -64,6 +92,11 @@ def main(argv: list[str] | None = None) -> str:
             label += " + finisher"
         lines.append(f"  {name}  {label}")
     lines += ["", "Why:"] + [f"  - {reason}" for reason in routine.reasons]
+    block = build_block(answers, routine, load_library().exercises, weeks)
+    for number, week in enumerate(block, start=1):
+        lines += ["", f"Week {number}:"]
+        for workout in week:
+            lines += _workout_lines(workout)
     return "\n".join(lines)
 
 
