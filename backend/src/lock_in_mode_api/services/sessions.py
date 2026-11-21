@@ -1,4 +1,5 @@
-"""Doing workouts: start, tick sets, finish, and the strength-test placement (ADR 0018).
+"""Doing workouts: start, tick sets, finish, the strength-test placement (ADR 0018) and,
+on finishing, progression (ADR 0019).
 
 Functions that change data own the transaction and commit, except `finish_open_session`,
 which joins the caller's (the profile service's: answers changed, plan about to be
@@ -6,6 +7,7 @@ replaced).
 """
 
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from sqlalchemy import delete, select
@@ -25,12 +27,14 @@ from lock_in_mode_api.models.enums import Feedback, WorkoutPart, WorkoutStatus
 from lock_in_mode_api.schemas.exercise import ExerciseRef
 from lock_in_mode_api.schemas.session import (
     Placement,
+    Progress,
     SessionRead,
     SessionResult,
     SetLogRead,
     SetLogWrite,
 )
 from lock_in_mode_api.services import plans as plan_service
+from lock_in_mode_api.services import progress as progress_service
 from lock_in_mode_api.training.placement import placed_exercise
 
 
@@ -96,7 +100,7 @@ async def get_open_session(session: AsyncSession, user_id: uuid.UUID) -> Session
 async def _place_from_test(
     session: AsyncSession, workout_session: WorkoutSession, main: list[PlannedWorkoutExercise]
 ) -> list[Placement]:
-    """Open test sets (KB section 2) → a rung per movement, then rebuild what's left.
+    """Open test sets (KB section 2) → a rung per movement. The caller rebuilds what's left.
 
     Weighted tests keep their reps and place nothing: the weight logged becomes "last
     time" and pre-fills the next workout. A test with no logged set places nothing.
@@ -141,16 +145,25 @@ async def _place_from_test(
                 exercise=ExerciseRef.model_validate(rung),
             )
         )
-    if placements:
-        await session.flush()
-        await plan_service.rebuild_pending(session, workout_session.user_id)
     return placements
+
+
+@dataclass(frozen=True)
+class _Closed:
+    placements: list[Placement]
+    progress: list[Progress]
+    recovery_earned: bool
 
 
 async def _close(
     session: AsyncSession, workout_session: WorkoutSession, feedback: Feedback | None
-) -> list[Placement]:
-    """Finish with whatever was logged: half a workout still counts (ADR 0018)."""
+) -> _Closed:
+    """Finish with whatever was logged: half a workout still counts (ADR 0018).
+
+    Then, in order: progression and the test placement (both may move rungs), one
+    rebuild of the rest of the block if they did, and the early recovery week, which
+    must come after the rebuild because it changes which workouts are pending.
+    """
     now = datetime.now(UTC)
     workout_session.finished_at = now
     workout_session.feedback = feedback
@@ -159,8 +172,19 @@ async def _close(
     )
     workout.status = WorkoutStatus.DONE
     workout.status_changed_at = now
+    plan_id, week = workout.plan_id, workout.week
     main = [row for row in workout.exercises if row.part == WorkoutPart.MAIN]
-    return await _place_from_test(session, workout_session, main)
+    await session.flush()  # this feedback counts in the streak and the week below
+
+    outcome = await progress_service.after_finish(session, workout_session, workout, main)
+    placements = await _place_from_test(session, workout_session, main)
+    if placements or outcome.rungs_changed:
+        await session.flush()
+        await plan_service.rebuild_pending(session, workout_session.user_id)
+    recovery = await progress_service.bring_recovery_forward(
+        session, workout_session, plan_id, week
+    )
+    return _Closed(placements, outcome.progress, recovery)
 
 
 async def finish_open_session(session: AsyncSession, user_id: uuid.UUID) -> None:
@@ -177,12 +201,14 @@ async def finish_session(
     workout_session = await _load(session, user_id, session_id)
     if workout_session.finished_at is not None:
         raise SessionFinishedError
-    placements = await _close(session, workout_session, feedback)
+    closed = await _close(session, workout_session, feedback)
     await session.commit()
     plan = await plan_service.get_current_plan(session, user_id)
     return SessionResult(
         **_read(await _load(session, user_id, session_id)).model_dump(),
-        placements=placements,
+        placements=closed.placements,
+        progress=closed.progress,
+        recovery_earned=closed.recovery_earned,
         next_workout_id=plan.next_workout_id,
         block_complete=plan.block_complete,
     )

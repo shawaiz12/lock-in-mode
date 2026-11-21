@@ -6,7 +6,7 @@ from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from lock_in_mode_api.models.enums import Feedback, MovementSlot
+from lock_in_mode_api.models.enums import Feedback, MovementSlot, ProgressChange
 from lock_in_mode_api.schemas.exercise import ExerciseRef
 
 
@@ -70,9 +70,25 @@ class Placement(BaseModel):
     exercise: ExerciseRef = Field(description="The rung they start on.")
 
 
+class Progress(BaseModel):
+    """What changed for one exercise: "Goblet squat: 12 kg → 14.5 kg next time"."""
+
+    exercise: ExerciseRef
+    change: ProgressChange
+    weight_kg: float | None = Field(description="The new suggested weight, if any.")
+    seconds: int | None = Field(description="The new hold, if any.")
+    set_change: int = Field(description="Sets compared with the plan: -1, 0 or +1.")
+
+
 class SessionResult(SessionRead):
-    """The finished session, what the test placed (if it was the test), and the queue."""
+    """The finished session, what the test placed (if it was the test), what moved up or
+    back (ADR 0019), and the queue."""
 
     placements: list[Placement]
+    progress: list[Progress]
+    recovery_earned: bool = Field(
+        description="This finish brought the recovery week forward: show it as earned "
+        "recovery, never as failing."
+    )
     next_workout_id: uuid.UUID | None
     block_complete: bool

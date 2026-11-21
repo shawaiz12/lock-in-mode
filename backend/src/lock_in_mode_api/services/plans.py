@@ -10,6 +10,7 @@ new answers and the new plan are saved together or not at all.
 
 import uuid
 from collections.abc import Sequence
+from dataclasses import replace
 from datetime import UTC, datetime
 
 from sqlalchemy import exists, func, select
@@ -20,6 +21,7 @@ from sqlalchemy.orm import selectinload
 
 from lock_in_mode_api.models import (
     Exercise,
+    ExerciseTarget,
     MovementRung,
     Plan,
     PlannedWorkout,
@@ -31,6 +33,7 @@ from lock_in_mode_api.models import (
 from lock_in_mode_api.models.enums import (
     MovementSlot,
     PlanEndReason,
+    WorkoutFormat,
     WorkoutPart,
     WorkoutStatus,
 )
@@ -49,6 +52,7 @@ from lock_in_mode_api.training.plan_types import (
     PlannedExercise,
     Workout,
 )
+from lock_in_mode_api.training.progression import Planned, Served, Target, serve
 from lock_in_mode_api.training.routine import choose_routine
 from lock_in_mode_api.training.sessions import as_test_workout, build_block
 from lock_in_mode_api.training.templates import STRENGTH_KINDS
@@ -136,27 +140,68 @@ def _summary(workout: PlannedWorkout) -> WorkoutSummary:
     )
 
 
+def progresses(row: PlannedWorkoutExercise) -> bool:
+    """Main-block strength work moves with the user's progress (ADR 0019). Warm-ups,
+    cardio and open test sets keep the plan's numbers."""
+    return row.part == WorkoutPart.MAIN and row.reps_in_reserve is not None and not row.is_test
+
+
+def served(row: PlannedWorkoutExercise, workout: PlannedWorkout, target: Target | None) -> Served:
+    """What this row asks for now. The recovery week keeps its lighter numbers and only
+    takes the suggested weight ("same weight, stop 4 reps short")."""
+    planned = Planned(row.sets, row.reps_min, row.reps_max, row.seconds)
+    if target is not None and workout.recovery:
+        target = Target(weight_kg=target.weight_kg)
+    return serve(planned, target, circuit=workout.format == WorkoutFormat.CIRCUIT)
+
+
 def _exercise_read(
-    row: PlannedWorkoutExercise, last: dict[uuid.UUID, LastResult]
+    row: PlannedWorkoutExercise,
+    workout: PlannedWorkout,
+    last: dict[uuid.UUID, LastResult],
+    targets: dict[uuid.UUID, Target],
 ) -> PlannedExerciseRead:
+    """Pending workouts show today's targets; done and skipped ones show what was saved."""
+    now = Served(row.sets, row.reps_min, row.reps_max, row.seconds, None)
+    if workout.status == WorkoutStatus.PENDING and progresses(row):
+        now = served(row, workout, targets.get(row.exercise_id))
+    previous = last.get(row.exercise_id)
+    weight = now.weight_kg
+    if weight is None and previous is not None and row.reps_in_reserve is not None:
+        weight = previous.weight_kg
     return PlannedExerciseRead(
         id=row.id,
         exercise=ExerciseRef.model_validate(row.exercise),
-        sets=row.sets,
-        reps_min=row.reps_min,
-        reps_max=row.reps_max,
-        seconds=row.seconds,
+        sets=now.sets,
+        reps_min=now.reps_min,
+        reps_max=now.reps_max,
+        seconds=now.seconds,
         rest_seconds=row.rest_seconds,
         reps_in_reserve=row.reps_in_reserve,
         effort=row.effort,
         group=row.group_number,
         practice_sets=row.practice_sets,
         is_test=row.is_test,
-        last=last.get(row.exercise_id),
+        weight_kg=weight,
+        last=previous,
     )
 
 
-async def _last_results(
+async def targets_of(
+    session: AsyncSession, user_id: uuid.UUID, exercise_ids: set[uuid.UUID]
+) -> dict[uuid.UUID, Target]:
+    """This user's progress on these exercises (ADR 0019). Missing = as planned."""
+    if not exercise_ids:
+        return {}
+    rows = await session.scalars(
+        select(ExerciseTarget).where(
+            ExerciseTarget.user_id == user_id, ExerciseTarget.exercise_id.in_(exercise_ids)
+        )
+    )
+    return {row.exercise_id: row.as_target() for row in rows}
+
+
+async def last_results(
     session: AsyncSession, user_id: uuid.UUID, exercise_ids: set[uuid.UUID]
 ) -> dict[uuid.UUID, LastResult]:
     """The most recent logged set of each exercise, from any workout: the app pre-fills
@@ -195,10 +240,12 @@ async def _last_results(
 async def _detail(session: AsyncSession, workout: PlannedWorkout) -> WorkoutDetail:
     plan_user = await session.scalar(select(Plan.user_id).where(Plan.id == workout.plan_id))
     assert plan_user is not None
-    last = await _last_results(session, plan_user, {row.exercise_id for row in workout.exercises})
+    exercise_ids = {row.exercise_id for row in workout.exercises}
+    last = await last_results(session, plan_user, exercise_ids)
+    targets = await targets_of(session, plan_user, exercise_ids)
     parts: dict[WorkoutPart, list[PlannedExerciseRead]] = {part: [] for part in WorkoutPart}
     for row in workout.exercises:  # already in position order
-        parts[row.part].append(_exercise_read(row, last))
+        parts[row.part].append(_exercise_read(row, workout, last, targets))
     return WorkoutDetail(
         **_summary(workout).model_dump(),
         plan_id=workout.plan_id,
@@ -258,7 +305,7 @@ async def get_workout(
 # --- building and saving a block ----------------------------------------------------------
 
 
-async def _library(session: AsyncSession) -> list[Exercise]:
+async def exercise_library(session: AsyncSession) -> list[Exercise]:
     # Sorted by slug so the generator always sees the same order (it is deterministic,
     # but its tie-breaks shouldn't depend on how Postgres happens to return rows).
     return list(await session.scalars(select(Exercise).order_by(Exercise.slug)))
@@ -320,7 +367,7 @@ def _exercise_rows(workout: Workout, ids: dict[str, uuid.UUID]) -> list[PlannedW
 
 async def _add_plan(session: AsyncSession, user_id: uuid.UUID, answers: PlanAnswers) -> Plan:
     """Generate the next block from these answers and add it (the caller commits)."""
-    library = await _library(session)
+    library = await exercise_library(session)
     block_number = await _next_block_number(session, user_id)
     routine = choose_routine(answers)
     block = build_block(
@@ -479,7 +526,7 @@ async def _move_test(session: AsyncSession, plan: Plan, skipped: PlannedWorkout)
     ]
     if not candidates:
         return
-    library = await _library(session)
+    library = await exercise_library(session)
     picker = Picker(PlanAnswers.from_json(plan.generated_from), library, plan.block_number)
     ids = {exercise.slug: exercise.id for exercise in library}
     for workout_id in candidates:
@@ -521,12 +568,12 @@ async def skip_workout(
 
 
 async def rebuild_pending(session: AsyncSession, user_id: uuid.UUID) -> None:
-    """Rebuild the current block's pending workouts with the user's rungs (ADR 0018).
+    """Rebuild the current block's pending workouts with the user's rungs (ADR 0018, 0019).
 
     The generator is deterministic, so building the block again with the same answers
     and block number changes only the slots the new rungs affect. Done and skipped
-    workouts are history and stay as they were. No strength test: it has just been done.
-    The caller commits.
+    workouts are history and stay as they were. A strength test still waiting (it was
+    skipped and moved, ADR 0017) stays in its workout. The caller commits.
     """
     plan = await current_plan(session, user_id)
     if plan is None:
@@ -542,8 +589,9 @@ async def rebuild_pending(session: AsyncSession, user_id: uuid.UUID) -> None:
             .execution_options(populate_existing=True)
         )
     )
-    library = await _library(session)
+    library = await exercise_library(session)
     answers = PlanAnswers.from_json(plan.generated_from)
+    rungs = await rungs_of(session, user_id)
     block = build_block(
         answers,
         choose_routine(answers),
@@ -552,14 +600,17 @@ async def rebuild_pending(session: AsyncSession, user_id: uuid.UUID) -> None:
         first_block=False,
         block_number=plan.block_number,
         recovery_week=True,
-        rungs=await rungs_of(session, user_id),
+        rungs=rungs,
     )
     rebuilt = [workout for week in block for workout in week]
     ids = {exercise.slug: exercise.id for exercise in library}
+    picker = Picker(answers, library, plan.block_number, rungs)
     for workout in workouts:
         new = rebuilt[workout.position - 1]
         if new.kind != workout.kind:  # can't happen with the same answers; never guess
             continue
+        if any(row.is_test for row in workout.exercises):
+            new = replace(new, exercises=tuple(as_test_workout(new.exercises, picker)))
         # Old rows go first: (workout, part, position) is unique, so inserting the new
         # rows before the DELETE would clash.
         workout.exercises = []

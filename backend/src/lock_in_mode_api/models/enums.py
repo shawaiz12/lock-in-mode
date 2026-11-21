@@ -114,6 +114,9 @@ class WorkoutStatus(StrEnum):
     PENDING = "pending"
     DONE = "done"  # set by the sessions stage when the workout is finished
     SKIPPED = "skipped"  # "Skip" on the next workout: no penalty, the queue moves on
+    # Too many "too hard" taps in a week: the rest of the build-up weeks make way for the
+    # recovery week, which comes early as earned recovery (ADR 0019). Not a skip.
+    REPLACED_BY_RECOVERY = "replaced_by_recovery"
 
 
 class WorkoutPart(StrEnum):
@@ -138,6 +141,22 @@ class Feedback(StrEnum):
     TOO_EASY = "too_easy"
     JUST_RIGHT = "just_right"
     TOO_HARD = "too_hard"
+
+
+class ProgressChange(StrEnum):
+    """What progression changed for one exercise after a workout (ADR 0019)."""
+
+    # Up
+    HEAVIER = "heavier"  # suggested weight up one step; reps start at the bottom again
+    EXTRA_SET = "extra_set"  # one more set (or a set given back after a step back)
+    LONGER_HOLD = "longer_hold"  # holds: +5 s, up to 60 s
+    HARDER_MOVE = "harder_move"  # the next rung of the ladder (home, bodyweight)
+    MORE_REPS = "more_reps"  # one "too easy": aim 2 reps higher next time
+    # Back
+    LIGHTER = "lighter"  # about 10% lighter
+    FEWER_SETS = "fewer_sets"  # an extra set taken away, or one set fewer
+    SHORTER_HOLD = "shorter_hold"  # holds: -10 s
+    EASIER_MOVE = "easier_move"  # one rung down the ladder
 
 
 class Caution(StrEnum):
