@@ -176,6 +176,13 @@ def test_shoulders_on_leg_day_still_get_a_valid_week() -> None:
     assert _kinds(routine) == [S.PUSH, S.PULL, S.LEGS] * 2
 
 
+def test_ten_minute_sessions_have_no_room_for_a_finisher() -> None:
+    routine = choose_routine(Answers(goal=Goal.LOSE_FAT, minutes_per_session=10))
+
+    assert not any(s.finisher for s in routine.sessions)
+    assert not any("finisher" in reason for reason in routine.reasons)
+
+
 def test_same_answers_always_give_the_same_week() -> None:
     answers = Answers(goal=Goal.LOSE_FAT, days_per_week=5)
 

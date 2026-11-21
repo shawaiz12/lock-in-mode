@@ -17,11 +17,11 @@ from lock_in_mode_api.models.enums import (
     WorkoutFormat,
 )
 from lock_in_mode_api.models.enums import MovementSlot as M
-from lock_in_mode_api.models.enums import SessionKind as S
 from lock_in_mode_api.seed.schema import SeedExercise, load_library
 from lock_in_mode_api.training.exercise_rules import can_do, cautions
 from lock_in_mode_api.training.routine import choose_routine
 from lock_in_mode_api.training.sessions import MAIN_BLOCK_MINUTES, Workout, build_block
+from lock_in_mode_api.training.templates import STRENGTH_KINDS
 
 LIBRARY: Sequence[SeedExercise] = load_library().exercises
 BY_SLUG = {e.slug: e for e in LIBRARY}
@@ -232,8 +232,8 @@ def test_every_workout_is_safe_possible_unique_and_on_time(goal: Goal) -> None:
     ):
         answers = Answers(goal, level, location, kit, days, minutes, low, limits=limits)
         for workout in (w for week in _block(answers, weeks=2) for w in week):
-            if not workout.exercises:
-                continue  # cardio and mobility: stage 2b
+            if workout.kind not in STRENGTH_KINDS:
+                continue  # cardio and mobility: test_conditioning.py
             slugs = [e.slug for e in workout.exercises]
             if len(set(slugs)) != len(slugs):
                 problems.append((answers, workout.title, "repeats an exercise"))
@@ -246,9 +246,3 @@ def test_every_workout_is_safe_possible_unique_and_on_time(goal: Goal) -> None:
                 problems.append((answers, workout.title, f"{workout.main_minutes} min"))
 
     assert problems == []
-
-
-def test_cardio_sessions_are_left_for_stage_2b() -> None:
-    week = _block(Answers(goal=Goal.LOSE_FAT, days_per_week=4))[0]
-
-    assert [w.exercises for w in week if w.kind in (S.HIIT, S.STEADY_CARDIO)] == [(), ()]
