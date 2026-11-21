@@ -26,6 +26,7 @@ S = SessionKind
 
 DAYS_IN_WEEK = 7
 SHORT_SESSION_MINUTES = 20  # 10 and 20 minutes: full body only (KB section 4)
+MIN_SESSION_MINUTES = 10
 PPL_MIN_MINUTES = 30
 BEGINNER_MAX_HARD_DAYS = 3
 PULLING_KIT = frozenset({Equipment.RESISTANCE_BANDS, Equipment.DUMBBELLS, Equipment.PULL_UP_BAR})
@@ -248,8 +249,10 @@ def _lose_fat(
         "Lose fat: strength training keeps your muscle while you lose fat. Fat loss itself "
         "comes mostly from eating a bit less than you burn."
     )
+    # A finisher needs 4+ minutes: a 10-minute session has no room for one (ADR 0016).
+    finisher = answers.minutes_per_session != MIN_SESSION_MINUTES
     if days <= 3:
-        return RoutineKind.FULL_BODY, [PlannedSession(S.FULL_BODY, finisher=True)] * days
+        return RoutineKind.FULL_BODY, [PlannedSession(S.FULL_BODY, finisher=finisher)] * days
     if answers.level == FitnessLevel.BEGINNER and days >= 5:
         # 4 hard days can't each be followed by an easy one in 7 days, so beginners keep
         # 3 hard days: full body with a finisher, plus easy cardio (KB section 4).
@@ -259,7 +262,7 @@ def _lose_fat(
         )
         easy = [S.STEADY_CARDIO, S.EASY_CARDIO, S.MOBILITY][: days - 3]
         return RoutineKind.STRENGTH_AND_CARDIO, [
-            *[PlannedSession(S.FULL_BODY, finisher=True)] * 3,
+            *[PlannedSession(S.FULL_BODY, finisher=finisher)] * 3,
             *[PlannedSession(k) for k in easy],
         ]
     full_body_only = short or answers.level == FitnessLevel.BEGINNER

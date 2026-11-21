@@ -103,6 +103,9 @@ class WorkoutFormat(StrEnum):
     SUPERSETS = "supersets"  # pairs done back to back, sharing the rest
     FIRST_STRAIGHT_THEN_SUPERSETS = "first_straight_then_supersets"  # 30-minute sessions
     CIRCUIT = "circuit"  # every exercise in a row, then repeat the round
+    INTERVALS = "intervals"  # HIIT: timed work and rest, repeated in rounds
+    CONTINUOUS = "continuous"  # one steady activity: walk, cycle, jog
+    FLOW = "flow"  # mobility: one gentle move after another
 
 
 class Caution(StrEnum):

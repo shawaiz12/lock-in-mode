@@ -1,178 +1,68 @@
-"""Stage 2a of the plan generator: fill strength sessions (ADR 0015).
+"""Stage 2 of the plan generator: build every workout of a block (ADR 0015, ADR 0016).
 
-routine (stage 1) + exercise library -> workouts with exercises, sets, reps, rest and a
-time estimate, for a whole training block. Pure: no database. Rules: KB sections 3
-(training variables), 5 (templates), 9 (fitting the session length); rotation: ADR 0014.
+routine (stage 1) + exercise library -> workouts with warm-up, main block, finisher and
+cool-down, fitted to the user's minutes. Pure: no database. Rules: KB sections 2 (first
+workout test), 3 (training variables), 5 (templates), 7 (HIIT and cardio), 8 (warm-up and
+cool-down) and 9 (fitting the session length); rotation: ADR 0014.
 """
 
 import math
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
-from typing import Protocol
 
 from lock_in_mode_api.models.enums import (
-    HEAD_GROUP,
-    Equipment,
     ExerciseType,
     FitnessLevel,
     Goal,
-    Impact,
     MovementSlot,
     MuscleGroup,
-    MuscleHead,
     SessionKind,
     WorkoutFormat,
 )
-from lock_in_mode_api.training.exercise_rules import ExerciseFacts, UserSetup, can_do, cautions
-from lock_in_mode_api.training.routine import PlanInputs, Routine
+from lock_in_mode_api.training import conditioning
+from lock_in_mode_api.training.picker import Picker
+from lock_in_mode_api.training.plan_types import (
+    MAIN_BLOCK_MINUTES,
+    NO_LIMIT_SPLIT,
+    SESSION_SPLIT,
+    TITLES,
+    BuildInputs,
+    ExerciseInfo,
+    PlannedExercise,
+    Workout,
+    is_weighted,
+)
+from lock_in_mode_api.training.routine import PlannedSession, Routine
 from lock_in_mode_api.training.templates import STRENGTH_KINDS, Slot, template
 
-S = SessionKind
+__all__ = ["MAIN_BLOCK_MINUTES", "PlannedExercise", "Workout", "build_block"]
 
-# Hardest rung a level starts on (difficulty 1-5). The first workout corrects it.
-LEVEL_MAX_DIFFICULTY = {
-    FitnessLevel.BEGINNER: 2,
-    FitnessLevel.SOME_EXPERIENCE: 4,
-    FitnessLevel.EXPERIENCED: 5,
-}
-# Minutes for the main block, after warm-up and cool-down (KB section 9; 75 and 90 extend it).
-MAIN_BLOCK_MINUTES = {10: 7, 20: 15, 30: 23, 45: 36, 60: 50, 75: 63, 90: 77}
+S = SessionKind
+M = MovementSlot
+
 SET_WORK_SECONDS = 40  # one set is about 40 s of work (KB section 9)
 SUPERSET_TIME_FACTOR = 0.6  # a superset pair shares its rest: about 40% faster
 CIRCUIT_ROUND_REST = 60
 MIN_SETS = 2
 PROTECTED_SLOTS = 3  # never drop the first three slots: they are the session
-WEIGHTED_KIT = frozenset({Equipment.DUMBBELLS, Equipment.GYM})
 HARD_BODYWEIGHT = 4  # difficulty from which a bodyweight move counts as heavy
 
-TITLES = {
-    S.FULL_BODY: "Full body",
-    S.UPPER: "Upper body",
-    S.LOWER: "Lower body",
-    S.PUSH: "Push",
-    S.PULL: "Pull",
-    S.LEGS: "Legs",
-    S.BRO_CHEST: "Chest",
-    S.BRO_BACK: "Back",
-    S.BRO_LEGS: "Legs",
-    S.BRO_SHOULDERS: "Shoulders",
-    S.BRO_ARMS: "Arms and core",
-    S.CIRCUIT: "Circuit",
-    S.HIIT: "HIIT",
-    S.STEADY_CARDIO: "Steady cardio",
-    S.LONG_CARDIO: "Long easy cardio",
-    S.EASY_CARDIO: "Easy walk",
-    S.MOBILITY: "Mobility",
+# First workout: the KB section 2 test moves. Bodyweight users do these exact moves with
+# an open target; the results place them on each ladder. Weighted lifts: pick a weight.
+TEST_MOVES = {
+    M.HORIZONTAL_PUSH: "push-up",
+    M.SQUAT: "bodyweight-squat",
+    M.BRACE: "plank",
+    M.VERTICAL_PULL: "pull-up",
 }
-
-
-class ExerciseInfo(ExerciseFacts, Protocol):
-    """What the builder reads from an exercise. Seed entries and database rows both fit."""
-
-    @property
-    def slug(self) -> str: ...
-    @property
-    def name(self) -> str: ...
-    @property
-    def movement_slot(self) -> MovementSlot: ...
-    @property
-    def exercise_type(self) -> ExerciseType: ...
-    @property
-    def targets(self) -> Sequence[str]: ...
-    @property
-    def difficulty(self) -> int: ...
-    @property
-    def effectiveness(self) -> int | None: ...
-    @property
-    def is_timed(self) -> bool: ...
-    @property
-    def impact(self) -> Impact: ...
-    @property
-    def primary_muscle(self) -> MuscleGroup | None: ...
-
-
-class BuildInputs(PlanInputs, UserSetup, Protocol):
-    """Every answer the builder reads. Profile rows fit."""
-
-
-@dataclass(frozen=True)
-class PlannedExercise:
-    slug: str
-    name: str
-    movement: MovementSlot
-    sets: int  # rounds, for a circuit
-    reps_min: int | None  # None for timed exercises
-    reps_max: int | None
-    seconds: int | None  # timed exercises (plank): hold this long
-    rest_seconds: int  # after each set (circuit: before the next exercise)
-    reps_in_reserve: int  # "stop when you could still do this many more good reps"
-    group: int  # exercises with the same group are done back to back
-    rest_floor: int  # shortest rest the goal allows, used when time is tight
-
-
-@dataclass(frozen=True)
-class Workout:
-    kind: SessionKind
-    letter: str  # "A", "B", "C" for rotating templates; "" otherwise
-    title: str
-    format: WorkoutFormat
-    exercises: tuple[PlannedExercise, ...]
-    main_minutes: int  # estimated main block; warm-up and cool-down come on top
-    finisher: bool = False
-
-
-# --- choosing the exercise for a slot ------------------------------------------------
-
-
-def _rank(exercise: ExerciseInfo, slot: Slot, cap: int) -> tuple[object, ...]:
-    over_cap = exercise.difficulty > cap
-    return (
-        over_cap,  # level-appropriate first
-        exercise.difficulty if over_cap else 0,  # if nothing fits the level, the easiest
-        slot.prefer is not None and slot.prefer not in exercise.targets,  # wanted emphasis
-        slot.prefer is not None and exercise.primary_muscle != HEAD_GROUP[slot.prefer],
-        -(exercise.effectiveness or 0),  # most effective
-        exercise.difficulty,  # then the safer start
-        exercise.slug,  # stable tie-break
-    )
-
-
-class _Picker:
-    """Picks exercises with planned rotation (ADR 0014).
-
-    Each slot has a short ranked pool: 2 picks for big lifts, 3 for small moves. The n-th
-    time a slot appears in the block it gets pool[n % size], so picks alternate on a fixed
-    pattern, never randomly.
-    """
-
-    def __init__(self, answers: BuildInputs, library: Sequence[ExerciseInfo]) -> None:
-        self.cap = LEVEL_MAX_DIFFICULTY[answers.level]
-        self.by_movement: dict[MovementSlot, list[ExerciseInfo]] = {}
-        for exercise in library:
-            if can_do(exercise, answers) and not cautions(exercise, answers):
-                self.by_movement.setdefault(exercise.movement_slot, []).append(exercise)
-        self.seen: Counter[tuple[MovementSlot, MuscleHead | None]] = Counter()
-
-    def pick(self, slot: Slot, used: set[str]) -> ExerciseInfo | None:
-        movement = slot.movement
-        if not self.by_movement.get(movement) and slot.fallback is not None:
-            movement = slot.fallback
-        candidates = sorted(
-            self.by_movement.get(movement, []), key=lambda e: _rank(e, slot, self.cap)
-        )
-        if not candidates:
-            return None
-        in_level = [e for e in candidates if e.difficulty <= self.cap]
-        pool = (in_level or candidates[:1])[: 2 if slot.main else 3]
-        key = (slot.movement, slot.prefer)
-        turn = self.seen[key]
-        self.seen[key] += 1
-        for offset in range(len(pool)):
-            choice = pool[(turn + offset) % len(pool)]
-            if choice.slug not in used:
-                return choice
-        return next((e for e in candidates if e.slug not in used), None)
+CARDIO_FORMATS = {
+    S.HIIT: WorkoutFormat.INTERVALS,
+    S.STEADY_CARDIO: WorkoutFormat.CONTINUOUS,
+    S.LONG_CARDIO: WorkoutFormat.CONTINUOUS,
+    S.EASY_CARDIO: WorkoutFormat.CONTINUOUS,
+    S.MOBILITY: WorkoutFormat.FLOW,
+}
 
 
 # --- sets, reps, rest and effort (KB section 3) --------------------------------------
@@ -191,7 +81,7 @@ def _numbers(answers: BuildInputs, slot: Slot, exercise: ExerciseInfo, lead: boo
     goal, level = answers.goal, answers.level
     beginner = level == FitnessLevel.BEGINNER
     small = exercise.exercise_type == ExerciseType.ISOLATION or not slot.main
-    weighted = bool(WEIGHTED_KIT & set(exercise.equipment))
+    weighted = is_weighted(exercise)
 
     if answers.needs_low_intensity or goal == Goal.STAY_ACTIVE or slot.light or beginner:
         sets = MIN_SETS
@@ -256,7 +146,6 @@ def _plan_exercise(
         seconds=_timed_seconds(answers) if timed else None,
         rest_seconds=numbers.rest,
         reps_in_reserve=numbers.rir,
-        group=0,  # set by _group
         rest_floor=numbers.rest_floor,
     )
 
@@ -295,10 +184,17 @@ def _work_seconds(exercise: PlannedExercise) -> int:
     return exercise.seconds if exercise.seconds is not None else SET_WORK_SECONDS
 
 
+def timed_seconds(moves: Sequence[PlannedExercise]) -> float:
+    """Intervals, continuous cardio, flows, warm-ups and cool-downs: work plus rest, per set."""
+    return float(sum(m.sets * ((m.seconds or SET_WORK_SECONDS) + m.rest_seconds) for m in moves))
+
+
 def estimate_seconds(exercises: Sequence[PlannedExercise], fmt: WorkoutFormat) -> float:
     """Main-block time: a set is ~40 s of work plus its rest; a pair shares its rest."""
     if not exercises:
         return 0.0
+    if fmt in (WorkoutFormat.INTERVALS, WorkoutFormat.CONTINUOUS, WorkoutFormat.FLOW):
+        return timed_seconds(exercises)
     if fmt == WorkoutFormat.CIRCUIT:
         rounds = exercises[0].sets
         per_round = sum(_work_seconds(e) + e.rest_seconds for e in exercises)
@@ -356,16 +252,15 @@ def _fit(
     return items
 
 
-def build_strength_session(
+def _strength_main(
     answers: BuildInputs,
     kind: SessionKind,
     letter: str,
-    picker: _Picker,
-    finisher: bool = False,
-) -> Workout:
-    minutes = answers.minutes_per_session
-    fmt = workout_format(kind, minutes)
-    budget = None if minutes is None else MAIN_BLOCK_MINUTES[minutes] * 60
+    picker: Picker,
+    budget_seconds: float | None,
+) -> list[PlannedExercise]:
+    """The main block of a strength session: slots → picks → numbers → fitted."""
+    fmt = workout_format(kind, answers.minutes_per_session)
     slots = template(kind, letter, answers.shoulder_day)
 
     used: set[str] = set()
@@ -390,27 +285,125 @@ def build_strength_session(
             for keep, e in required
         ]
 
-    exercises = _fit(required, fmt, budget)
+    exercises = _fit(required, fmt, budget_seconds)
     for slot, exercise in optional:  # "(if time)" slots: always with no limit, else if they fit
         extra = _plan_exercise(answers, slot, exercise, lead=False)
         if fmt == WorkoutFormat.CIRCUIT:
             extra = replace(extra, sets=exercises[0].sets, rest_seconds=exercises[0].rest_seconds)
         candidate = [*exercises, extra]
-        fits = budget is None or estimate_seconds(_group(candidate, fmt), fmt) <= budget
-        if fits:
+        if (
+            budget_seconds is None
+            or estimate_seconds(_group(candidate, fmt), fmt) <= budget_seconds
+        ):
             exercises = candidate
+    return _group(exercises, fmt)
 
-    exercises = _group(exercises, fmt)
-    seconds = estimate_seconds(exercises, fmt)
+
+def _as_test(exercise: PlannedExercise, picker: Picker) -> PlannedExercise:
+    """First workout: an open target that places the user on the ladder (KB section 2).
+
+    Bodyweight: swap in the standard test move (push-up, squat, plank, pull-up) if it is
+    safe for them, with no rep target: "as many as you can with good form, stop with 2
+    left". Weighted lifts keep their reps: "pick a weight you can lift with 3 left".
+    """
+    chosen = picker.by_slug.get(exercise.slug)
+    if chosen is not None and is_weighted(chosen):
+        return replace(exercise, test=True)
+    test_move = picker.by_slug.get(TEST_MOVES[exercise.movement])
+    if test_move is not None:
+        exercise = replace(exercise, slug=test_move.slug, name=test_move.name)
+    return replace(exercise, reps_min=None, reps_max=None, seconds=None, test=True)
+
+
+def _mark_tests(main: list[PlannedExercise], picker: Picker) -> list[PlannedExercise]:
+    """Test each movement once; never swap in a move the workout already has."""
+    tested: set[MovementSlot] = set()
+    slugs = {e.slug for e in main}
+    marked = []
+    for exercise in main:
+        if exercise.movement in TEST_MOVES and exercise.movement not in tested:
+            test = _as_test(exercise, picker)
+            if test.slug == exercise.slug or test.slug not in slugs:
+                tested.add(exercise.movement)
+                slugs.add(test.slug)
+                exercise = test
+        marked.append(exercise)
+    return marked
+
+
+def _with_practice_sets(
+    main: list[PlannedExercise], picker: Picker, room_seconds: float
+) -> list[PlannedExercise]:
+    """1 to 2 lighter sets of the first lift, if the warm-up has room (KB section 8)."""
+    if not main or main[0].seconds is not None or main[0].reps_min is None:
+        return main  # holds and open test sets need no practice
+    if room_seconds < conditioning.PRACTICE_SET_SECONDS:
+        return main
+    first = picker.by_slug.get(main[0].slug)
+    wanted = 2 if first is not None and is_weighted(first) else 1
+    sets = min(wanted, int(room_seconds // conditioning.PRACTICE_SET_SECONDS))
+    return [replace(main[0], practice_sets=sets), *main[1:]]
+
+
+def _muscles(main: Sequence[PlannedExercise], picker: Picker) -> list[MuscleGroup | None]:
+    return [
+        picker.by_slug[e.slug].primary_muscle if e.slug in picker.by_slug else None for e in main
+    ]
+
+
+def build_session(
+    answers: BuildInputs,
+    session: PlannedSession,
+    letter: str,
+    picker: Picker,
+    first_workout: bool = False,
+) -> Workout:
+    """One complete workout: warm-up, main block, finisher, cool-down, fitted to the minutes."""
+    minutes = answers.minutes_per_session
+    warm_min, main_min, cool_min = NO_LIMIT_SPLIT if minutes is None else SESSION_SPLIT[minutes]
+    kind = session.kind
+    finisher_min = conditioning.finisher_minutes(minutes) if session.finisher else 0
+    main_budget = None if main_min is None else (main_min - finisher_min) * 60
     title = TITLES[kind] + (f" {letter}" if letter else "")
+
+    if kind in STRENGTH_KINDS:
+        fmt = workout_format(kind, minutes)
+        main = _strength_main(answers, kind, letter, picker, main_budget)
+        if first_workout:
+            main = _mark_tests(main, picker)
+    elif kind == S.HIIT:
+        fmt, main = WorkoutFormat.INTERVALS, conditioning.hiit(picker, main_budget)
+    elif kind == S.MOBILITY:
+        fmt, main = WorkoutFormat.FLOW, conditioning.mobility(picker, main_budget)
+    else:
+        fmt, main = CARDIO_FORMATS[kind], conditioning.steady(picker, kind, main_budget)
+
+    finisher = conditioning.finisher(picker, finisher_min) if finisher_min else []
+    # Easy walks and mobility are gentle already: no warm-up or cool-down around them.
+    gentle = kind in (S.EASY_CARDIO, S.MOBILITY)
+    muscles = _muscles(main, picker)
+    if kind in (S.HIIT, S.STEADY_CARDIO, S.LONG_CARDIO):
+        muscles = [MuscleGroup.QUADS, MuscleGroup.HAMSTRINGS, MuscleGroup.CALVES]
+    warm = [] if gentle else conditioning.warm_up(picker, warm_min * 60, muscles)
+    cool = [] if gentle else conditioning.cool_down(picker, cool_min * 60, muscles)
+    if kind in STRENGTH_KINDS and minutes != 10:
+        room = warm_min * 60 - conditioning.warm_up_seconds(warm)
+        main = _with_practice_sets(main, picker, room)
+
+    main_seconds = estimate_seconds(main, fmt) + timed_seconds(finisher)
+    practice = sum(e.practice_sets for e in main) * conditioning.PRACTICE_SET_SECONDS
+    total = timed_seconds(warm) + practice + main_seconds + timed_seconds(cool)
     return Workout(
         kind=kind,
         letter=letter,
         title=title,
         format=fmt,
-        exercises=tuple(exercises),
-        main_minutes=math.ceil(seconds / 60),
-        finisher=finisher,
+        exercises=tuple(main),
+        main_minutes=math.ceil(main_seconds / 60),
+        warm_up=tuple(warm),
+        finisher=tuple(finisher),
+        cool_down=tuple(cool),
+        total_minutes=math.ceil(total / 60),
     )
 
 
@@ -428,14 +421,20 @@ def _letters(kind: SessionKind, answers: BuildInputs, routine: Routine) -> str:
 
 
 def build_block(
-    answers: BuildInputs, routine: Routine, library: Sequence[ExerciseInfo], weeks: int
+    answers: BuildInputs,
+    routine: Routine,
+    library: Sequence[ExerciseInfo],
+    weeks: int,
+    first_block: bool = False,
 ) -> list[list[Workout]]:
     """Every workout of a training block, week by week, with rotation applied.
 
-    Cardio, HIIT and mobility sessions come back empty for now (stage 2b fills them).
+    `first_block`: the user's very first block, whose first strength workout is the
+    strength test (ADR 0012, decision 4).
     """
-    picker = _Picker(answers, library)
+    picker = Picker(answers, library)
     letter_turns: Counter[SessionKind] = Counter()
+    tested = not first_block
     block: list[list[Workout]] = []
     for _ in range(weeks):
         week: list[Workout] = []
@@ -443,12 +442,8 @@ def build_block(
             letters = _letters(session.kind, answers, routine)
             letter = letters[letter_turns[session.kind] % len(letters)] if letters else ""
             letter_turns[session.kind] += 1
-            if session.kind in STRENGTH_KINDS:
-                week.append(
-                    build_strength_session(answers, session.kind, letter, picker, session.finisher)
-                )
-            else:
-                fmt = WorkoutFormat.STRAIGHT_SETS
-                week.append(Workout(session.kind, "", TITLES[session.kind], fmt, (), 0))
+            is_test = not tested and session.kind in STRENGTH_KINDS
+            tested = tested or is_test
+            week.append(build_session(answers, session, letter, picker, first_workout=is_test))
         block.append(week)
     return block
