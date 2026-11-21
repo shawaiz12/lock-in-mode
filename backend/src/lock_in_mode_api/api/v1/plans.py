@@ -18,6 +18,7 @@ from lock_in_mode_api.api.errors import (
     PlanNotFound,
     ProfileNotFound,
     SafetyScreenRequired,
+    SessionInProgress,
 )
 from lock_in_mode_api.schemas.plan import PlanRead, WorkoutDetail
 from lock_in_mode_api.services import plans as plan_service
@@ -80,7 +81,8 @@ async def read_workout(
 async def skip_workout(user: CurrentUser, workout_id: uuid.UUID, session: DbSession) -> PlanRead:
     """Skip the next workout: no penalty, the queue moves on. Returns the updated plan.
 
-    Skipping the strength test moves it to the next strength workout.
+    Skipping the strength test moves it to the next strength workout. A started workout
+    can't be skipped (409 `session_in_progress`): finish it instead, half counts.
     """
     try:
         return await plan_service.skip_workout(session, user.id, workout_id)
@@ -88,3 +90,5 @@ async def skip_workout(user: CurrentUser, workout_id: uuid.UUID, session: DbSess
         raise NotFound("No workout with this id") from exc
     except plan_service.NotNextWorkoutError as exc:
         raise NotNextWorkout("Only the next workout in the queue can be skipped") from exc
+    except plan_service.SessionInProgressError as exc:
+        raise SessionInProgress("This workout is started: finish it instead") from exc

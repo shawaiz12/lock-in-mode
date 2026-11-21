@@ -8,7 +8,7 @@ cool-down), 9 (fitting the session length) and 10 (the recovery week); rotation:
 
 import math
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 
 from lock_in_mode_api.models.enums import (
@@ -474,14 +474,16 @@ def build_block(
     *,
     block_number: int = 1,
     recovery_week: bool = False,
+    rungs: Mapping[MovementSlot, int] | None = None,
 ) -> list[list[Workout]]:
     """Every workout of a training block, week by week, with rotation applied.
 
     `weeks`: build-up weeks. `recovery_week`: add the lighter week after them (ADR 0017).
     `first_block`: the strength test is still to do, so the first strength workout is
     the test (ADR 0012, decision 4). `block_number` freshens the small moves (ADR 0017).
+    `rungs`: where the strength test placed the user, per movement (ADR 0018).
     """
-    picker = Picker(answers, library, block_number)
+    picker = Picker(answers, library, block_number, rungs)
     letter_turns: Counter[SessionKind] = Counter()
     tested = not first_block
     block: list[list[Workout]] = []

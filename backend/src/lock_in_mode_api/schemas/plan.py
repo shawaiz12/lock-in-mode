@@ -14,9 +14,19 @@ from lock_in_mode_api.models.enums import (
 from lock_in_mode_api.schemas.exercise import ExerciseRef
 
 
+class LastResult(BaseModel):
+    """The last set logged for this exercise, in any workout: pre-fill the next set with it."""
+
+    reps: int | None
+    weight_kg: float | None
+    seconds: int | None
+    logged_at: datetime
+
+
 class PlannedExerciseRead(BaseModel):
     """One exercise with the numbers to hit. `null` fields don't apply to this move."""
 
+    id: uuid.UUID = Field(description="Log sets against this id (PUT /sessions/.../sets).")
     exercise: ExerciseRef
     sets: int = Field(description="Rounds, for circuits and intervals.")
     reps_min: int | None = Field(description="null: timed move, or an open test set.")
@@ -33,6 +43,7 @@ class PlannedExerciseRead(BaseModel):
         description="First-workout strength test: as many good reps as you can, stop with "
         "2 left (bodyweight), or pick a weight you can lift with 3 left (weights)."
     )
+    last: LastResult | None = Field(description="null until this exercise is first logged.")
 
 
 class WorkoutSummary(BaseModel):

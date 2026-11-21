@@ -13,20 +13,30 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 
 from sqlalchemy import exists, func, select
+from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from lock_in_mode_api.models import (
     Exercise,
+    MovementRung,
     Plan,
     PlannedWorkout,
     PlannedWorkoutExercise,
     Profile,
+    SetLog,
+    WorkoutSession,
 )
-from lock_in_mode_api.models.enums import PlanEndReason, WorkoutPart, WorkoutStatus
+from lock_in_mode_api.models.enums import (
+    MovementSlot,
+    PlanEndReason,
+    WorkoutPart,
+    WorkoutStatus,
+)
 from lock_in_mode_api.schemas.exercise import ExerciseRef
 from lock_in_mode_api.schemas.plan import (
+    LastResult,
     PlannedExerciseRead,
     PlanRead,
     WorkoutDetail,
@@ -69,13 +79,17 @@ class WorkoutNotFoundError(Exception):
 
 
 class NotNextWorkoutError(Exception):
-    """Only the next workout can be skipped. Callers answer 409."""
+    """Only the next workout can be skipped or started. Callers answer 409."""
+
+
+class SessionInProgressError(Exception):
+    """The workout has an open session: finish it instead (half counts). Callers answer 409."""
 
 
 # --- reading ----------------------------------------------------------------------------
 
 
-async def _current_plan(session: AsyncSession, user_id: uuid.UUID) -> Plan | None:
+async def current_plan(session: AsyncSession, user_id: uuid.UUID) -> Plan | None:
     """The current plan with its queue. `populate_existing` reloads rows this session
     already holds, so values the database filled in (created_at) are always there.
     """
@@ -87,12 +101,12 @@ async def _current_plan(session: AsyncSession, user_id: uuid.UUID) -> Plan | Non
     )
 
 
-def _next(plan: Plan) -> PlannedWorkout | None:
+def next_workout(plan: Plan) -> PlannedWorkout | None:
     return next((w for w in plan.workouts if w.status == WorkoutStatus.PENDING), None)
 
 
 def _plan_read(plan: Plan) -> PlanRead:
-    upcoming = _next(plan)
+    upcoming = next_workout(plan)
     return PlanRead(
         id=plan.id,
         block_number=plan.block_number,
@@ -122,8 +136,11 @@ def _summary(workout: PlannedWorkout) -> WorkoutSummary:
     )
 
 
-def _exercise_read(row: PlannedWorkoutExercise) -> PlannedExerciseRead:
+def _exercise_read(
+    row: PlannedWorkoutExercise, last: dict[uuid.UUID, LastResult]
+) -> PlannedExerciseRead:
     return PlannedExerciseRead(
+        id=row.id,
         exercise=ExerciseRef.model_validate(row.exercise),
         sets=row.sets,
         reps_min=row.reps_min,
@@ -135,13 +152,53 @@ def _exercise_read(row: PlannedWorkoutExercise) -> PlannedExerciseRead:
         group=row.group_number,
         practice_sets=row.practice_sets,
         is_test=row.is_test,
+        last=last.get(row.exercise_id),
     )
 
 
-def _detail(workout: PlannedWorkout) -> WorkoutDetail:
+async def _last_results(
+    session: AsyncSession, user_id: uuid.UUID, exercise_ids: set[uuid.UUID]
+) -> dict[uuid.UUID, LastResult]:
+    """The most recent logged set of each exercise, from any workout: the app pre-fills
+    the next set with it ("last time: 20 kg x 10"). One query: DISTINCT ON keeps the
+    first row per exercise in the ORDER BY, i.e. the newest.
+    """
+    if not exercise_ids:
+        return {}
+    rows = await session.execute(
+        select(
+            PlannedWorkoutExercise.exercise_id,
+            SetLog.reps,
+            SetLog.weight_kg,
+            SetLog.seconds,
+            SetLog.logged_at,
+        )
+        .join(SetLog, SetLog.planned_exercise_id == PlannedWorkoutExercise.id)
+        .join(WorkoutSession, WorkoutSession.id == SetLog.session_id)
+        .where(
+            WorkoutSession.user_id == user_id,
+            PlannedWorkoutExercise.exercise_id.in_(exercise_ids),
+        )
+        .ext(distinct_on(PlannedWorkoutExercise.exercise_id))
+        .order_by(
+            PlannedWorkoutExercise.exercise_id, SetLog.logged_at.desc(), SetLog.set_number.desc()
+        )
+    )
+    return {
+        row.exercise_id: LastResult(
+            reps=row.reps, weight_kg=row.weight_kg, seconds=row.seconds, logged_at=row.logged_at
+        )
+        for row in rows
+    }
+
+
+async def _detail(session: AsyncSession, workout: PlannedWorkout) -> WorkoutDetail:
+    plan_user = await session.scalar(select(Plan.user_id).where(Plan.id == workout.plan_id))
+    assert plan_user is not None
+    last = await _last_results(session, plan_user, {row.exercise_id for row in workout.exercises})
     parts: dict[WorkoutPart, list[PlannedExerciseRead]] = {part: [] for part in WorkoutPart}
     for row in workout.exercises:  # already in position order
-        parts[row.part].append(_exercise_read(row))
+        parts[row.part].append(_exercise_read(row, last))
     return WorkoutDetail(
         **_summary(workout).model_dump(),
         plan_id=workout.plan_id,
@@ -153,7 +210,7 @@ def _detail(workout: PlannedWorkout) -> WorkoutDetail:
     )
 
 
-async def _load_workout(
+async def load_workout(
     session: AsyncSession, user_id: uuid.UUID, workout_id: uuid.UUID, *, lock: bool = False
 ) -> PlannedWorkout:
     """A workout of this user's, any plan (old ones are history), with its exercises."""
@@ -176,26 +233,26 @@ async def _load_workout(
 
 
 async def get_current_plan(session: AsyncSession, user_id: uuid.UUID) -> PlanRead:
-    plan = await _current_plan(session, user_id)
+    plan = await current_plan(session, user_id)
     if plan is None:
         raise PlanNotFoundError
     return _plan_read(plan)
 
 
 async def get_next_workout(session: AsyncSession, user_id: uuid.UUID) -> WorkoutDetail:
-    plan = await _current_plan(session, user_id)
+    plan = await current_plan(session, user_id)
     if plan is None:
         raise PlanNotFoundError
-    upcoming = _next(plan)
+    upcoming = next_workout(plan)
     if upcoming is None:
         raise BlockCompleteError
-    return _detail(await _load_workout(session, user_id, upcoming.id))
+    return await _detail(session, await load_workout(session, user_id, upcoming.id))
 
 
 async def get_workout(
     session: AsyncSession, user_id: uuid.UUID, workout_id: uuid.UUID
 ) -> WorkoutDetail:
-    return _detail(await _load_workout(session, user_id, workout_id))
+    return await _detail(session, await load_workout(session, user_id, workout_id))
 
 
 # --- building and saving a block ----------------------------------------------------------
@@ -220,6 +277,12 @@ async def _test_still_needed(session: AsyncSession, user_id: uuid.UUID) -> bool:
         )
     )
     return not finished_a_test
+
+
+async def rungs_of(session: AsyncSession, user_id: uuid.UUID) -> dict[MovementSlot, int]:
+    """Where the strength test placed this user, per movement (ADR 0018)."""
+    rows = await session.scalars(select(MovementRung).where(MovementRung.user_id == user_id))
+    return {row.movement: row.difficulty for row in rows}
 
 
 async def _next_block_number(session: AsyncSession, user_id: uuid.UUID) -> int:
@@ -268,6 +331,7 @@ async def _add_plan(session: AsyncSession, user_id: uuid.UUID, answers: PlanAnsw
         first_block=await _test_still_needed(session, user_id),
         block_number=block_number,
         recovery_week=True,
+        rungs=await rungs_of(session, user_id),
     )
     ids = {exercise.slug: exercise.id for exercise in library}
     workouts = [
@@ -316,9 +380,9 @@ async def start_plan(session: AsyncSession, user_id: uuid.UUID) -> PlanRead:
     if profile.safety_screened_at is None:
         raise SafetyScreenRequiredError
 
-    current = await _current_plan(session, user_id)
+    current = await current_plan(session, user_id)
     if current is not None:
-        if _next(current) is not None:
+        if next_workout(current) is not None:
             raise PlanInProgressError
         _end(current, PlanEndReason.FINISHED)
         # Send the UPDATE first: the new current plan can't exist alongside this one.
@@ -334,21 +398,40 @@ async def start_plan(session: AsyncSession, user_id: uuid.UUID) -> PlanRead:
     return await get_current_plan(session, user_id)
 
 
+async def is_out_of_date(session: AsyncSession, profile: Profile) -> bool:
+    """The current plan was built from different answers than the profile has now."""
+    generated_from = await session.scalar(
+        select(Plan.generated_from).where(Plan.user_id == profile.user_id, Plan.ended_at.is_(None))
+    )
+    return generated_from is not None and generated_from != PlanAnswers.of(profile).to_json()
+
+
+async def _untouched(session: AsyncSession, plan: Plan) -> bool:
+    """Nothing done, skipped or started: no history would be lost by deleting it."""
+    if any(w.status != WorkoutStatus.PENDING for w in plan.workouts):
+        return False
+    started = await session.scalar(
+        select(exists().where(WorkoutSession.planned_workout_id.in_([w.id for w in plan.workouts])))
+    )
+    return not started
+
+
 async def replace_if_answers_changed(session: AsyncSession, profile: Profile) -> bool:
     """New answers that change the plan → a fresh block right away (ADR 0017).
 
-    Call before committing the profile. Does nothing for users without a plan, or when
+    Call before committing the profile, after finishing any open session (the sessions
+    service does that, ADR 0018). Does nothing for users without a plan, or when
     only things the plan doesn't use changed (obstacles). Returns True if replaced.
 
     A plan nobody has touched yet (every workout pending) is simply rebuilt: it is
     deleted and its block number reused. That's onboarding screen 13, where the
     shoulder-day or bro-split answer comes after the first plan is shown.
     """
-    current = await _current_plan(session, profile.user_id)
+    current = await current_plan(session, profile.user_id)
     answers = PlanAnswers.of(profile)
     if current is None or current.generated_from == answers.to_json():
         return False
-    if all(w.status == WorkoutStatus.PENDING for w in current.workouts):
+    if await _untouched(session, current):
         await session.delete(current)
     else:
         _end(current, PlanEndReason.ANSWERS_CHANGED)
@@ -400,7 +483,7 @@ async def _move_test(session: AsyncSession, plan: Plan, skipped: PlannedWorkout)
     picker = Picker(PlanAnswers.from_json(plan.generated_from), library, plan.block_number)
     ids = {exercise.slug: exercise.id for exercise in library}
     for workout_id in candidates:
-        target = await _load_workout(session, plan.user_id, workout_id, lock=True)
+        target = await load_workout(session, plan.user_id, workout_id, lock=True)
         main = [row for row in target.exercises if row.part == WorkoutPart.MAIN]
         marked = as_test_workout([_as_planned(row) for row in main], picker)
         if not any(new.test for new in marked):
@@ -419,14 +502,68 @@ async def skip_workout(
     """The Skip button on the next workout: no penalty, the queue moves on (ADR 0017)."""
     # Plan first: reloading it refreshes its workouts and would drop the exercises
     # loaded with the workout (lazy="raise" catches that in tests).
-    plan = await _current_plan(session, user_id)
-    workout = await _load_workout(session, user_id, workout_id, lock=True)
-    upcoming = None if plan is None else _next(plan)
+    plan = await current_plan(session, user_id)
+    workout = await load_workout(session, user_id, workout_id, lock=True)
+    upcoming = None if plan is None else next_workout(plan)
     if plan is None or upcoming is None or upcoming.id != workout.id:
         raise NotNextWorkoutError
+    started = await session.scalar(
+        select(exists().where(WorkoutSession.planned_workout_id == workout.id))
+    )
+    if started:
+        raise SessionInProgressError
     workout.status = WorkoutStatus.SKIPPED
     workout.status_changed_at = datetime.now(UTC)
     if any(row.is_test for row in workout.exercises):
         await _move_test(session, plan, workout)
     await session.commit()
     return await get_current_plan(session, user_id)
+
+
+async def rebuild_pending(session: AsyncSession, user_id: uuid.UUID) -> None:
+    """Rebuild the current block's pending workouts with the user's rungs (ADR 0018).
+
+    The generator is deterministic, so building the block again with the same answers
+    and block number changes only the slots the new rungs affect. Done and skipped
+    workouts are history and stay as they were. No strength test: it has just been done.
+    The caller commits.
+    """
+    plan = await current_plan(session, user_id)
+    if plan is None:
+        return
+    pending = [w.id for w in plan.workouts if w.status == WorkoutStatus.PENDING]
+    if not pending:
+        return
+    workouts = list(
+        await session.scalars(
+            select(PlannedWorkout)
+            .where(PlannedWorkout.id.in_(pending))
+            .options(selectinload(PlannedWorkout.exercises))
+            .execution_options(populate_existing=True)
+        )
+    )
+    library = await _library(session)
+    answers = PlanAnswers.from_json(plan.generated_from)
+    block = build_block(
+        answers,
+        choose_routine(answers),
+        library,
+        BUILD_WEEKS,
+        first_block=False,
+        block_number=plan.block_number,
+        recovery_week=True,
+        rungs=await rungs_of(session, user_id),
+    )
+    rebuilt = [workout for week in block for workout in week]
+    ids = {exercise.slug: exercise.id for exercise in library}
+    for workout in workouts:
+        new = rebuilt[workout.position - 1]
+        if new.kind != workout.kind:  # can't happen with the same answers; never guess
+            continue
+        # Old rows go first: (workout, part, position) is unique, so inserting the new
+        # rows before the DELETE would clash.
+        workout.exercises = []
+        await session.flush()
+        workout.exercises = _exercise_rows(new, ids)
+        workout.main_minutes = new.main_minutes
+        workout.total_minutes = new.total_minutes

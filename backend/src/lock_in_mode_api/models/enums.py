@@ -132,6 +132,14 @@ class PlanEndReason(StrEnum):
     ANSWERS_CHANGED = "answers_changed"  # the profile or safety screen changed the plan
 
 
+class Feedback(StrEnum):
+    """The one tap after a workout (brief 3.2). Skipped = no answer, never "just right"."""
+
+    TOO_EASY = "too_easy"
+    JUST_RIGHT = "just_right"
+    TOO_HARD = "too_hard"
+
+
 class Caution(StrEnum):
     """Why an exercise may not suit this user (ADR 0013). Shown as a warning, not hidden.
 

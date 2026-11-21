@@ -112,6 +112,14 @@ class BlockComplete(ApiError):
     title = "Block complete"
 
 
+class SessionNotFound(ApiError):
+    """No open session (GET /sessions/current), or no such session for this user."""
+
+    status_code = 404
+    code = "session_not_found"
+    title = "Session not found"
+
+
 class MethodNotAllowed(ApiError):
     status_code = 405
     code = "method_not_allowed"
@@ -163,6 +171,22 @@ class NotNextWorkout(ApiError):
     status_code = 409
     code = "not_next_workout"
     title = "Not the next workout"
+
+
+class SessionFinished(ApiError):
+    """The session is finished: sets can't change and it can't finish twice (ADR 0018)."""
+
+    status_code = 409
+    code = "session_finished"
+    title = "Session already finished"
+
+
+class SessionInProgress(ApiError):
+    """A started workout can't be skipped: finish it instead, half counts (ADR 0018)."""
+
+    status_code = 409
+    code = "session_in_progress"
+    title = "Workout already started"
 
 
 # --- 429: slow down ---------------------------------------------------------------------

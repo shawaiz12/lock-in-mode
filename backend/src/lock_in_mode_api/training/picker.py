@@ -1,11 +1,17 @@
-"""Choosing exercises, with planned rotation (ADR 0014, ADR 0015)."""
+"""Choosing exercises, with planned rotation (ADR 0014, 0015, 0017) and the strength-test
+placement (ADR 0018)."""
 
 from collections import Counter
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 
-from lock_in_mode_api.models.enums import HEAD_GROUP, MovementSlot
+from lock_in_mode_api.models.enums import HEAD_GROUP, Location, MovementSlot
 from lock_in_mode_api.training.exercise_rules import can_do, cautions
-from lock_in_mode_api.training.plan_types import LEVEL_MAX_DIFFICULTY, BuildInputs, ExerciseInfo
+from lock_in_mode_api.training.plan_types import (
+    LEVEL_MAX_DIFFICULTY,
+    BuildInputs,
+    ExerciseInfo,
+    is_weighted,
+)
 from lock_in_mode_api.training.templates import Slot
 
 BIG_POOL = 2  # big lifts alternate between 2 picks, every block (ADR 0014, 0017)
@@ -13,11 +19,10 @@ SMALL_POOL = 3  # small moves cycle through 3 picks...
 SMALL_CHOICES = 6  # ...taken from the best 6, a different 3 each block (ADR 0017)
 
 
-def _slot_rank(exercise: ExerciseInfo, slot: Slot, cap: int) -> tuple[object, ...]:
-    over_cap = exercise.difficulty > cap
+def _slot_rank(exercise: ExerciseInfo, slot: Slot, misfit: int) -> tuple[object, ...]:
     return (
-        over_cap,  # level-appropriate first
-        exercise.difficulty if over_cap else 0,  # if nothing fits the level, the easiest
+        misfit > 0,  # right for this user first (level cap, or the placed rung)
+        misfit,  # if nothing fits, the closest
         slot.prefer is not None and slot.prefer not in exercise.targets,  # wanted emphasis
         slot.prefer is not None and exercise.primary_muscle != HEAD_GROUP[slot.prefer],
         -(exercise.effectiveness or 0),  # most effective
@@ -35,13 +40,22 @@ class Picker:
 
     `block_number` (1, 2, 3, ...) changes the small moves from block to block. Big lifts
     stay, so their progress can be compared across blocks (KB section 10).
+
+    `rungs`: difficulty placed by the strength test, per movement (ADR 0018). At home,
+    bodyweight moves of a placed movement are matched to it instead of the level's cap.
+    Gym users are placed by the weights they log (KB section 2), so rungs don't apply.
     """
 
     def __init__(
-        self, answers: BuildInputs, library: Sequence[ExerciseInfo], block_number: int = 1
+        self,
+        answers: BuildInputs,
+        library: Sequence[ExerciseInfo],
+        block_number: int = 1,
+        rungs: Mapping[MovementSlot, int] | None = None,
     ) -> None:
         self.answers = answers
         self.block_number = block_number
+        self.rungs = dict(rungs or {}) if answers.location == Location.HOME else {}
         self.cap = LEVEL_MAX_DIFFICULTY[answers.level]
         self.usable = [e for e in library if can_do(e, answers) and not cautions(e, answers)]
         self.by_slug = {e.slug: e for e in self.usable}
@@ -71,13 +85,23 @@ class Picker:
         if not self.by_movement.get(movement) and slot.fallback is not None:
             movement = slot.fallback
         ranked = sorted(
-            self.by_movement.get(movement, []), key=lambda e: _slot_rank(e, slot, self.cap)
+            self.by_movement.get(movement, []),
+            key=lambda e: _slot_rank(e, slot, self.misfit(e)),
         )
-        in_level = [e for e in ranked if e.difficulty <= self.cap] or ranked[:1]
+        in_level = [e for e in ranked if self.misfit(e) == 0] or ranked[:1]
         key = f"slot:{slot.movement.value}:{slot.prefer.value if slot.prefer else ''}"
         if slot.main:
             return self.take_turn(key, in_level, BIG_POOL, used)
         return self.take_turn(key, self._block_order(in_level), SMALL_POOL, used)
+
+    def misfit(self, exercise: ExerciseInfo) -> int:
+        """0 = right for this user. Bodyweight moves of a placed movement: steps away from
+        the rung, either way. Everything else: steps over the level's cap.
+        """
+        rung = self.rungs.get(exercise.movement_slot)
+        if rung is not None and not is_weighted(exercise):
+            return abs(exercise.difficulty - rung)
+        return max(0, exercise.difficulty - self.cap)
 
     def _block_order(self, ranked: list[ExerciseInfo]) -> list[ExerciseInfo]:
         """Small moves: the best 6, starting 3 further along each block, then the rest.

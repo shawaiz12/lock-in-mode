@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from lock_in_mode_api.models import Profile, User
 from lock_in_mode_api.schemas.profile import ProfileWrite, SafetyScreen
 from lock_in_mode_api.services import plans as plan_service
+from lock_in_mode_api.services import sessions as session_service
 
 
 class ProfileNotFoundError(Exception):
@@ -53,11 +54,20 @@ async def save_profile(
     if not created:
         for name, value in fields.items():
             setattr(profile, name, value)
-        await plan_service.replace_if_answers_changed(session, profile)
+        await _refresh_plan(session, profile)
         await session.commit()
 
     await session.refresh(profile)  # load created_at / updated_at set by the database
     return profile, created
+
+
+async def _refresh_plan(session: AsyncSession, profile: Profile) -> None:
+    """New answers that change the plan replace it now (ADR 0017). A workout left open
+    is finished first with what was logged, so nothing logged is lost (ADR 0018).
+    """
+    if await plan_service.is_out_of_date(session, profile):
+        await session_service.finish_open_session(session, profile.user_id)
+        await plan_service.replace_if_answers_changed(session, profile)
 
 
 async def record_safety_screen(
@@ -70,7 +80,7 @@ async def record_safety_screen(
     profile = await get_profile(session, user_id)
     profile.needs_low_intensity = screen.any_yes
     profile.safety_screened_at = datetime.now(UTC)
-    await plan_service.replace_if_answers_changed(session, profile)
+    await _refresh_plan(session, profile)
     await session.commit()
     await session.refresh(profile)
     return profile
