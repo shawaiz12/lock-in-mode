@@ -27,12 +27,15 @@ problem document, sent as `Content-Type: application/problem+json`
 | [`profile_not_found`](#profile_not_found) | 404 | The user hasn't finished onboarding | Show onboarding |
 | [`plan_not_found`](#plan_not_found) | 404 | The user has no plan yet | Call `POST /plans` (after the safety screen) |
 | [`block_complete`](#block_complete) | 404 | Every workout of the block is done or skipped | Show "Block complete!", then `POST /plans` |
+| [`session_not_found`](#session_not_found) | 404 | No workout in progress, or no such session | Show the home screen |
 | [`method_not_allowed`](#method_not_allowed) | 405 | Wrong HTTP method | Bug in the app |
 | [`provider_account_in_use`](#provider_account_in_use) | 409 | That Google/Apple account belongs to another user | Warn that guest progress stays behind; if confirmed, call `/auth/{provider}` |
 | [`provider_already_linked`](#provider_already_linked) | 409 | A different account of that provider is already linked | Don't offer linking again |
 | [`safety_screen_required`](#safety_screen_required) | 409 | No plan before the safety screen | Show the safety screen |
 | [`plan_in_progress`](#plan_in_progress) | 409 | The current block still has workouts to do | Show the next workout instead |
-| [`not_next_workout`](#not_next_workout) | 409 | Only the next workout in the queue can be skipped | Refresh the plan |
+| [`not_next_workout`](#not_next_workout) | 409 | Only the next workout in the queue can be skipped or started | Refresh the plan |
+| [`session_finished`](#session_finished) | 409 | The workout is finished: sets are locked | Refresh the session |
+| [`session_in_progress`](#session_in_progress) | 409 | A started workout can't be skipped | Offer "Finish now" instead |
 | [`validation_failed`](#validation_failed) | 422 | Request body or parameters invalid; see `errors` | Bug in the app |
 | [`rate_limited`](#rate_limited) | 429 | Too many sign-in attempts from this IP | Wait `Retry-After` seconds, then retry |
 | [`internal_error`](#internal_error) | 500 | Unexpected server error | Retry later |
@@ -78,6 +81,11 @@ the first block ([ADR 0017](decisions/0017-saving-and-serving-plans.md)).
 The app shows "Block complete!" and a button that calls `POST /api/v1/plans` to start the
 next block. `GET /api/v1/plans/current` says the same with `block_complete: true`.
 
+## session_not_found
+`GET /api/v1/sessions/current` when no workout is in progress (normal: show the home
+screen), or a session id that doesn't exist or belongs to someone else
+([ADR 0018](decisions/0018-sessions-and-the-strength-test.md)).
+
 ## method_not_allowed
 The path exists but not with this HTTP method. The `Allow` header lists valid methods.
 
@@ -100,8 +108,17 @@ starts by itself when the answers change; otherwise only when the block is finis
 A double tap on "start next block" can also get this: the first tap already started it.
 
 ## not_next_workout
-`POST /api/v1/workouts/{id}/skip` on a workout that isn't the next one in the current
-plan (already done or skipped, further down the queue, or from an old plan).
+`POST /api/v1/workouts/{id}/skip` or `POST /api/v1/sessions` on a workout that isn't the
+next one in the current plan (already done or skipped, further down the queue, or from an
+old plan).
+
+## session_finished
+Logging, unticking or finishing a session that is already finished. A finished workout
+is history; its sets don't change.
+
+## session_in_progress
+`POST /api/v1/workouts/{id}/skip` on a workout the user has started. Half a workout
+counts, so the app offers "Finish now" (`POST /api/v1/sessions/{id}/finish`) instead.
 
 ## validation_failed
 The body, query or path parameters don't match the schema. The response adds an `errors`
