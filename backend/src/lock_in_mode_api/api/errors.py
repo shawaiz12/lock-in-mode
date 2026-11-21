@@ -96,6 +96,22 @@ class ProfileNotFound(ApiError):
     title = "Profile not found"
 
 
+class PlanNotFound(ApiError):
+    """No plan yet: after onboarding and the safety screen, call POST /plans (ADR 0017)."""
+
+    status_code = 404
+    code = "plan_not_found"
+    title = "No plan yet"
+
+
+class BlockComplete(ApiError):
+    """Every workout of the block is done or skipped: show "Block complete!" (ADR 0017)."""
+
+    status_code = 404
+    code = "block_complete"
+    title = "Block complete"
+
+
 class MethodNotAllowed(ApiError):
     status_code = 405
     code = "method_not_allowed"
@@ -123,6 +139,30 @@ class ProviderAlreadyLinked(ApiError):
     status_code = 409
     code = "provider_already_linked"
     title = "A different account is already linked"
+
+
+class SafetyScreenRequired(ApiError):
+    """The safety screen comes before any plan (ADR 0012)."""
+
+    status_code = 409
+    code = "safety_screen_required"
+    title = "Safety screen required"
+
+
+class PlanInProgress(ApiError):
+    """A new block starts only when every workout of the current one is done or skipped."""
+
+    status_code = 409
+    code = "plan_in_progress"
+    title = "Current block isn't finished"
+
+
+class NotNextWorkout(ApiError):
+    """Only the next workout in the queue can be skipped (ADR 0017)."""
+
+    status_code = 409
+    code = "not_next_workout"
+    title = "Not the next workout"
 
 
 # --- 429: slow down ---------------------------------------------------------------------

@@ -1,9 +1,9 @@
-"""Stage 2 of the plan generator: build every workout of a block (ADR 0015, ADR 0016).
+"""Stage 2 of the plan generator: build every workout of a block (ADR 0015, 0016, 0017).
 
 routine (stage 1) + exercise library -> workouts with warm-up, main block, finisher and
 cool-down, fitted to the user's minutes. Pure: no database. Rules: KB sections 2 (first
 workout test), 3 (training variables), 5 (templates), 7 (HIIT and cardio), 8 (warm-up and
-cool-down) and 9 (fitting the session length); rotation: ADR 0014.
+cool-down), 9 (fitting the session length) and 10 (the recovery week); rotation: ADR 0014.
 """
 
 import math
@@ -25,6 +25,9 @@ from lock_in_mode_api.training.picker import Picker
 from lock_in_mode_api.training.plan_types import (
     MAIN_BLOCK_MINUTES,
     NO_LIMIT_SPLIT,
+    RECOVERY_EFFORT_DROP,
+    RECOVERY_MIN_EFFORT,
+    RECOVERY_REPS_IN_RESERVE,
     SESSION_SPLIT,
     TITLES,
     BuildInputs,
@@ -36,7 +39,7 @@ from lock_in_mode_api.training.plan_types import (
 from lock_in_mode_api.training.routine import PlannedSession, Routine
 from lock_in_mode_api.training.templates import STRENGTH_KINDS, Slot, template
 
-__all__ = ["MAIN_BLOCK_MINUTES", "PlannedExercise", "Workout", "build_block"]
+__all__ = ["MAIN_BLOCK_MINUTES", "PlannedExercise", "Workout", "as_test_workout", "build_block"]
 
 S = SessionKind
 M = MovementSlot
@@ -331,6 +334,39 @@ def _mark_tests(main: list[PlannedExercise], picker: Picker) -> list[PlannedExer
     return marked
 
 
+def as_test_workout(main: Sequence[PlannedExercise], picker: Picker) -> list[PlannedExercise]:
+    """Turn a saved main block into the strength test (ADR 0017: a skipped test moves on).
+
+    The same marking as building it there: open targets need no practice sets.
+    """
+    marked = _mark_tests(list(main), picker)
+    return [
+        replace(e, practice_sets=0) if e.test and e.reps_min is None and e.seconds is None else e
+        for e in marked
+    ]
+
+
+# --- the recovery week (KB section 10) -------------------------------------------------
+
+
+def _lighter(exercise: PlannedExercise, steady: bool) -> PlannedExercise:
+    """Half the sets (rounded up), and easier: strength stops 4 reps short, intervals
+    drop 2 effort points. Walks, steady cardio and mobility are easy already: unchanged.
+    """
+    if exercise.reps_in_reserve is not None:  # strength
+        return replace(
+            exercise,
+            sets=math.ceil(exercise.sets / 2),
+            reps_in_reserve=max(exercise.reps_in_reserve, RECOVERY_REPS_IN_RESERVE),
+        )
+    if steady:
+        return exercise
+    effort = exercise.effort
+    if effort is not None:
+        effort = max(RECOVERY_MIN_EFFORT, effort - RECOVERY_EFFORT_DROP)
+    return replace(exercise, sets=math.ceil(exercise.sets / 2), effort=effort)
+
+
 def _with_practice_sets(
     main: list[PlannedExercise], picker: Picker, room_seconds: float
 ) -> list[PlannedExercise]:
@@ -357,8 +393,12 @@ def build_session(
     letter: str,
     picker: Picker,
     first_workout: bool = False,
+    recovery: bool = False,
 ) -> Workout:
-    """One complete workout: warm-up, main block, finisher, cool-down, fitted to the minutes."""
+    """One complete workout: warm-up, main block, finisher, cool-down, fitted to the minutes.
+
+    `recovery`: the block's lighter week. Same exercises, lighter numbers.
+    """
     minutes = answers.minutes_per_session
     warm_min, main_min, cool_min = NO_LIMIT_SPLIT if minutes is None else SESSION_SPLIT[minutes]
     kind = session.kind
@@ -379,6 +419,10 @@ def build_session(
         fmt, main = CARDIO_FORMATS[kind], conditioning.steady(picker, kind, main_budget)
 
     finisher = conditioning.finisher(picker, finisher_min) if finisher_min else []
+    if recovery:
+        steady = fmt in (WorkoutFormat.CONTINUOUS, WorkoutFormat.FLOW)
+        main = [_lighter(e, steady) for e in main]
+        finisher = [_lighter(e, steady=False) for e in finisher]
     # Easy walks and mobility are gentle already: no warm-up or cool-down around them.
     gentle = kind in (S.EASY_CARDIO, S.MOBILITY)
     muscles = _muscles(main, picker)
@@ -404,6 +448,7 @@ def build_session(
         finisher=tuple(finisher),
         cool_down=tuple(cool),
         total_minutes=math.ceil(total / 60),
+        recovery=recovery,
     )
 
 
@@ -426,24 +471,33 @@ def build_block(
     library: Sequence[ExerciseInfo],
     weeks: int,
     first_block: bool = False,
+    *,
+    block_number: int = 1,
+    recovery_week: bool = False,
 ) -> list[list[Workout]]:
     """Every workout of a training block, week by week, with rotation applied.
 
-    `first_block`: the user's very first block, whose first strength workout is the
-    strength test (ADR 0012, decision 4).
+    `weeks`: build-up weeks. `recovery_week`: add the lighter week after them (ADR 0017).
+    `first_block`: the strength test is still to do, so the first strength workout is
+    the test (ADR 0012, decision 4). `block_number` freshens the small moves (ADR 0017).
     """
-    picker = Picker(answers, library)
+    picker = Picker(answers, library, block_number)
     letter_turns: Counter[SessionKind] = Counter()
     tested = not first_block
     block: list[list[Workout]] = []
-    for _ in range(weeks):
+    for week_number in range(weeks + (1 if recovery_week else 0)):
+        recovery = week_number == weeks
         week: list[Workout] = []
         for session in routine.sessions:
             letters = _letters(session.kind, answers, routine)
             letter = letters[letter_turns[session.kind] % len(letters)] if letters else ""
             letter_turns[session.kind] += 1
-            is_test = not tested and session.kind in STRENGTH_KINDS
+            is_test = not tested and not recovery and session.kind in STRENGTH_KINDS
             tested = tested or is_test
-            week.append(build_session(answers, session, letter, picker, first_workout=is_test))
+            week.append(
+                build_session(
+                    answers, session, letter, picker, first_workout=is_test, recovery=recovery
+                )
+            )
         block.append(week)
     return block

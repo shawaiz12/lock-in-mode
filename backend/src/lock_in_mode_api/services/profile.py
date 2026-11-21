@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from lock_in_mode_api.models import Profile, User
 from lock_in_mode_api.schemas.profile import ProfileWrite, SafetyScreen
+from lock_in_mode_api.services import plans as plan_service
 
 
 class ProfileNotFoundError(Exception):
@@ -29,7 +30,8 @@ async def save_profile(
 ) -> tuple[Profile, bool]:
     """Create or replace the profile. Returns (profile, created).
 
-    Never touches the safety fields: only the safety screen sets those.
+    Never touches the safety fields: only the safety screen sets those. If the new
+    answers change the plan, a new block replaces it in the same transaction (ADR 0017).
     """
     fields = answers.model_dump()
     profile = await session.get(Profile, user_id)
@@ -51,6 +53,7 @@ async def save_profile(
     if not created:
         for name, value in fields.items():
             setattr(profile, name, value)
+        await plan_service.replace_if_answers_changed(session, profile)
         await session.commit()
 
     await session.refresh(profile)  # load created_at / updated_at set by the database
@@ -60,10 +63,14 @@ async def save_profile(
 async def record_safety_screen(
     session: AsyncSession, user_id: uuid.UUID, screen: SafetyScreen
 ) -> Profile:
-    """Store only the result. Retaking with all "no" turns low intensity back off."""
+    """Store only the result. Retaking with all "no" turns low intensity back off.
+
+    A changed result changes the plan at once: safety can't wait for the block to end.
+    """
     profile = await get_profile(session, user_id)
     profile.needs_low_intensity = screen.any_yes
     profile.safety_screened_at = datetime.now(UTC)
+    await plan_service.replace_if_answers_changed(session, profile)
     await session.commit()
     await session.refresh(profile)
     return profile

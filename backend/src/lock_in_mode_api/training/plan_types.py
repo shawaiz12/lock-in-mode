@@ -1,17 +1,20 @@
-"""Shared shapes and numbers for the plan generator (ADR 0014, 0015, 0016)."""
+"""Shared shapes and numbers for the plan generator (ADR 0014, 0015, 0016, 0017)."""
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol, Self
 
 from lock_in_mode_api.models.enums import (
     Equipment,
     ExerciseType,
     FitnessLevel,
+    Goal,
     Impact,
+    Location,
     MovementSlot,
     MuscleGroup,
     SessionKind,
+    ShoulderDay,
     WorkoutFormat,
 )
 from lock_in_mode_api.training.exercise_rules import ExerciseFacts, UserSetup
@@ -31,6 +34,15 @@ SESSION_SPLIT: dict[int, tuple[int, int, int]] = {
 }
 NO_LIMIT_SPLIT = (5, None, 5)  # "no limit": full warm-up and cool-down, main block unbounded
 MAIN_BLOCK_MINUTES = {minutes: split[1] for minutes, split in SESSION_SPLIT.items()}
+
+# A training block (ADR 0017): build-up weeks, then a recovery week. Same for every level.
+BUILD_WEEKS = 4
+RECOVERY_WEEKS = 1
+BLOCK_WEEKS = BUILD_WEEKS + RECOVERY_WEEKS
+# Recovery week (KB section 10): same exercises, half the sets, stop 4 reps short.
+RECOVERY_REPS_IN_RESERVE = 4
+RECOVERY_EFFORT_DROP = 2  # intervals: 2 points easier on the 1-10 talk test
+RECOVERY_MIN_EFFORT = 3
 
 # Hardest rung a level starts on (difficulty 1-5). The first workout corrects it.
 LEVEL_MAX_DIFFICULTY = {
@@ -95,6 +107,76 @@ class BuildInputs(PlanInputs, UserSetup, Protocol):
     """Every answer the builder reads. Profile rows fit."""
 
 
+@dataclass(frozen=True)
+class PlanAnswers:
+    """Exactly the answers a plan is built from: every field the generator reads.
+
+    Saved with each plan (ADR 0017). When the profile's version differs, the plan is out
+    of date and a new block starts. Obstacles and the name are left out: they never
+    change the plan.
+    """
+
+    goal: Goal
+    level: FitnessLevel
+    location: Location
+    equipment: tuple[str, ...]
+    limits: tuple[str, ...]
+    days_per_week: int
+    minutes_per_session: int | None
+    women_home_track: bool
+    prefers_bro_split: bool
+    shoulder_day: ShoulderDay
+    needs_low_intensity: bool
+
+    @classmethod
+    def of(cls, source: BuildInputs) -> Self:
+        return cls(
+            goal=source.goal,
+            level=source.level,
+            location=source.location,
+            equipment=tuple(source.equipment),
+            limits=tuple(source.limits),
+            days_per_week=source.days_per_week,
+            minutes_per_session=source.minutes_per_session,
+            women_home_track=source.women_home_track,
+            prefers_bro_split=source.prefers_bro_split,
+            shoulder_day=source.shoulder_day,
+            needs_low_intensity=source.needs_low_intensity,
+        )
+
+    def to_json(self) -> dict[str, Any]:
+        """Plain JSON values (enum text, lists), as stored in plans.generated_from."""
+        return {
+            "goal": self.goal.value,
+            "level": self.level.value,
+            "location": self.location.value,
+            "equipment": list(self.equipment),
+            "limits": list(self.limits),
+            "days_per_week": self.days_per_week,
+            "minutes_per_session": self.minutes_per_session,
+            "women_home_track": self.women_home_track,
+            "prefers_bro_split": self.prefers_bro_split,
+            "shoulder_day": self.shoulder_day.value,
+            "needs_low_intensity": self.needs_low_intensity,
+        }
+
+    @classmethod
+    def from_json(cls, data: Mapping[str, Any]) -> Self:
+        return cls(
+            goal=Goal(data["goal"]),
+            level=FitnessLevel(data["level"]),
+            location=Location(data["location"]),
+            equipment=tuple(data["equipment"]),
+            limits=tuple(data["limits"]),
+            days_per_week=data["days_per_week"],
+            minutes_per_session=data["minutes_per_session"],
+            women_home_track=data["women_home_track"],
+            prefers_bro_split=data["prefers_bro_split"],
+            shoulder_day=ShoulderDay(data["shoulder_day"]),
+            needs_low_intensity=data["needs_low_intensity"],
+        )
+
+
 def is_weighted(exercise: ExerciseInfo) -> bool:
     return bool(WEIGHTED_KIT & set(exercise.equipment))
 
@@ -129,3 +211,4 @@ class Workout:
     finisher: tuple[PlannedExercise, ...] = ()
     cool_down: tuple[PlannedExercise, ...] = ()
     total_minutes: int = 0  # warm-up + main + finisher + cool-down, rounded up
+    recovery: bool = False  # the block's lighter week (ADR 0017)

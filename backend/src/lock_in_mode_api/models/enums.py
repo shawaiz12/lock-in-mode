@@ -108,6 +108,30 @@ class WorkoutFormat(StrEnum):
     FLOW = "flow"  # mobility: one gentle move after another
 
 
+class WorkoutStatus(StrEnum):
+    """Where a planned workout is in the queue (ADR 0017). The next one = first pending."""
+
+    PENDING = "pending"
+    DONE = "done"  # set by the sessions stage when the workout is finished
+    SKIPPED = "skipped"  # "Skip" on the next workout: no penalty, the queue moves on
+
+
+class WorkoutPart(StrEnum):
+    """Which part of a workout a planned exercise belongs to, in the order they're done."""
+
+    WARM_UP = "warm_up"
+    MAIN = "main"
+    FINISHER = "finisher"
+    COOL_DOWN = "cool_down"
+
+
+class PlanEndReason(StrEnum):
+    """Why a plan stopped being the current one (ADR 0017)."""
+
+    FINISHED = "finished"  # every workout done or skipped, and the next block was started
+    ANSWERS_CHANGED = "answers_changed"  # the profile or safety screen changed the plan
+
+
 class Caution(StrEnum):
     """Why an exercise may not suit this user (ADR 0013). Shown as a warning, not hidden.
 

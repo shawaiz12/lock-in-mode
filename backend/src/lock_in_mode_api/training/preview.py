@@ -31,7 +31,15 @@ class _Answers:
     women_home_track: bool
 
 
-def _parse(argv: list[str] | None) -> tuple[_Answers, int, bool]:
+@dataclass(frozen=True)
+class _Options:
+    weeks: int
+    first_block: bool
+    block_number: int
+    recovery_week: bool
+
+
+def _parse(argv: list[str] | None) -> tuple[_Answers, _Options]:
     parser = argparse.ArgumentParser(description="Preview a Lock In Mode routine.")
     parser.add_argument("--goal", type=Goal, choices=list(Goal), default=Goal.BUILD_MUSCLE)
     parser.add_argument(
@@ -48,6 +56,10 @@ def _parse(argv: list[str] | None) -> tuple[_Answers, int, bool]:
     parser.add_argument("--quiet-track", action="store_true", help="women-at-home track")
     parser.add_argument("--weeks", type=int, default=1, help="weeks of workouts to show")
     parser.add_argument("--first-block", action="store_true", help="show the strength test")
+    parser.add_argument("--block", type=int, default=1, help="block number: 2 shows new picks")
+    parser.add_argument(
+        "--recovery-week", action="store_true", help="add the lighter week after the weeks"
+    )
     args = parser.parse_args(argv)
     return (
         _Answers(
@@ -63,8 +75,7 @@ def _parse(argv: list[str] | None) -> tuple[_Answers, int, bool]:
             limits=args.limits,
             women_home_track=args.quiet_track,
         ),
-        args.weeks,
-        args.first_block,
+        _Options(args.weeks, args.first_block, args.block, args.recovery_week),
     )
 
 
@@ -110,7 +121,7 @@ def _workout_lines(workout: Workout) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> str:
-    answers, weeks, first_block = _parse(argv)
+    answers, options = _parse(argv)
     routine = choose_routine(answers)
     by_day = dict(zip(routine.weekdays, routine.sessions, strict=True))
     lines = [f"Routine: {routine.kind.value}", ""]
@@ -121,9 +132,18 @@ def main(argv: list[str] | None = None) -> str:
             label += " + finisher"
         lines.append(f"  {name}  {label}")
     lines += ["", "Why:"] + [f"  - {reason}" for reason in routine.reasons]
-    block = build_block(answers, routine, load_library().exercises, weeks, first_block)
+    block = build_block(
+        answers,
+        routine,
+        load_library().exercises,
+        options.weeks,
+        options.first_block,
+        block_number=options.block_number,
+        recovery_week=options.recovery_week,
+    )
     for number, week in enumerate(block, start=1):
-        lines += ["", f"Week {number}:"]
+        recovery = bool(week) and week[0].recovery
+        lines += ["", f"Week {number}" + (" (recovery week):" if recovery else ":")]
         for workout in week:
             lines += _workout_lines(workout)
     return "\n".join(lines)
