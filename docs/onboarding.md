@@ -39,8 +39,8 @@ Rules for every screen:
 | 10 | What's made it hard before? (skippable) | No time · Don't know what to do · Lose motivation · Get bored | `obstacles` | Changes tips, reminders and quests (below) |
 | — | Save | `PUT /me/profile` | | One call with every answer |
 | 11 | Quick safety check | 4 yes/no: heart condition, chest pain when active, pregnant, recent surgery or injury | `POST /me/safety-screen` → `needs_low_intensity` only | Required before workout 1. Any yes: "Please check with a doctor first. We'll keep things gentle." |
-| 12 | Building your plan | 2–3 s. Shows the **real** reasons, one by one: "3 days → full body", "Knees → no jumping", "No equipment → push-up ladder" | none | People trust work they can see. Ours is real, so show it |
-| 13 | Your week | The plan. Push pull legs → "Shoulders with push day or leg day?" If `bro_split_available` → "Push pull legs (recommended) or bro split?" | `shoulder_day`, `prefers_bro_split` | Choices asked here only matter to some users, so they cost everyone else nothing |
+| 12 | Building your plan | 2–3 s. Shows the **real** reasons, one by one: "3 days → full body", "Knees → no jumping", "No equipment → push-up ladder" | `POST /plans` → `reasons` | People trust work they can see. Ours is real, so show it |
+| 13 | Your week | The plan. Push pull legs → "Shoulders with push day or leg day?" If `bro_split_available` → "Push pull legs (recommended) or bro split?" | `shoulder_day`, `prefers_bro_split` (`PUT /me/profile` rebuilds the untouched plan, still block 1) | Choices asked here only matter to some users, so they cost everyone else nothing |
 | 14 | Start | Big: **"Lock In: start workout 1"**. Small: "Remind me later" (time picker, then the notification permission prompt) | reminder time | Asking for notifications only when they pick a time gets more "yes" than a cold pop-up |
 
 ### Workout 1 is the test

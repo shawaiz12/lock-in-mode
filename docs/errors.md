@@ -25,9 +25,14 @@ problem document, sent as `Content-Type: application/problem+json`
 | [`invalid_id_token`](#invalid_id_token) | 401 | Google/Apple token didn't verify (or wrong nonce) | Restart the Google/Apple sign-in |
 | [`not_found`](#not_found) | 404 | No such endpoint or resource | Bug in the app |
 | [`profile_not_found`](#profile_not_found) | 404 | The user hasn't finished onboarding | Show onboarding |
+| [`plan_not_found`](#plan_not_found) | 404 | The user has no plan yet | Call `POST /plans` (after the safety screen) |
+| [`block_complete`](#block_complete) | 404 | Every workout of the block is done or skipped | Show "Block complete!", then `POST /plans` |
 | [`method_not_allowed`](#method_not_allowed) | 405 | Wrong HTTP method | Bug in the app |
 | [`provider_account_in_use`](#provider_account_in_use) | 409 | That Google/Apple account belongs to another user | Warn that guest progress stays behind; if confirmed, call `/auth/{provider}` |
 | [`provider_already_linked`](#provider_already_linked) | 409 | A different account of that provider is already linked | Don't offer linking again |
+| [`safety_screen_required`](#safety_screen_required) | 409 | No plan before the safety screen | Show the safety screen |
+| [`plan_in_progress`](#plan_in_progress) | 409 | The current block still has workouts to do | Show the next workout instead |
+| [`not_next_workout`](#not_next_workout) | 409 | Only the next workout in the queue can be skipped | Refresh the plan |
 | [`validation_failed`](#validation_failed) | 422 | Request body or parameters invalid; see `errors` | Bug in the app |
 | [`rate_limited`](#rate_limited) | 429 | Too many sign-in attempts from this IP | Wait `Retry-After` seconds, then retry |
 | [`internal_error`](#internal_error) | 500 | Unexpected server error | Retry later |
@@ -63,6 +68,16 @@ No endpoint at this path, or the requested resource doesn't exist.
 to show onboarding instead of the home screen
 ([ADR 0012](decisions/0012-onboarding-and-profile-v2.md)).
 
+## plan_not_found
+`GET /api/v1/plans/current` (or `/plans/current/next`) before the user has a plan. Not a
+bug: after onboarding and the safety screen, the app calls `POST /api/v1/plans` to build
+the first block ([ADR 0017](decisions/0017-saving-and-serving-plans.md)).
+
+## block_complete
+`GET /api/v1/plans/current/next`: every workout of the current block is done or skipped.
+The app shows "Block complete!" and a button that calls `POST /api/v1/plans` to start the
+next block. `GET /api/v1/plans/current` says the same with `block_complete: true`.
+
 ## method_not_allowed
 The path exists but not with this HTTP method. The `Allow` header lists valid methods.
 
@@ -74,6 +89,19 @@ come along, and if the user confirms, calls `POST /api/v1/auth/{provider}`.
 ## provider_already_linked
 `POST /api/v1/me/link/{provider}`: this user already has a *different* account of that
 provider linked. Unlinking isn't supported yet.
+
+## safety_screen_required
+`POST /api/v1/plans` before `POST /api/v1/me/safety-screen`. The safety screen always
+comes before the first workout ([ADR 0012](decisions/0012-onboarding-and-profile-v2.md)).
+
+## plan_in_progress
+`POST /api/v1/plans` while the current block still has pending workouts. A new block
+starts by itself when the answers change; otherwise only when the block is finished.
+A double tap on "start next block" can also get this: the first tap already started it.
+
+## not_next_workout
+`POST /api/v1/workouts/{id}/skip` on a workout that isn't the next one in the current
+plan (already done or skipped, further down the queue, or from an old plan).
 
 ## validation_failed
 The body, query or path parameters don't match the schema. The response adds an `errors`
