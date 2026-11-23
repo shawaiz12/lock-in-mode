@@ -33,6 +33,7 @@ problem document, sent as `Content-Type: application/problem+json`
 | [`provider_already_linked`](#provider_already_linked) | 409 | A different account of that provider is already linked | Don't offer linking again |
 | [`safety_screen_required`](#safety_screen_required) | 409 | No plan before the safety screen | Show the safety screen |
 | [`plan_in_progress`](#plan_in_progress) | 409 | The current block still has workouts to do | Show the next workout instead |
+| [`level_up_not_offered`](#level_up_not_offered) | 409 | "Ready for more?" was answered, but no move up is on offer now | Refresh the plan |
 | [`not_next_workout`](#not_next_workout) | 409 | Only the next workout in the queue can be skipped or started | Refresh the plan |
 | [`session_finished`](#session_finished) | 409 | The workout is finished: sets are locked | Refresh the session |
 | [`session_in_progress`](#session_in_progress) | 409 | A started workout can't be skipped | Offer "Finish now" instead |
@@ -108,6 +109,12 @@ comes before the first workout ([ADR 0012](decisions/0012-onboarding-and-profile
 `POST /api/v1/plans` while the current block still has pending workouts. A new block
 starts by itself when the answers change; otherwise only when the block is finished.
 A double tap on "start next block" can also get this: the first tap already started it.
+
+## level_up_not_offered
+`POST /api/v1/plans {"level_up": true}` when the current plan has no `level_up` offer:
+not a beginner any more, not earned yet, a comeback after a break is on, or there's no
+block yet (a block that isn't complete answers `plan_in_progress`) ([ADR 0022](decisions/0022-moving-up-a-level.md)).
+Usually the offer changed on another phone. Refresh the plan and show what it says now.
 
 ## not_next_workout
 `POST /api/v1/workouts/{id}/skip` or `POST /api/v1/sessions` on a workout that isn't the
