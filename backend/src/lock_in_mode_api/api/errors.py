@@ -189,6 +189,22 @@ class SessionInProgress(ApiError):
     title = "Workout already started"
 
 
+class ExerciseChanged(ApiError):
+    """The row holds a different exercise now: a double tap already swapped it (ADR 0020)."""
+
+    status_code = 409
+    code = "exercise_changed"
+    title = "Exercise already swapped"
+
+
+class NoOtherExercise(ApiError):
+    """ "Show another": no other safe exercise does this job (ADR 0020)."""
+
+    status_code = 409
+    code = "no_other_exercise"
+    title = "No other exercise"
+
+
 # --- 429: slow down ---------------------------------------------------------------------
 
 

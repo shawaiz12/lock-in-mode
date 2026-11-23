@@ -172,6 +172,9 @@ class PlannedWorkoutExercise(Base):
     group_number: Mapped[int] = mapped_column(SmallInteger, default=0, server_default="0")
     practice_sets: Mapped[int] = mapped_column(SmallInteger, default=0, server_default="0")
     is_test: Mapped[bool] = mapped_column(default=False, server_default=false())
+    # Swapped mid-workout after some sets (ADR 0020): those sets stay here as history, the
+    # row after it holds the replacement with the sets that were left.
+    swapped_out: Mapped[bool] = mapped_column(default=False, server_default=false())
 
     workout: Mapped[PlannedWorkout] = relationship(back_populates="exercises", lazy="raise")
     exercise: Mapped[Exercise] = relationship(lazy="raise")

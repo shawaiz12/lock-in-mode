@@ -9,7 +9,7 @@ new answers and the new plan are saved together or not at all.
 """
 
 import uuid
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import replace
 from datetime import UTC, datetime
 
@@ -28,6 +28,7 @@ from lock_in_mode_api.models import (
     PlannedWorkoutExercise,
     Profile,
     SetLog,
+    SwappedOutExercise,
     WorkoutSession,
 )
 from lock_in_mode_api.models.enums import (
@@ -142,8 +143,13 @@ def _summary(workout: PlannedWorkout) -> WorkoutSummary:
 
 def progresses(row: PlannedWorkoutExercise) -> bool:
     """Main-block strength work moves with the user's progress (ADR 0019). Warm-ups,
-    cardio and open test sets keep the plan's numbers."""
-    return row.part == WorkoutPart.MAIN and row.reps_in_reserve is not None and not row.is_test
+    cardio, open test sets and rows swapped out mid-workout (ADR 0020) keep their numbers."""
+    return (
+        row.part == WorkoutPart.MAIN
+        and row.reps_in_reserve is not None
+        and not row.is_test
+        and not row.swapped_out
+    )
 
 
 def served(row: PlannedWorkoutExercise, workout: PlannedWorkout, target: Target | None) -> Served:
@@ -182,6 +188,7 @@ def _exercise_read(
         group=row.group_number,
         practice_sets=row.practice_sets,
         is_test=row.is_test,
+        swapped_out=row.swapped_out,
         weight_kg=weight,
         last=previous,
     )
@@ -332,6 +339,16 @@ async def rungs_of(session: AsyncSession, user_id: uuid.UUID) -> dict[MovementSl
     return {row.movement: row.difficulty for row in rows}
 
 
+async def excluded_of(session: AsyncSession, user_id: uuid.UUID) -> frozenset[str]:
+    """Slugs this user swapped out because they hurt (ADR 0020): never picked again."""
+    rows = await session.scalars(
+        select(Exercise.slug)
+        .join(SwappedOutExercise, SwappedOutExercise.exercise_id == Exercise.id)
+        .where(SwappedOutExercise.user_id == user_id)
+    )
+    return frozenset(rows)
+
+
 async def _next_block_number(session: AsyncSession, user_id: uuid.UUID) -> int:
     last = await session.scalar(select(func.max(Plan.block_number)).where(Plan.user_id == user_id))
     return (last or 0) + 1
@@ -379,6 +396,7 @@ async def _add_plan(session: AsyncSession, user_id: uuid.UUID, answers: PlanAnsw
         block_number=block_number,
         recovery_week=True,
         rungs=await rungs_of(session, user_id),
+        excluded=await excluded_of(session, user_id),
     )
     ids = {exercise.slug: exercise.id for exercise in library}
     workouts = [
@@ -527,7 +545,13 @@ async def _move_test(session: AsyncSession, plan: Plan, skipped: PlannedWorkout)
     if not candidates:
         return
     library = await exercise_library(session)
-    picker = Picker(PlanAnswers.from_json(plan.generated_from), library, plan.block_number)
+    picker = Picker(
+        PlanAnswers.from_json(plan.generated_from),
+        library,
+        plan.block_number,
+        await rungs_of(session, plan.user_id),
+        await excluded_of(session, plan.user_id),
+    )
     ids = {exercise.slug: exercise.id for exercise in library}
     for workout_id in candidates:
         target = await load_workout(session, plan.user_id, workout_id, lock=True)
@@ -567,18 +591,33 @@ async def skip_workout(
     return await get_current_plan(session, user_id)
 
 
-async def rebuild_pending(session: AsyncSession, user_id: uuid.UUID) -> None:
-    """Rebuild the current block's pending workouts with the user's rungs (ADR 0018, 0019).
+async def rebuild_pending(
+    session: AsyncSession, user_id: uuid.UUID, keep: Collection[uuid.UUID] = ()
+) -> None:
+    """Rebuild the current block's pending workouts with the user's rungs and swapped-out
+    exercises (ADR 0018, 0019, 0020).
 
     The generator is deterministic, so building the block again with the same answers
-    and block number changes only the slots the new rungs affect. Done and skipped
-    workouts are history and stay as they were. A strength test still waiting (it was
-    skipped and moved, ADR 0017) stays in its workout. The caller commits.
+    and block number changes only the slots the new rungs or swaps affect. Done and
+    skipped workouts are history and stay as they were; so do started workouts and the
+    ones in `keep` (today's, being swapped by hand). A strength test still waiting (it
+    was skipped and moved, ADR 0017) stays in its workout. The caller commits.
     """
     plan = await current_plan(session, user_id)
     if plan is None:
         return
-    pending = [w.id for w in plan.workouts if w.status == WorkoutStatus.PENDING]
+    pending = [
+        w.id for w in plan.workouts if w.status == WorkoutStatus.PENDING and w.id not in keep
+    ]
+    # A started workout keeps its rows: its logged sets point at them.
+    started = set(
+        await session.scalars(
+            select(WorkoutSession.planned_workout_id).where(
+                WorkoutSession.planned_workout_id.in_(pending)
+            )
+        )
+    )
+    pending = [workout_id for workout_id in pending if workout_id not in started]
     if not pending:
         return
     workouts = list(
@@ -592,6 +631,7 @@ async def rebuild_pending(session: AsyncSession, user_id: uuid.UUID) -> None:
     library = await exercise_library(session)
     answers = PlanAnswers.from_json(plan.generated_from)
     rungs = await rungs_of(session, user_id)
+    excluded = await excluded_of(session, user_id)
     block = build_block(
         answers,
         choose_routine(answers),
@@ -601,10 +641,11 @@ async def rebuild_pending(session: AsyncSession, user_id: uuid.UUID) -> None:
         block_number=plan.block_number,
         recovery_week=True,
         rungs=rungs,
+        excluded=excluded,
     )
     rebuilt = [workout for week in block for workout in week]
     ids = {exercise.slug: exercise.id for exercise in library}
-    picker = Picker(answers, library, plan.block_number, rungs)
+    picker = Picker(answers, library, plan.block_number, rungs, excluded)
     for workout in workouts:
         new = rebuilt[workout.position - 1]
         if new.kind != workout.kind:  # can't happen with the same answers; never guess

@@ -143,6 +143,23 @@ class Feedback(StrEnum):
     TOO_HARD = "too_hard"
 
 
+class SwapReason(StrEnum):
+    """Why an exercise was swapped (ADR 0020)."""
+
+    HURTS = "hurts"  # "This hurts, swap it": gone for good, until they bring it back
+    ANOTHER = "another"  # "Show another": a different pick for today only
+
+
+class BodyArea(StrEnum):
+    """Where a swapped-out exercise hurt (optional, ADR 0020). The first three match
+    BodyLimit, so the app can offer to add that limit to the profile."""
+
+    KNEES = "knees"
+    BACK = "back"
+    SHOULDERS = "shoulders"
+    OTHER = "other"
+
+
 class ProgressChange(StrEnum):
     """What progression changed for one exercise after a workout (ADR 0019)."""
 

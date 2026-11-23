@@ -5,6 +5,7 @@ from lock_in_mode_api.models.profile import Profile
 from lock_in_mode_api.models.progress import ExerciseTarget
 from lock_in_mode_api.models.refresh_token import RefreshToken
 from lock_in_mode_api.models.session import MovementRung, SetLog, WorkoutSession
+from lock_in_mode_api.models.swap import SwappedOutExercise
 from lock_in_mode_api.models.user import User
 
 __all__ = [
@@ -18,6 +19,7 @@ __all__ = [
     "Profile",
     "RefreshToken",
     "SetLog",
+    "SwappedOutExercise",
     "User",
     "WorkoutSession",
     "exercise_alternatives",

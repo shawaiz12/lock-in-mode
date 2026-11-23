@@ -1,8 +1,8 @@
-"""Choosing exercises, with planned rotation (ADR 0014, 0015, 0017) and the strength-test
-placement (ADR 0018)."""
+"""Choosing exercises, with planned rotation (ADR 0014, 0015, 0017), the strength-test
+placement (ADR 0018) and exercises the user swapped out (ADR 0020)."""
 
 from collections import Counter
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 
 from lock_in_mode_api.models.enums import HEAD_GROUP, Location, MovementSlot
 from lock_in_mode_api.training.exercise_rules import can_do, cautions
@@ -44,6 +44,9 @@ class Picker:
     `rungs`: difficulty placed by the strength test, per movement (ADR 0018). At home,
     bodyweight moves of a placed movement are matched to it instead of the level's cap.
     Gym users are placed by the weights they log (KB section 2), so rungs don't apply.
+
+    `excluded`: slugs the user swapped out ("this hurts", ADR 0020). Never offered again,
+    like a caution, until they bring one back.
     """
 
     def __init__(
@@ -52,12 +55,18 @@ class Picker:
         library: Sequence[ExerciseInfo],
         block_number: int = 1,
         rungs: Mapping[MovementSlot, int] | None = None,
+        excluded: Collection[str] = (),
     ) -> None:
         self.answers = answers
         self.block_number = block_number
         self.rungs = dict(rungs or {}) if answers.location == Location.HOME else {}
         self.cap = LEVEL_MAX_DIFFICULTY[answers.level]
-        self.usable = [e for e in library if can_do(e, answers) and not cautions(e, answers)]
+        self.excluded = frozenset(excluded)
+        self.usable = [
+            e
+            for e in library
+            if can_do(e, answers) and not cautions(e, answers) and e.slug not in self.excluded
+        ]
         self.by_slug = {e.slug: e for e in self.usable}
         self.by_movement: dict[MovementSlot, list[ExerciseInfo]] = {}
         for exercise in self.usable:

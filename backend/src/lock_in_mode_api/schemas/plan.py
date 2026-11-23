@@ -43,6 +43,10 @@ class PlannedExerciseRead(BaseModel):
         description="First-workout strength test: as many good reps as you can, stop with "
         "2 left (bodyweight), or pick a weight you can lift with 3 left (weights)."
     )
+    swapped_out: bool = Field(
+        description="Swapped mid-workout (ADR 0020): its logged sets stay here, the next "
+        "exercise replaces it. Show it as done/greyed."
+    )
     weight_kg: float | None = Field(
         description="Suggested weight for every set: their progress (ADR 0019), else the "
         "last weight they logged. null: no weight involved yet, or let them pick."

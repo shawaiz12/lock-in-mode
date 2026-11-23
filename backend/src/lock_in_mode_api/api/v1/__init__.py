@@ -3,7 +3,7 @@ from typing import Any
 from fastapi import APIRouter
 
 from lock_in_mode_api.api.errors import PROBLEM_JSON
-from lock_in_mode_api.api.v1 import auth, exercises, me, plans, sessions
+from lock_in_mode_api.api.v1 import auth, exercises, me, plans, sessions, swaps
 from lock_in_mode_api.schemas.problem import Problem, ValidationProblem
 
 
@@ -29,3 +29,4 @@ router.include_router(me.router)
 router.include_router(exercises.router)
 router.include_router(plans.router)
 router.include_router(sessions.router)
+router.include_router(swaps.router)

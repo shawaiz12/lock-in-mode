@@ -82,9 +82,11 @@ class _Item:
 class _Ladders:
     """This user's bodyweight ladder per movement (home only), to find the next rung."""
 
-    def __init__(self, answers: PlanAnswers, library: Sequence[Exercise]) -> None:
+    def __init__(
+        self, answers: PlanAnswers, library: Sequence[Exercise], excluded: frozenset[str]
+    ) -> None:
         self.home = answers.location == Location.HOME
-        self.picker = Picker(answers, library)
+        self.picker = Picker(answers, library, excluded=excluded)
 
     def move(self, exercise: Exercise, circuit: bool) -> Move:
         easier = harder = None
@@ -241,7 +243,9 @@ async def after_finish(
     )
     assert generated_from is not None
     ladders = _Ladders(
-        PlanAnswers.from_json(generated_from), await plan_service.exercise_library(session)
+        PlanAnswers.from_json(generated_from),
+        await plan_service.exercise_library(session),
+        await plan_service.excluded_of(session, user_id),
     )
     circuit = workout.format == WorkoutFormat.CIRCUIT
     rows = [row for row in main if plan_service.progresses(row)]
