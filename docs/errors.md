@@ -36,6 +36,8 @@ problem document, sent as `Content-Type: application/problem+json`
 | [`not_next_workout`](#not_next_workout) | 409 | Only the next workout in the queue can be skipped or started | Refresh the plan |
 | [`session_finished`](#session_finished) | 409 | The workout is finished: sets are locked | Refresh the session |
 | [`session_in_progress`](#session_in_progress) | 409 | A started workout can't be skipped | Offer "Finish now" instead |
+| [`exercise_changed`](#exercise_changed) | 409 | That exercise was already swapped (a double tap) | Refresh the workout |
+| [`no_other_exercise`](#no_other_exercise) | 409 | "Show another": nothing else safe does this job | Hide "show another" for this exercise |
 | [`validation_failed`](#validation_failed) | 422 | Request body or parameters invalid; see `errors` | Bug in the app |
 | [`rate_limited`](#rate_limited) | 429 | Too many sign-in attempts from this IP | Wait `Retry-After` seconds, then retry |
 | [`internal_error`](#internal_error) | 500 | Unexpected server error | Retry later |
@@ -119,6 +121,17 @@ is history; its sets don't change.
 ## session_in_progress
 `POST /api/v1/workouts/{id}/skip` on a workout the user has started. Half a workout
 counts, so the app offers "Finish now" (`POST /api/v1/sessions/{id}/finish`) instead.
+
+## exercise_changed
+`POST /api/v1/workouts/{id}/exercises/{planned_exercise_id}/swap` when the row no longer
+holds the `exercise_id` sent: the first tap of a double tap already swapped it (or it was
+swapped out mid-workout). Nothing changed; refresh the workout
+([ADR 0020](decisions/0020-swapping-exercises.md)).
+
+## no_other_exercise
+`POST /api/v1/workouts/{id}/exercises/{planned_exercise_id}/swap` with `reason: another`
+when no other safe exercise does the same job for this user. Nothing changed. ("This
+hurts" never gets this: it leaves the slot out instead.)
 
 ## validation_failed
 The body, query or path parameters don't match the schema. The response adds an `errors`
