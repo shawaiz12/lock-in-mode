@@ -23,6 +23,7 @@ from lock_in_mode_api.models import (
     Comeback,
     Exercise,
     ExerciseTarget,
+    IntervalStep,
     MovementRung,
     Plan,
     PlannedWorkout,
@@ -53,6 +54,7 @@ from lock_in_mode_api.schemas.plan import (
 from lock_in_mode_api.services import comeback as comeback_service
 from lock_in_mode_api.services import level_up as level_up_service
 from lock_in_mode_api.training import comeback as comeback_rules
+from lock_in_mode_api.training import intervals as interval_rules
 from lock_in_mode_api.training import level_up as level_up_rules
 from lock_in_mode_api.training.picker import Picker
 from lock_in_mode_api.training.plan_types import (
@@ -260,6 +262,10 @@ async def level_up_offer(
         shape(offer.to),
         minutes=profile.minutes_per_session,
         low_intensity=profile.needs_low_intensity,
+        intervals=(
+            await interval_timing(session, user_id, profile.level, comeback_eased=False),
+            interval_rules.start_timing(offer.to),
+        ),
     )
     return replace(offer, what_changes=tuple(lines))
 
@@ -321,6 +327,45 @@ def progresses(row: PlannedWorkoutExercise) -> bool:
     )
 
 
+def is_interval(row: PlannedWorkoutExercise, workout: PlannedWorkout) -> bool:
+    """HIIT and finisher rounds (ADR 0023): the main block of an intervals workout, and
+    every finisher. Rows swapped out mid-workout keep their numbers."""
+    if row.swapped_out or row.is_test or row.seconds is None or row.reps_in_reserve is not None:
+        return False
+    return row.part == WorkoutPart.FINISHER or (
+        row.part == WorkoutPart.MAIN and workout.format == WorkoutFormat.INTERVALS
+    )
+
+
+async def saved_interval_step(
+    session: AsyncSession, user_id: uuid.UUID
+) -> tuple[FitnessLevel, interval_rules.State] | None:
+    """The user's saved interval step and runs, and the level they belong to."""
+    row = (
+        await session.execute(
+            select(
+                IntervalStep.level,
+                IntervalStep.step,
+                IntervalStep.good_runs,
+                IntervalStep.short_runs,
+            ).where(IntervalStep.user_id == user_id)
+        )
+    ).first()
+    if row is None:
+        return None
+    return row.level, interval_rules.State(row.step, row.good_runs, row.short_runs)
+
+
+async def interval_timing(
+    session: AsyncSession, user_id: uuid.UUID, level: FitnessLevel, *, comeback_eased: bool
+) -> interval_rules.Timing:
+    """Work and rest for this user's next intervals at this level (ADR 0023)."""
+    state = interval_rules.state_for(level, await saved_interval_step(session, user_id))
+    return interval_rules.timing(
+        interval_rules.served_step(state.step, comeback_eased=comeback_eased)
+    )
+
+
 def served(row: PlannedWorkoutExercise, workout: PlannedWorkout, target: Target | None) -> Served:
     """What this row asks for now. The recovery week keeps its lighter numbers and only
     takes the suggested weight ("same weight, stop 4 reps short")."""
@@ -336,14 +381,20 @@ def _exercise_read(
     last: dict[uuid.UUID, LastResult],
     targets: dict[uuid.UUID, Target],
     ease: comeback_rules.Ease | None = None,
+    timing: interval_rules.Timing | None = None,
 ) -> PlannedExerciseRead:
     """Pending workouts show today's targets; done and skipped ones show what was saved.
 
     `ease`: the workout is a comeback workout (ADR 0021). Strength work is served lighter
     (the saved progress stays as it is), intervals and finishers a little easier.
+    `timing`: the user's interval work and rest (ADR 0023), for HIIT and finisher rows.
     """
     pending = workout.status == WorkoutStatus.PENDING
     now = Served(row.sets, row.reps_min, row.reps_max, row.seconds, None)
+    rest = row.rest_seconds
+    if pending and timing is not None and is_interval(row, workout):
+        now = replace(now, seconds=timing.work)
+        rest = timing.rest
     if pending and progresses(row):
         now = served(row, workout, targets.get(row.exercise_id))
     previous = last.get(row.exercise_id)
@@ -379,7 +430,7 @@ def _exercise_read(
         reps_min=now.reps_min,
         reps_max=now.reps_max,
         seconds=now.seconds,
-        rest_seconds=row.rest_seconds,
+        rest_seconds=rest,
         reps_in_reserve=row.reps_in_reserve,
         effort=effort,
         group=row.group_number,
@@ -447,17 +498,31 @@ async def _detail(
     comeback: tuple[int, int] | None = None,
 ) -> WorkoutDetail:
     """`comeback`: (how many weeks its comeback lasts, its week) for a comeback workout."""
-    plan_user = await session.scalar(select(Plan.user_id).where(Plan.id == workout.plan_id))
-    assert plan_user is not None
+    found = (
+        await session.execute(
+            select(Plan.user_id, Plan.generated_from).where(Plan.id == workout.plan_id)
+        )
+    ).one()
+    plan_user = found.user_id
     exercise_ids = {row.exercise_id for row in workout.exercises}
     last = await last_results(session, plan_user, exercise_ids)
     targets = await targets_of(session, plan_user, exercise_ids)
     ease = None
     if comeback is not None and workout.status == WorkoutStatus.PENDING:
         ease = comeback_rules.ease_for(*comeback)
+    timing = None
+    if workout.status == WorkoutStatus.PENDING and any(
+        is_interval(row, workout) for row in workout.exercises
+    ):
+        timing = await interval_timing(
+            session,
+            plan_user,
+            PlanAnswers.from_json(found.generated_from).level,
+            comeback_eased=ease is not None and ease.effort_drop > 0,
+        )
     parts: dict[WorkoutPart, list[PlannedExerciseRead]] = {part: [] for part in WorkoutPart}
     for row in workout.exercises:  # already in position order
-        parts[row.part].append(_exercise_read(row, workout, last, targets, ease))
+        parts[row.part].append(_exercise_read(row, workout, last, targets, ease, timing))
     return WorkoutDetail(
         **_summary(workout, comeback[1] if comeback else None).model_dump(),
         plan_id=workout.plan_id,

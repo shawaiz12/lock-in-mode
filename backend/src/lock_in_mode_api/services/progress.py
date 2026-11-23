@@ -1,6 +1,7 @@
 """Progression after a workout (ADR 0019): step exercises up or back, the feedback
-streaks, and the early recovery week. The rules are pure (training/progression.py); this
-module feeds them the logged sets and saves what they return.
+streaks, the early recovery week, and the interval step (ADR 0023). The rules are pure
+(training/progression.py, training/intervals.py); this module feeds them the logged sets
+and saves what they return.
 
 Nothing here commits: the sessions service calls it while finishing a workout, so the
 finish and the progress it causes are saved together or not at all.
@@ -19,6 +20,7 @@ from sqlalchemy.orm import selectinload
 from lock_in_mode_api.models import (
     Exercise,
     ExerciseTarget,
+    IntervalStep,
     MovementRung,
     Plan,
     PlannedWorkout,
@@ -27,6 +29,7 @@ from lock_in_mode_api.models import (
 )
 from lock_in_mode_api.models.enums import (
     Feedback,
+    FitnessLevel,
     Location,
     ProgressChange,
     WorkoutFormat,
@@ -34,8 +37,9 @@ from lock_in_mode_api.models.enums import (
     WorkoutStatus,
 )
 from lock_in_mode_api.schemas.exercise import ExerciseRef
-from lock_in_mode_api.schemas.session import Progress
+from lock_in_mode_api.schemas.session import IntervalProgress, Progress
 from lock_in_mode_api.services import plans as plan_service
+from lock_in_mode_api.training import intervals as interval_rules
 from lock_in_mode_api.training.picker import Picker
 from lock_in_mode_api.training.plan_types import PlanAnswers, is_weighted
 from lock_in_mode_api.training.progression import (
@@ -65,6 +69,7 @@ class Outcome:
 
     progress: list[Progress] = field(default_factory=list)
     rungs_changed: bool = False
+    intervals: IntervalProgress | None = None
 
 
 @dataclass(frozen=True)
@@ -245,8 +250,9 @@ async def after_finish(
         select(Plan.generated_from).where(Plan.id == workout.plan_id)
     )
     assert generated_from is not None
+    answers = PlanAnswers.from_json(generated_from)
     ladders = _Ladders(
-        PlanAnswers.from_json(generated_from),
+        answers,
         await plan_service.exercise_library(session),
         await plan_service.excluded_of(session, user_id),
     )
@@ -282,6 +288,9 @@ async def after_finish(
 
     if streak is not None:
         await _step_the_rest(session, user_id, workout.plan_id, ladders, streak, stepped, outcome)
+    outcome.intervals = await _step_intervals(
+        session, workout_session, workout, answers.level, streak
+    )
     return outcome
 
 
@@ -371,3 +380,72 @@ async def bring_recovery_forward(
         workout.status_changed_at = now
     await session.flush()
     return True
+
+
+# --- intervals (ADR 0023) -----------------------------------------------------------------
+
+
+async def _plan_has_intervals(session: AsyncSession, plan_id: uuid.UUID) -> bool:
+    """Any HIIT or finisher rounds in this block (low intensity plans have none)."""
+    found = await session.scalar(
+        select(func.count())
+        .select_from(PlannedWorkoutExercise)
+        .join(PlannedWorkout, PlannedWorkout.id == PlannedWorkoutExercise.planned_workout_id)
+        .where(
+            PlannedWorkout.plan_id == plan_id,
+            PlannedWorkoutExercise.swapped_out.is_(False),
+            (PlannedWorkoutExercise.part == WorkoutPart.FINISHER)
+            | (
+                (PlannedWorkoutExercise.part == WorkoutPart.MAIN)
+                & (PlannedWorkout.format == WorkoutFormat.INTERVALS)
+            ),
+        )
+    )
+    return bool(found)
+
+
+async def _step_intervals(
+    session: AsyncSession,
+    workout_session: WorkoutSession,
+    workout: PlannedWorkout,
+    level: FitnessLevel,
+    pair: Feedback | None,
+) -> IntervalProgress | None:
+    """Count this workout's interval rounds and move the user's step (ADR 0023). A pair
+    of taps moves it only for a user who has done intervals and still has them."""
+    rows = {r.id: r for r in workout.exercises if plan_service.is_interval(r, workout)}
+    planned = sum(r.sets for r in rows.values())
+    ticked = sum(
+        1
+        for s in workout_session.sets
+        if s.planned_exercise_id in rows and s.set_number <= rows[s.planned_exercise_id].sets
+    )
+    result = interval_rules.verdict(planned, ticked, workout_session.feedback)
+    user_id = workout_session.user_id
+    saved = await plan_service.saved_interval_step(session, user_id)
+    state = interval_rules.state_for(level, saved)
+    move = interval_rules.after_workout(level, state, result)
+    done_before = saved is not None or result != interval_rules.Verdict.NOTHING
+    if pair is not None and done_before and await _plan_has_intervals(session, workout.plan_id):
+        move = interval_rules.with_pair(level, move, result, pair)
+    if result == interval_rules.Verdict.NOTHING and move.direction is None:
+        return None
+    values = {
+        "level": level,
+        "step": move.state.step,
+        "good_runs": move.state.good_runs,
+        "short_runs": move.state.short_runs,
+    }
+    await session.execute(
+        insert(IntervalStep)
+        .values(user_id=user_id, **values)
+        .on_conflict_do_update(
+            index_elements=[IntervalStep.user_id], set_={**values, "updated_at": func.now()}
+        )
+    )
+    if move.direction is None:
+        return None
+    now = interval_rules.timing(move.state.step)
+    return IntervalProgress(
+        direction=move.direction.value, work_seconds=now.work, rest_seconds=now.rest
+    )

@@ -15,6 +15,7 @@ from datetime import datetime
 from enum import StrEnum
 
 from lock_in_mode_api.models.enums import FitnessLevel, SessionKind
+from lock_in_mode_api.training.intervals import Timing
 from lock_in_mode_api.training.plan_types import PlannedExercise, Workout
 
 GOOD_WEEK_WORKOUTS = 2
@@ -49,12 +50,14 @@ class WeekShape:
 
     hard_workouts: int  # strength work or HIIT
     sets: int  # strength sets in the main blocks
+    intervals: bool = False  # any HIIT or finisher rounds (ADR 0023)
 
 
 def week_shape(week: Sequence[Workout]) -> WeekShape:
     hard = [w for w in week if w.kind == SessionKind.HIIT or any(_strength(e) for e in w.exercises)]
     sets = sum(e.sets for w in week for e in w.exercises if _strength(e))
-    return WeekShape(len(hard), sets)
+    intervals = any(w.kind == SessionKind.HIIT or w.finisher for w in week)
+    return WeekShape(len(hard), sets, intervals)
 
 
 def _strength(exercise: PlannedExercise) -> bool:
@@ -62,10 +65,18 @@ def _strength(exercise: PlannedExercise) -> bool:
 
 
 def what_changes(
-    now: WeekShape, next_level: WeekShape, *, minutes: int | None, low_intensity: bool
+    now: WeekShape,
+    next_level: WeekShape,
+    *,
+    minutes: int | None,
+    low_intensity: bool,
+    intervals: tuple[Timing, Timing] | None = None,
 ) -> list[str]:
     """What moving up changes, worked out from the next week built both ways: plain
-    lines that are true for this user (no promise of "more" when time caps it)."""
+    lines that are true for this user (no promise of "more" when time caps it).
+
+    `intervals`: the user's interval timing now, and the new level's start (ADR 0023).
+    A line only when both weeks have intervals and the timing changes."""
     lines = []
     if next_level.hard_workouts != now.hard_workouts:
         lines.append(f"Hard workouts a week: {now.hard_workouts} → {next_level.hard_workouts}.")
@@ -75,6 +86,10 @@ def what_changes(
         lines.append(
             f"Your sessions stay {minutes} minutes, so the work gets harder rather than longer."
         )
+    if intervals is not None and now.intervals and next_level.intervals:
+        before, after = intervals
+        if before != after:
+            lines.append(f"Intervals: {before} → {after}.")
     lines.append("Harder moves can be picked for you as you're ready for them.")
     if low_intensity:
         lines.append(

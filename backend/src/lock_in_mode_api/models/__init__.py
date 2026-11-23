@@ -3,7 +3,7 @@ from lock_in_mode_api.models.comeback import Comeback
 from lock_in_mode_api.models.exercise import Exercise, exercise_alternatives
 from lock_in_mode_api.models.plan import Plan, PlannedWorkout, PlannedWorkoutExercise
 from lock_in_mode_api.models.profile import Profile
-from lock_in_mode_api.models.progress import ExerciseTarget
+from lock_in_mode_api.models.progress import ExerciseTarget, IntervalStep
 from lock_in_mode_api.models.refresh_token import RefreshToken
 from lock_in_mode_api.models.session import MovementRung, SetLog, WorkoutSession
 from lock_in_mode_api.models.swap import SwappedOutExercise
@@ -14,6 +14,7 @@ __all__ = [
     "Comeback",
     "Exercise",
     "ExerciseTarget",
+    "IntervalStep",
     "MovementRung",
     "Plan",
     "PlannedWorkout",

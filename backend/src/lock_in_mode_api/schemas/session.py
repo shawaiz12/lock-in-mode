@@ -80,12 +80,24 @@ class Progress(BaseModel):
     set_change: int = Field(description="Sets compared with the plan: -1, 0 or +1.")
 
 
+class IntervalProgress(BaseModel):
+    """What moved the user's HIIT and finisher timing (ADR 0023):
+    "Intervals up: 35 s on / 25 s off next time". Every round stays one minute."""
+
+    direction: Literal["up", "down"]
+    work_seconds: int = Field(description="Seconds of work per interval from now on.")
+    rest_seconds: int = Field(description="Seconds of rest per interval from now on.")
+
+
 class SessionResult(SessionRead):
     """The finished session, what the test placed (if it was the test), what moved up or
-    back (ADR 0019), and the queue."""
+    back (ADR 0019 and 0023), and the queue."""
 
     placements: list[Placement]
     progress: list[Progress]
+    intervals: IntervalProgress | None = Field(
+        default=None, description="HIIT and finisher timing moved up or down (ADR 0023)."
+    )
     recovery_earned: bool = Field(
         description="This finish brought the recovery week forward: show it as earned "
         "recovery, never as failing."

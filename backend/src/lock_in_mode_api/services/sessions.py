@@ -28,6 +28,7 @@ from lock_in_mode_api.models import (
 from lock_in_mode_api.models.enums import Feedback, WorkoutPart, WorkoutStatus
 from lock_in_mode_api.schemas.exercise import ExerciseRef
 from lock_in_mode_api.schemas.session import (
+    IntervalProgress,
     Placement,
     Progress,
     SessionRead,
@@ -155,6 +156,7 @@ async def _place_from_test(
 class _Closed:
     placements: list[Placement]
     progress: list[Progress]
+    intervals: IntervalProgress | None
     recovery_earned: bool
 
 
@@ -188,7 +190,7 @@ async def _close(
         session, workout_session, plan_id, week
     )
     await comeback_service.after_finish(session, workout_session)
-    return _Closed(placements, outcome.progress, recovery)
+    return _Closed(placements, outcome.progress, outcome.intervals, recovery)
 
 
 async def finish_open_session(session: AsyncSession, user_id: uuid.UUID) -> None:
@@ -212,6 +214,7 @@ async def finish_session(
         **_read(await _load(session, user_id, session_id)).model_dump(),
         placements=closed.placements,
         progress=closed.progress,
+        intervals=closed.intervals,
         recovery_earned=closed.recovery_earned,
         next_workout_id=plan.next_workout_id,
         block_complete=plan.block_complete,
