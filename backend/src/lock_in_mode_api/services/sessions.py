@@ -1,5 +1,6 @@
 """Doing workouts: start, tick sets, finish, the strength-test placement (ADR 0018) and,
-on finishing, progression (ADR 0019).
+on finishing, progression (ADR 0019). Starting the first workout after a break saves the
+comeback and links the session to it (ADR 0021).
 
 Functions that change data own the transaction and commit, except `finish_open_session`,
 which joins the caller's (the profile service's: answers changed, plan about to be
@@ -19,6 +20,7 @@ from sqlalchemy.orm import selectinload
 from lock_in_mode_api.models import (
     Exercise,
     MovementRung,
+    Plan,
     PlannedWorkoutExercise,
     SetLog,
     WorkoutSession,
@@ -33,6 +35,7 @@ from lock_in_mode_api.schemas.session import (
     SetLogRead,
     SetLogWrite,
 )
+from lock_in_mode_api.services import comeback as comeback_service
 from lock_in_mode_api.services import plans as plan_service
 from lock_in_mode_api.services import progress as progress_service
 from lock_in_mode_api.training.placement import placed_exercise
@@ -184,6 +187,7 @@ async def _close(
     recovery = await progress_service.bring_recovery_forward(
         session, workout_session, plan_id, week
     )
+    await comeback_service.after_finish(session, workout_session)
     return _Closed(placements, outcome.progress, recovery)
 
 
@@ -228,19 +232,24 @@ async def start_session(
     await plan_service.load_workout(session, user_id, workout_id)  # 404 if not theirs
     open_session = await _open_session(session, user_id)
     if open_session is not None and open_session.planned_workout_id == workout_id:
+        if await _continue_after_break(session, user_id, open_session):
+            open_session = await _open_session(session, user_id)
+            assert open_session is not None
         return _read(open_session), False  # "Continue"
     if open_session is not None:
         await _close(session, open_session, None)
         await session.flush()
 
     plan = await plan_service.current_plan(session, user_id)
-    upcoming = None if plan is None else plan_service.next_workout(plan)
-    if upcoming is None or upcoming.id != workout_id:
+    queue = None if plan is None else await plan_service.queue_of(session, plan)
+    if plan is None or queue is None or queue.upcoming is None or queue.upcoming.id != workout_id:
         await session.rollback()  # don't keep the half-done finish above
         raise plan_service.NotNextWorkoutError
 
-    session.add(WorkoutSession(user_id=user_id, planned_workout_id=workout_id))
+    new_session = WorkoutSession(user_id=user_id, planned_workout_id=workout_id)
     try:
+        await _join_comeback(session, plan, queue, new_session)
+        session.add(new_session)
         await session.commit()
     except IntegrityError:
         # A double tap: the first request opened it. Hand back that one.
@@ -252,6 +261,47 @@ async def start_session(
     started = await _open_session(session, user_id)
     assert started is not None
     return _read(started), True
+
+
+async def _join_comeback(
+    session: AsyncSession,
+    plan: Plan,
+    queue: plan_service.Queue,
+    workout_session: WorkoutSession,
+) -> None:
+    """Back after a break (ADR 0021): save a due comeback (dropping a recovery week the
+    break replaces) and link this session to it, so the workout keeps its eased numbers.
+    The caller commits."""
+    comeback = queue.comeback
+    if comeback is None:
+        return
+    saved = comeback.saved
+    if saved is None:
+        saved = await comeback_service.start(session, plan.user_id, comeback)
+        plan_service.drop_recovery(plan, queue)
+    eased = queue.weeks.get(workout_session.planned_workout_id)
+    if eased is not None:
+        workout_session.comeback_id = saved.id
+        workout_session.comeback_week = eased[1]
+
+
+async def _continue_after_break(
+    session: AsyncSession, user_id: uuid.UUID, open_session: WorkoutSession
+) -> bool:
+    """ "Continue" on a workout left open since before a break: it joins the comeback,
+    so the sets left are eased. Returns True if anything was written (reload it)."""
+    plan = await plan_service.current_plan(session, user_id)
+    if plan is None:
+        return False
+    queue = await plan_service.queue_of(session, plan)
+    if queue.comeback is None or not queue.comeback.due:
+        return False
+    try:
+        await _join_comeback(session, plan, queue, open_session)
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()  # a double tap saved it first: that one stands
+    return True
 
 
 # --- logging sets -------------------------------------------------------------------------

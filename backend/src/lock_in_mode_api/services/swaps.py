@@ -138,8 +138,8 @@ async def swap(
     """
     # Plan first: reloading it would drop the exercises loaded with the workout.
     plan = await plan_service.current_plan(session, user_id)
+    upcoming = None if plan is None else (await plan_service.queue_of(session, plan)).upcoming
     workout = await plan_service.load_workout(session, user_id, workout_id, lock=True)
-    upcoming = None if plan is None else plan_service.next_workout(plan)
     if plan is None or upcoming is None or upcoming.id != workout.id:
         raise plan_service.NotNextWorkoutError
     row = next((r for r in workout.exercises if r.id == planned_exercise_id), None)

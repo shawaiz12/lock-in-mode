@@ -1,7 +1,8 @@
 """Doing a workout: sessions, logged sets, and where the strength test placed the user
 (ADR 0018).
 
-workout_sessions  one per planned workout; at most one open (unfinished) per user
+workout_sessions  one per planned workout; at most one open (unfinished) per user;
+                  linked to a comeback when it was eased after a break (ADR 0021)
  └ set_logs       one row per set the user ticks: reps and/or seconds, optional weight
 movement_rungs    per user and movement: the difficulty the strength test placed them on
 """
@@ -36,6 +37,12 @@ class WorkoutSession(Base):
         UniqueConstraint("planned_workout_id", name="uq_workout_sessions_planned_workout_id"),
         CheckConstraint("finished_at IS NULL OR finished_at >= started_at", name="finish_order"),
         CheckConstraint("feedback IS NULL OR finished_at IS NOT NULL", name="feedback_at_finish"),
+        CheckConstraint(
+            "(comeback_id IS NULL) = (comeback_week IS NULL)", name="comeback_with_week"
+        ),
+        CheckConstraint(
+            "comeback_week IS NULL OR comeback_week BETWEEN 1 AND 3", name="comeback_week_range"
+        ),
         # One open session per user, guaranteed by the database (like one current plan).
         Index(
             "uq_workout_sessions_one_open_per_user",
@@ -60,6 +67,12 @@ class WorkoutSession(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # NULL when the user skipped the question: no answer is not "just right".
     feedback: Mapped[Feedback | None] = mapped_column(enum_column(Feedback))
+    # Eased after a break (ADR 0021): which comeback, and which of its weeks. Saved when
+    # the workout starts, so it keeps the numbers it started with whatever happens next.
+    # Such a session changes no progress. No ON DELETE: comebacks go only with the user,
+    # who takes their sessions along.
+    comeback_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("comebacks.id"), index=True)
+    comeback_week: Mapped[int | None] = mapped_column(SmallInteger)
 
     planned_workout: Mapped[PlannedWorkout] = relationship(lazy="raise")
     sets: Mapped[list["SetLog"]] = relationship(

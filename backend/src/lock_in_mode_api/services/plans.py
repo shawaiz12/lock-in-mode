@@ -10,7 +10,7 @@ new answers and the new plan are saved together or not at all.
 
 import uuid
 from collections.abc import Collection, Sequence
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 
 from sqlalchemy import exists, func, select
@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from lock_in_mode_api.models import (
+    Comeback,
     Exercise,
     ExerciseTarget,
     MovementRung,
@@ -40,12 +41,15 @@ from lock_in_mode_api.models.enums import (
 )
 from lock_in_mode_api.schemas.exercise import ExerciseRef
 from lock_in_mode_api.schemas.plan import (
+    ComebackRead,
     LastResult,
     PlannedExerciseRead,
     PlanRead,
     WorkoutDetail,
     WorkoutSummary,
 )
+from lock_in_mode_api.services import comeback as comeback_service
+from lock_in_mode_api.training import comeback as comeback_rules
 from lock_in_mode_api.training.picker import Picker
 from lock_in_mode_api.training.plan_types import (
     BUILD_WEEKS,
@@ -53,7 +57,7 @@ from lock_in_mode_api.training.plan_types import (
     PlannedExercise,
     Workout,
 )
-from lock_in_mode_api.training.progression import Planned, Served, Target, serve
+from lock_in_mode_api.training.progression import Planned, Served, Target, serve, weight_step
 from lock_in_mode_api.training.routine import choose_routine
 from lock_in_mode_api.training.sessions import as_test_workout, build_block
 from lock_in_mode_api.training.templates import STRENGTH_KINDS
@@ -106,12 +110,112 @@ async def current_plan(session: AsyncSession, user_id: uuid.UUID) -> Plan | None
     )
 
 
-def next_workout(plan: Plan) -> PlannedWorkout | None:
-    return next((w for w in plan.workouts if w.status == WorkoutStatus.PENDING), None)
+def next_workout(
+    plan: Plan, *, recovery_dropped: bool = False, started: Collection[uuid.UUID] = ()
+) -> PlannedWorkout | None:
+    """The first pending workout. `recovery_dropped`: a break replaces the waiting recovery
+    week (ADR 0021), so recovery workouts nobody has started are passed over."""
+    for workout in plan.workouts:
+        if workout.status != WorkoutStatus.PENDING:
+            continue
+        if recovery_dropped and workout.recovery and workout.id not in started:
+            continue
+        return workout
+    return None
 
 
-def _plan_read(plan: Plan) -> PlanRead:
-    upcoming = next_workout(plan)
+@dataclass(frozen=True)
+class Queue:
+    """The queue as the user sees it now (ADR 0017, 0021): the next workout, the comeback
+    that applies, and the comeback week each eased workout is in.
+
+    `weeks`: per eased workout, (how many weeks its comeback lasts, its week).
+    `recovery_dropped`: back after 14+ days with only the recovery week left, so the
+    block counts as complete and the recovery week is dropped when they move on.
+    `started`: workouts with an open session.
+    """
+
+    upcoming: PlannedWorkout | None
+    comeback: comeback_service.Now | None
+    weeks: dict[uuid.UUID, tuple[int, int]]
+    recovery_dropped: bool
+    started: frozenset[uuid.UUID]
+
+
+async def queue_of(session: AsyncSession, plan: Plan) -> Queue:
+    """Work out the queue. Reads only; call after loading the plan, before loading any
+    workout (reloading the plan would drop a workout's exercises)."""
+    comeback = await comeback_service.find(session, plan.user_id)
+    rows = await session.execute(
+        select(WorkoutSession, Comeback.weeks)
+        .outerjoin(Comeback, Comeback.id == WorkoutSession.comeback_id)
+        .where(WorkoutSession.planned_workout_id.in_([w.id for w in plan.workouts]))
+    )
+    sessions: dict[uuid.UUID, tuple[WorkoutSession, int | None]] = {
+        s.planned_workout_id: (s, comeback_weeks) for s, comeback_weeks in rows
+    }
+    started = frozenset(wid for wid, (s, _) in sessions.items() if s.finished_at is None)
+    pending = [w for w in plan.workouts if w.status == WorkoutStatus.PENDING]
+    due = comeback is not None and comeback.due
+    recovery_dropped = due and all(w.recovery for w in pending)
+
+    weeks: dict[uuid.UUID, tuple[int, int]] = {}
+    for workout_id, (s, comeback_weeks) in sessions.items():
+        # Done, or started: it keeps the numbers it started with (eased or not).
+        if s.comeback_week is not None and comeback_weeks is not None:
+            weeks[workout_id] = (comeback_weeks, s.comeback_week)
+    index = 0  # how many comeback workouts come before this one
+    for workout in pending:
+        if recovery_dropped and workout.recovery and workout.id not in started:
+            continue
+        found = sessions.get(workout.id)
+        if found is not None and not due:
+            if comeback is not None and found[0].comeback_id == comeback.saved_id:
+                index += 1  # started in this comeback: it takes the next place
+            continue
+        weeks.pop(workout.id, None)  # due: a stale open workout joins the new comeback
+        if comeback is None or workout.recovery:
+            continue  # the recovery week is light already: not eased again, not counted
+        week = comeback.week_of(index)
+        if week is None:
+            break
+        weeks[workout.id] = (comeback.weeks, week)
+        index += 1
+    upcoming = next_workout(plan, recovery_dropped=recovery_dropped, started=started)
+    return Queue(upcoming, comeback, weeks, recovery_dropped, started)
+
+
+def drop_recovery(plan: Plan, queue: Queue) -> None:
+    """The break was the rest: the waiting recovery week goes (ADR 0021). Not a skip."""
+    if not queue.recovery_dropped:
+        return
+    now = datetime.now(UTC)
+    for workout in plan.workouts:
+        if (
+            workout.status == WorkoutStatus.PENDING
+            and workout.recovery
+            and workout.id not in queue.started
+        ):
+            workout.status = WorkoutStatus.REPLACED_BY_BREAK
+            workout.status_changed_at = now
+
+
+def _comeback_read(queue: Queue) -> ComebackRead | None:
+    comeback = queue.comeback
+    if comeback is None:
+        return None
+    eased = queue.weeks.get(queue.upcoming.id) if queue.upcoming else None
+    return ComebackRead(
+        away_days=comeback.away_days,
+        weeks=comeback.weeks,
+        week=eased[1] if eased else (comeback.week_of(0) or comeback.weeks),
+        workouts_left=comeback.workouts_left,
+        started=not comeback.due,
+    )
+
+
+def _plan_read(plan: Plan, queue: Queue) -> PlanRead:
+    upcoming = queue.upcoming
     return PlanRead(
         id=plan.id,
         block_number=plan.block_number,
@@ -123,11 +227,12 @@ def _plan_read(plan: Plan) -> PlanRead:
         created_at=plan.created_at,
         next_workout_id=upcoming.id if upcoming else None,
         block_complete=upcoming is None,
-        workouts=[_summary(w) for w in plan.workouts],
+        comeback=_comeback_read(queue),
+        workouts=[_summary(w, queue.weeks.get(w.id, (0, None))[1]) for w in plan.workouts],
     )
 
 
-def _summary(workout: PlannedWorkout) -> WorkoutSummary:
+def _summary(workout: PlannedWorkout, comeback_week: int | None) -> WorkoutSummary:
     return WorkoutSummary(
         id=workout.id,
         position=workout.position,
@@ -138,6 +243,7 @@ def _summary(workout: PlannedWorkout) -> WorkoutSummary:
         recovery=workout.recovery,
         total_minutes=workout.total_minutes,
         status=workout.status,
+        comeback_week=comeback_week,
     )
 
 
@@ -166,15 +272,43 @@ def _exercise_read(
     workout: PlannedWorkout,
     last: dict[uuid.UUID, LastResult],
     targets: dict[uuid.UUID, Target],
+    ease: comeback_rules.Ease | None = None,
 ) -> PlannedExerciseRead:
-    """Pending workouts show today's targets; done and skipped ones show what was saved."""
+    """Pending workouts show today's targets; done and skipped ones show what was saved.
+
+    `ease`: the workout is a comeback workout (ADR 0021). Strength work is served lighter
+    (the saved progress stays as it is), intervals and finishers a little easier.
+    """
+    pending = workout.status == WorkoutStatus.PENDING
     now = Served(row.sets, row.reps_min, row.reps_max, row.seconds, None)
-    if workout.status == WorkoutStatus.PENDING and progresses(row):
+    if pending and progresses(row):
         now = served(row, workout, targets.get(row.exercise_id))
     previous = last.get(row.exercise_id)
     weight = now.weight_kg
     if weight is None and previous is not None and row.reps_in_reserve is not None:
         weight = previous.weight_kg
+    effort = row.effort
+    if pending and ease is not None and progresses(row):
+        exercise = row.exercise
+        now = comeback_rules.ease(
+            replace(now, weight_kg=weight),
+            ease,
+            planned_reps_min=row.reps_min,
+            timed=exercise.is_timed,
+            weight_step=weight_step(
+                exercise.equipment, exercise.also_needs, exercise.movement_slot
+            ),
+        )
+        weight = now.weight_kg
+    elif (
+        pending
+        and ease is not None
+        and effort is not None
+        and row.part in (WorkoutPart.MAIN, WorkoutPart.FINISHER)
+        and not row.is_test
+        and not row.swapped_out
+    ):
+        effort = comeback_rules.eased_effort(effort, ease)
     return PlannedExerciseRead(
         id=row.id,
         exercise=ExerciseRef.model_validate(row.exercise),
@@ -184,7 +318,7 @@ def _exercise_read(
         seconds=now.seconds,
         rest_seconds=row.rest_seconds,
         reps_in_reserve=row.reps_in_reserve,
-        effort=row.effort,
+        effort=effort,
         group=row.group_number,
         practice_sets=row.practice_sets,
         is_test=row.is_test,
@@ -244,17 +378,25 @@ async def last_results(
     }
 
 
-async def _detail(session: AsyncSession, workout: PlannedWorkout) -> WorkoutDetail:
+async def _detail(
+    session: AsyncSession,
+    workout: PlannedWorkout,
+    comeback: tuple[int, int] | None = None,
+) -> WorkoutDetail:
+    """`comeback`: (how many weeks its comeback lasts, its week) for a comeback workout."""
     plan_user = await session.scalar(select(Plan.user_id).where(Plan.id == workout.plan_id))
     assert plan_user is not None
     exercise_ids = {row.exercise_id for row in workout.exercises}
     last = await last_results(session, plan_user, exercise_ids)
     targets = await targets_of(session, plan_user, exercise_ids)
+    ease = None
+    if comeback is not None and workout.status == WorkoutStatus.PENDING:
+        ease = comeback_rules.ease_for(*comeback)
     parts: dict[WorkoutPart, list[PlannedExerciseRead]] = {part: [] for part in WorkoutPart}
     for row in workout.exercises:  # already in position order
-        parts[row.part].append(_exercise_read(row, workout, last, targets))
+        parts[row.part].append(_exercise_read(row, workout, last, targets, ease))
     return WorkoutDetail(
-        **_summary(workout).model_dump(),
+        **_summary(workout, comeback[1] if comeback else None).model_dump(),
         plan_id=workout.plan_id,
         main_minutes=workout.main_minutes,
         warm_up=parts[WorkoutPart.WARM_UP],
@@ -290,23 +432,41 @@ async def get_current_plan(session: AsyncSession, user_id: uuid.UUID) -> PlanRea
     plan = await current_plan(session, user_id)
     if plan is None:
         raise PlanNotFoundError
-    return _plan_read(plan)
+    return _plan_read(plan, await queue_of(session, plan))
 
 
 async def get_next_workout(session: AsyncSession, user_id: uuid.UUID) -> WorkoutDetail:
     plan = await current_plan(session, user_id)
     if plan is None:
         raise PlanNotFoundError
-    upcoming = next_workout(plan)
-    if upcoming is None:
+    queue = await queue_of(session, plan)
+    if queue.upcoming is None:
         raise BlockCompleteError
-    return await _detail(session, await load_workout(session, user_id, upcoming.id))
+    workout = await load_workout(session, user_id, queue.upcoming.id)
+    return await _detail(session, workout, queue.weeks.get(workout.id))
 
 
 async def get_workout(
     session: AsyncSession, user_id: uuid.UUID, workout_id: uuid.UUID
 ) -> WorkoutDetail:
-    return await _detail(session, await load_workout(session, user_id, workout_id))
+    # Plan first: reloading it would drop the exercises loaded with the workout.
+    plan = await current_plan(session, user_id)
+    queue = await queue_of(session, plan) if plan is not None else None
+    workout = await load_workout(session, user_id, workout_id)
+    comeback = None
+    if queue is not None and plan is not None and workout.plan_id == plan.id:
+        comeback = queue.weeks.get(workout.id)
+    else:  # an older block: history only, nothing is eased any more
+        found = (
+            await session.execute(
+                select(Comeback.weeks, WorkoutSession.comeback_week)
+                .join(Comeback, Comeback.id == WorkoutSession.comeback_id)
+                .where(WorkoutSession.planned_workout_id == workout.id)
+            )
+        ).first()
+        if found is not None and found[1] is not None:
+            comeback = (found[0], found[1])
+    return await _detail(session, workout, comeback)
 
 
 # --- building and saving a block ----------------------------------------------------------
@@ -447,8 +607,10 @@ async def start_plan(session: AsyncSession, user_id: uuid.UUID) -> PlanRead:
 
     current = await current_plan(session, user_id)
     if current is not None:
-        if next_workout(current) is not None:
+        queue = await queue_of(session, current)
+        if queue.upcoming is not None:
             raise PlanInProgressError
+        drop_recovery(current, queue)  # back after a break: the break was the rest
         _end(current, PlanEndReason.FINISHED)
         # Send the UPDATE first: the new current plan can't exist alongside this one.
         await session.flush()
@@ -574,8 +736,8 @@ async def skip_workout(
     # Plan first: reloading it refreshes its workouts and would drop the exercises
     # loaded with the workout (lazy="raise" catches that in tests).
     plan = await current_plan(session, user_id)
+    upcoming = None if plan is None else (await queue_of(session, plan)).upcoming
     workout = await load_workout(session, user_id, workout_id, lock=True)
-    upcoming = None if plan is None else next_workout(plan)
     if plan is None or upcoming is None or upcoming.id != workout.id:
         raise NotNextWorkoutError
     started = await session.scalar(

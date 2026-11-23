@@ -180,7 +180,8 @@ async def _apply(
 async def _answers_streak(
     session: AsyncSession, workout_session: WorkoutSession
 ) -> Feedback | None:
-    """Does this tap complete a pair of identical taps? Recovery weeks don't count."""
+    """Does this tap complete a pair of identical taps? Recovery weeks and comeback
+    workouts (ADR 0021) don't count."""
     if workout_session.feedback is None:
         return None
     earlier = await session.scalars(
@@ -191,6 +192,7 @@ async def _answers_streak(
             WorkoutSession.id != workout_session.id,
             WorkoutSession.finished_at.is_not(None),
             WorkoutSession.feedback.is_not(None),
+            WorkoutSession.comeback_id.is_(None),
             PlannedWorkout.recovery.is_(False),
         )
         .order_by(WorkoutSession.finished_at.desc())
@@ -230,12 +232,13 @@ async def after_finish(
     main: Sequence[PlannedWorkoutExercise],
 ) -> Outcome:
     """Step this workout's exercises (double progression, one tap, falling short), then
-    the whole plan if this tap makes a pair. The recovery week changes nothing.
+    the whole plan if this tap makes a pair. The recovery week changes nothing, and
+    neither does a comeback workout after a break (ADR 0021): it was served lighter.
 
     `main`: the workout's main-block rows, read before anything rebuilds the block.
     """
     outcome = Outcome()
-    if workout.recovery:
+    if workout.recovery or workout_session.comeback_id is not None:
         return outcome
     user_id = workout_session.user_id
     generated_from = await session.scalar(
@@ -339,9 +342,10 @@ async def bring_recovery_forward(
 ) -> bool:
     """ "Too hard" on more than half of this week's workouts: the rest of the build-up
     weeks make way and the recovery week is next (KB section 10). Returns True if so.
-    Call after any rebuild: it changes statuses of the plan's pending workouts.
+    Call after any rebuild: it changes statuses of the plan's pending workouts. Comeback
+    workouts' taps don't count (ADR 0021).
     """
-    if workout_session.feedback != Feedback.TOO_HARD:
+    if workout_session.feedback != Feedback.TOO_HARD or workout_session.comeback_id is not None:
         return False
     plan = await plan_service.current_plan(session, workout_session.user_id)
     if plan is None or plan.id != plan_id:
@@ -353,6 +357,7 @@ async def bring_recovery_forward(
         .where(
             WorkoutSession.planned_workout_id.in_(this_week),
             WorkoutSession.feedback == Feedback.TOO_HARD,
+            WorkoutSession.comeback_id.is_(None),
         )
     )
     if not earns_recovery(too_hard or 0, len(this_week)):

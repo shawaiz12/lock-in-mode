@@ -66,6 +66,10 @@ class WorkoutSummary(BaseModel):
     recovery: bool = Field(description="Part of the block's lighter week.")
     total_minutes: int
     status: WorkoutStatus
+    comeback_week: int | None = Field(
+        description="Back after a break (ADR 0021): the comeback week this workout is eased "
+        "for, from 1. Its numbers are already lighter. null: not eased."
+    )
 
 
 class WorkoutDetail(WorkoutSummary):
@@ -77,6 +81,21 @@ class WorkoutDetail(WorkoutSummary):
     main: list[PlannedExerciseRead]
     finisher: list[PlannedExerciseRead]
     cool_down: list[PlannedExerciseRead]
+
+
+class ComebackRead(BaseModel):
+    """Back after a break of 14+ days (ADR 0021). The next workouts are served lighter;
+    the user's saved progress is untouched and applies again once it's over."""
+
+    away_days: int = Field(description="Whole days since the last ticked set.")
+    weeks: int = Field(description="1: one easy week (14-28 days away). 3: a ramp back up.")
+    week: int = Field(description="The comeback week the next workout is in, from 1.")
+    workouts_left: int = Field(description="Eased workouts still to train.")
+    started: bool = Field(
+        description='false until the first workout back is started: show "Welcome back" '
+        "(never how long they were gone). Either way, DELETE /me/comeback ends it "
+        '("I kept training elsewhere").'
+    )
 
 
 class PlanRead(BaseModel):
@@ -98,4 +117,5 @@ class PlanRead(BaseModel):
         description='Every workout done or skipped: show "Block complete!" and offer '
         "POST /plans for the next block."
     )
+    comeback: ComebackRead | None = Field(description="null: no break to come back from.")
     workouts: list[WorkoutSummary]

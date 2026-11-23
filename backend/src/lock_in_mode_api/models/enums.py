@@ -117,6 +117,9 @@ class WorkoutStatus(StrEnum):
     # Too many "too hard" taps in a week: the rest of the build-up weeks make way for the
     # recovery week, which comes early as earned recovery (ADR 0019). Not a skip.
     REPLACED_BY_RECOVERY = "replaced_by_recovery"
+    # Back after 14+ days with only the recovery week left: the break was the rest, so
+    # the recovery week is dropped (ADR 0021). Not a skip, never shown as missed.
+    REPLACED_BY_BREAK = "replaced_by_break"
 
 
 class WorkoutPart(StrEnum):
@@ -133,6 +136,14 @@ class PlanEndReason(StrEnum):
 
     FINISHED = "finished"  # every workout done or skipped, and the next block was started
     ANSWERS_CHANGED = "answers_changed"  # the profile or safety screen changed the plan
+
+
+class ComebackEndReason(StrEnum):
+    """Why a comeback after a break stopped easing workouts (ADR 0021)."""
+
+    DONE = "done"  # all its eased workouts were trained
+    OPTED_OUT = "opted_out"  # "I kept training elsewhere"
+    NEW_BREAK = "new_break"  # another break of 14+ days started a new comeback
 
 
 class Feedback(StrEnum):
