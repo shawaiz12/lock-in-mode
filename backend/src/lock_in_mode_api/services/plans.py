@@ -33,6 +33,7 @@ from lock_in_mode_api.models import (
     WorkoutSession,
 )
 from lock_in_mode_api.models.enums import (
+    FitnessLevel,
     MovementSlot,
     PlanEndReason,
     WorkoutFormat,
@@ -43,13 +44,16 @@ from lock_in_mode_api.schemas.exercise import ExerciseRef
 from lock_in_mode_api.schemas.plan import (
     ComebackRead,
     LastResult,
+    LevelUpRead,
     PlannedExerciseRead,
     PlanRead,
     WorkoutDetail,
     WorkoutSummary,
 )
 from lock_in_mode_api.services import comeback as comeback_service
+from lock_in_mode_api.services import level_up as level_up_service
 from lock_in_mode_api.training import comeback as comeback_rules
+from lock_in_mode_api.training import level_up as level_up_rules
 from lock_in_mode_api.training.picker import Picker
 from lock_in_mode_api.training.plan_types import (
     BUILD_WEEKS,
@@ -77,6 +81,10 @@ class PlanNotFoundError(Exception):
 
 class PlanInProgressError(Exception):
     """The current block still has pending workouts. Callers answer 409."""
+
+
+class LevelUpNotOfferedError(Exception):
+    """ "level_up": true, but no move up is on offer now (ADR 0022). Callers answer 409."""
 
 
 class BlockCompleteError(Exception):
@@ -214,7 +222,61 @@ def _comeback_read(queue: Queue) -> ComebackRead | None:
     )
 
 
-def _plan_read(plan: Plan, queue: Queue) -> PlanRead:
+async def level_up_offer(
+    session: AsyncSession, user_id: uuid.UUID, queue: Queue, *, describe: bool = True
+) -> level_up_service.Offer | None:
+    """ "Ready for more?" is asked only at block complete, and never during a comeback
+    (ADR 0022). `describe`: fill in what changes, by building the next week both ways."""
+    if queue.upcoming is not None or queue.comeback is not None:
+        return None
+    offer = await level_up_service.offer_for(session, user_id)
+    if offer is None or not describe:
+        return offer
+    profile = await session.get(Profile, user_id)
+    assert profile is not None
+    library = await exercise_library(session)
+    rungs = await rungs_of(session, user_id)
+    excluded = await excluded_of(session, user_id)
+    number = await _next_block_number(session, user_id)
+    first_block = await _test_still_needed(session, user_id)
+
+    def shape(level: FitnessLevel) -> level_up_rules.WeekShape:
+        # Built exactly as POST /plans would build the next block (see _add_plan).
+        answers = replace(PlanAnswers.of(profile), level=level)
+        block = build_block(
+            answers,
+            choose_routine(answers),
+            library,
+            BUILD_WEEKS,
+            first_block=first_block,
+            block_number=number,
+            rungs=rungs,
+            excluded=excluded,
+        )
+        return level_up_rules.week_shape(block[0])
+
+    lines = level_up_rules.what_changes(
+        shape(profile.level),
+        shape(offer.to),
+        minutes=profile.minutes_per_session,
+        low_intensity=profile.needs_low_intensity,
+    )
+    return replace(offer, what_changes=tuple(lines))
+
+
+def _level_up_read(offer: level_up_service.Offer | None) -> LevelUpRead | None:
+    if offer is None:
+        return None
+    return LevelUpRead(
+        to=offer.to,
+        reason=offer.reason,
+        good_weeks=offer.good_weeks,
+        what_changes=list(offer.what_changes),
+        check_with_doctor=offer.check_with_doctor,
+    )
+
+
+def _plan_read(plan: Plan, queue: Queue, offer: level_up_service.Offer | None = None) -> PlanRead:
     upcoming = queue.upcoming
     return PlanRead(
         id=plan.id,
@@ -228,6 +290,7 @@ def _plan_read(plan: Plan, queue: Queue) -> PlanRead:
         next_workout_id=upcoming.id if upcoming else None,
         block_complete=upcoming is None,
         comeback=_comeback_read(queue),
+        level_up=_level_up_read(offer),
         workouts=[_summary(w, queue.weeks.get(w.id, (0, None))[1]) for w in plan.workouts],
     )
 
@@ -432,7 +495,8 @@ async def get_current_plan(session: AsyncSession, user_id: uuid.UUID) -> PlanRea
     plan = await current_plan(session, user_id)
     if plan is None:
         raise PlanNotFoundError
-    return _plan_read(plan, await queue_of(session, plan))
+    queue = await queue_of(session, plan)
+    return _plan_read(plan, queue, await level_up_offer(session, user_id, queue))
 
 
 async def get_next_workout(session: AsyncSession, user_id: uuid.UUID) -> WorkoutDetail:
@@ -597,8 +661,14 @@ def _end(plan: Plan, reason: PlanEndReason) -> None:
     plan.end_reason = reason
 
 
-async def start_plan(session: AsyncSession, user_id: uuid.UUID) -> PlanRead:
-    """The first block after onboarding, or the next block once this one is finished."""
+async def start_plan(
+    session: AsyncSession, user_id: uuid.UUID, *, level_up: bool = False
+) -> PlanRead:
+    """The first block after onboarding, or the next block once this one is finished.
+
+    `level_up`: "Ready for more?" answered yes (ADR 0022). The profile moves up to the
+    offered level and the new block is built from it, in the same transaction.
+    """
     profile = await session.get(Profile, user_id)
     if profile is None:
         raise ProfileRequiredError
@@ -606,10 +676,17 @@ async def start_plan(session: AsyncSession, user_id: uuid.UUID) -> PlanRead:
         raise SafetyScreenRequiredError
 
     current = await current_plan(session, user_id)
+    if current is None and level_up:
+        raise LevelUpNotOfferedError  # nothing is offered before the first block
     if current is not None:
         queue = await queue_of(session, current)
         if queue.upcoming is not None:
             raise PlanInProgressError
+        if level_up:
+            offer = await level_up_offer(session, user_id, queue, describe=False)
+            if offer is None:
+                raise LevelUpNotOfferedError
+            profile.level = FitnessLevel(offer.to)
         drop_recovery(current, queue)  # back after a break: the break was the rest
         _end(current, PlanEndReason.FINISHED)
         # Send the UPDATE first: the new current plan can't exist alongside this one.

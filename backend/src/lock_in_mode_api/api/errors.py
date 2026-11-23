@@ -165,6 +165,14 @@ class PlanInProgress(ApiError):
     title = "Current block isn't finished"
 
 
+class LevelUpNotOffered(ApiError):
+    """POST /plans {"level_up": true} with no move up on offer (ADR 0022)."""
+
+    status_code = 409
+    code = "level_up_not_offered"
+    title = "No level-up on offer"
+
+
 class NotNextWorkout(ApiError):
     """Only the next workout in the queue can be skipped (ADR 0017)."""
 

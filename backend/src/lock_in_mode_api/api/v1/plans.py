@@ -12,6 +12,7 @@ from lock_in_mode_api.api.caching import NOT_MODIFIED_DOC, json_with_etag
 from lock_in_mode_api.api.deps import CurrentUser, DbSession
 from lock_in_mode_api.api.errors import (
     BlockComplete,
+    LevelUpNotOffered,
     NotFound,
     NotNextWorkout,
     PlanInProgress,
@@ -20,27 +21,37 @@ from lock_in_mode_api.api.errors import (
     SafetyScreenRequired,
     SessionInProgress,
 )
-from lock_in_mode_api.schemas.plan import PlanRead, WorkoutDetail
+from lock_in_mode_api.schemas.plan import PlanRead, StartPlan, WorkoutDetail
 from lock_in_mode_api.services import plans as plan_service
 
 router = APIRouter(tags=["plans"])
 
 
 @router.post("/plans", status_code=status.HTTP_201_CREATED)
-async def start_plan(user: CurrentUser, session: DbSession) -> PlanRead:
+async def start_plan(
+    user: CurrentUser, session: DbSession, body: StartPlan | None = None
+) -> PlanRead:
     """Build and save a training block: 4 build-up weeks and a recovery week.
 
     Call once after onboarding and the safety screen, then again from the
     "Block complete!" screen. Changing the profile replaces the plan by itself.
+
+    `{"level_up": true}`: the user said yes to "Ready for more?" (`level_up` on the
+    current plan, ADR 0022). Their level moves up and the new block is built from it.
+    No offer standing → 409 `level_up_not_offered`. No body = the same level.
     """
     try:
-        return await plan_service.start_plan(session, user.id)
+        return await plan_service.start_plan(
+            session, user.id, level_up=body is not None and body.level_up
+        )
     except plan_service.ProfileRequiredError as exc:
         raise ProfileNotFound("Finish onboarding first") from exc
     except plan_service.SafetyScreenRequiredError as exc:
         raise SafetyScreenRequired("Take the safety screen before the first plan") from exc
     except plan_service.PlanInProgressError as exc:
         raise PlanInProgress("Finish or skip the rest of this block first") from exc
+    except plan_service.LevelUpNotOfferedError as exc:
+        raise LevelUpNotOffered("There's no move up on offer right now: refresh the plan") from exc
 
 
 @router.get("/plans/current", response_model=PlanRead, responses=NOT_MODIFIED_DOC)

@@ -3,15 +3,17 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from lock_in_mode_api.models.enums import (
+    FitnessLevel,
     RoutineKind,
     SessionKind,
     WorkoutFormat,
     WorkoutStatus,
 )
 from lock_in_mode_api.schemas.exercise import ExerciseRef
+from lock_in_mode_api.training.level_up import LevelUpReason
 
 
 class LastResult(BaseModel):
@@ -98,6 +100,34 @@ class ComebackRead(BaseModel):
     )
 
 
+class LevelUpRead(BaseModel):
+    """ "Ready for more?" (ADR 0022): shown on the block-complete screen. Yes =
+    POST /plans {"level_up": true}; "Not yet" = POST /plans as usual."""
+
+    to: FitnessLevel
+    reason: LevelUpReason = Field(
+        description="good_weeks: 12 weeks with 2+ workouts. strength_marks: 15 push-ups, "
+        "25 bodyweight squats and a 45 s plank (or harder moves)."
+    )
+    good_weeks: int = Field(description="Weeks with 2+ workouts so far, in total.")
+    what_changes: list[str] = Field(description="Plain-language lines for the offer screen.")
+    check_with_doctor: bool = Field(
+        description="A 'yes' on the safety screen: show \"check with a doctor before pushing "
+        'harder". Their low-intensity limits stay either way.'
+    )
+
+
+class StartPlan(BaseModel):
+    """Optional body of POST /plans."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    level_up: bool = Field(
+        default=False,
+        description='"Ready for more?" answered yes: build the next block at the offered level.',
+    )
+
+
 class PlanRead(BaseModel):
     """The current block: the plan reveal screen and the queue."""
 
@@ -118,4 +148,7 @@ class PlanRead(BaseModel):
         "POST /plans for the next block."
     )
     comeback: ComebackRead | None = Field(description="null: no break to come back from.")
+    level_up: LevelUpRead | None = Field(
+        description="Only when the block is complete and a move up is earned (ADR 0022)."
+    )
     workouts: list[WorkoutSummary]

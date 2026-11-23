@@ -28,7 +28,7 @@ DAYS_IN_WEEK = 7
 SHORT_SESSION_MINUTES = 20  # 10 and 20 minutes: full body only (KB section 4)
 MIN_SESSION_MINUTES = 10
 PPL_MIN_MINUTES = 30
-BEGINNER_MAX_HARD_DAYS = 3
+BEGINNER_MAX_HARD_DAYS = 3  # also for low intensity, at any level (ADR 0022)
 PULLING_KIT = frozenset({Equipment.RESISTANCE_BANDS, Equipment.DUMBBELLS, Equipment.PULL_UP_BAR})
 
 # The KB's example weeks (section 4), tried first so ordinary plans look familiar.
@@ -175,6 +175,24 @@ def _fill_with_easy(strength: list[SessionKind], days: int) -> list[SessionKind]
     return strength + [S.EASY_CARDIO] * (days - len(strength))
 
 
+def _three_hard_days_max(
+    answers: PlanInputs, reasons: list[str], beginner_reason: str, easy: str, *, from_days: int
+) -> bool:
+    """Beginners, and anyone on low intensity at any level (ADR 0022), train hard on 3
+    days a week at most. Adds the reason; returns True when the cap applies."""
+    if answers.days_per_week < from_days:
+        return False
+    if answers.level == FitnessLevel.BEGINNER:
+        reasons.append(beginner_reason)
+        return True
+    if answers.needs_low_intensity:
+        reasons.append(
+            f"From your safety check: 3 hard workouts a week at most. Your other days are {easy}."
+        )
+        return True
+    return False
+
+
 def _muscle_or_strength(
     answers: PlanInputs, short: bool, reasons: list[str]
 ) -> tuple[RoutineKind, list[SessionKind]]:
@@ -183,11 +201,14 @@ def _muscle_or_strength(
     level = answers.level
     strength_goal = answers.goal == Goal.STRENGTH
 
-    if level == FitnessLevel.BEGINNER and days > BEGINNER_MAX_HARD_DAYS:
-        reasons.append(
-            "Beginner: 3 hard workouts a week at most. Your other days are easy cardio or "
-            "mobility, so your body can recover and come back stronger."
-        )
+    if _three_hard_days_max(
+        answers,
+        reasons,
+        "Beginner: 3 hard workouts a week at most. Your other days are easy cardio or "
+        "mobility, so your body can recover and come back stronger.",
+        "easy cardio or mobility",
+        from_days=BEGINNER_MAX_HARD_DAYS + 1,
+    ):
         extras = [S.EASY_CARDIO, S.EASY_CARDIO, S.MOBILITY][: days - 3]
         return RoutineKind.FULL_BODY, [S.FULL_BODY] * 3 + extras
     if days <= 3:
@@ -253,13 +274,17 @@ def _lose_fat(
     finisher = answers.minutes_per_session != MIN_SESSION_MINUTES
     if days <= 3:
         return RoutineKind.FULL_BODY, [PlannedSession(S.FULL_BODY, finisher=finisher)] * days
-    if answers.level == FitnessLevel.BEGINNER and days >= 5:
-        # 4 hard days can't each be followed by an easy one in 7 days, so beginners keep
-        # 3 hard days: full body with a finisher, plus easy cardio (KB section 4).
-        reasons.append(
-            "Beginner: 3 hard workouts a week at most. Your other days are steady cardio "
-            "and easy walks."
-        )
+    # 4 hard days can't each be followed by an easy one in 7 days, so beginners keep
+    # 3 hard days: full body with a finisher, plus easy cardio (KB section 4). So does
+    # anyone on low intensity (ADR 0022). With 4 days the week has 3 hard days already.
+    if _three_hard_days_max(
+        answers,
+        reasons,
+        "Beginner: 3 hard workouts a week at most. Your other days are steady cardio "
+        "and easy walks.",
+        "steady cardio and easy walks",
+        from_days=5,
+    ):
         easy = [S.STEADY_CARDIO, S.EASY_CARDIO, S.MOBILITY][: days - 3]
         return RoutineKind.STRENGTH_AND_CARDIO, [
             *[PlannedSession(S.FULL_BODY, finisher=finisher)] * 3,
