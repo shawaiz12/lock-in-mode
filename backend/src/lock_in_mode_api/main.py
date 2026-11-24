@@ -1,6 +1,7 @@
+import asyncio
 import logging
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 from sqlalchemy import text
@@ -9,15 +10,27 @@ from sqlalchemy.exc import SQLAlchemyError
 from lock_in_mode_api.api import v1
 from lock_in_mode_api.api.deps import DbSession
 from lock_in_mode_api.api.errors import DatabaseUnavailable, add_problem_handlers
+from lock_in_mode_api.core.config import settings
 from lock_in_mode_api.core.db import engine
 from lock_in_mode_api.core.redis import redis_client
+from lock_in_mode_api.services.account import run_cleanup
 
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # The hourly cleanup of deleted accounts (ADR 0024) runs inside this process.
+    cleanup = None
+    if settings.account_cleanup_interval_seconds > 0:
+        cleanup = asyncio.create_task(
+            run_cleanup(settings.account_cleanup_interval_seconds), name="account-cleanup"
+        )
     yield  # app runs here
+    if cleanup is not None:
+        cleanup.cancel()
+        with suppress(asyncio.CancelledError):
+            await cleanup
     await engine.dispose()  # on shutdown: close all pooled connections
     await redis_client.aclose()
 

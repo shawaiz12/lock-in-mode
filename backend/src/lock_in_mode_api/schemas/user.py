@@ -21,3 +21,14 @@ class UserUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     display_name: str | None = Field(min_length=1, max_length=50)
+
+
+class AccountDeletion(BaseModel):
+    """202 from `DELETE /me` for a Google/Apple account (ADR 0024)."""
+
+    delete_after: datetime = Field(
+        description=(
+            "When the account and everything in it is erased. Show it as a date: "
+            '"Deleted on 24 Dec. Sign in before then to cancel."'
+        )
+    )

@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     # Generous on purpose: mobile carriers put many phones behind one shared IP.
     auth_rate_limit_per_minute: int = 20
 
+    # Deleting accounts (ADR 0024): how often the API erases accounts whose 30 days are
+    # over. 0 switches the background task off (sign-in still erases a due account).
+    account_cleanup_interval_seconds: int = 3600
+
     @field_validator("jwt_secret")
     @classmethod
     def jwt_secret_must_be_long(cls, value: SecretStr) -> SecretStr:

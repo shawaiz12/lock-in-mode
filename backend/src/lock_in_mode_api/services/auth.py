@@ -1,4 +1,4 @@
-"""Sign-in, account linking and token lifecycle (ADR 0005, ADR 0006).
+"""Sign-in, account linking and token lifecycle (ADR 0005, ADR 0006, ADR 0024).
 
 Functions here own the transaction: they commit on success. Routes stay thin.
 """
@@ -21,6 +21,7 @@ from lock_in_mode_api.core.security import (
 )
 from lock_in_mode_api.models import RefreshToken, User
 from lock_in_mode_api.schemas.auth import TokenPair
+from lock_in_mode_api.services import account
 
 
 class InvalidRefreshTokenError(Exception):
@@ -130,8 +131,13 @@ async def sign_in_with_provider(session: AsyncSession, provider: Provider, sub: 
 
     Always signs into the account that owns `sub`. A guest who wants to keep their
     progress calls `link_provider` first (ADR 0006).
+
+    An account waiting to be deleted (ADR 0024): within its 30 days, signing in cancels
+    the deletion (`deletion_cancelled`); after them it's erased first, even if the
+    hourly cleanup hasn't run, and a brand-new account is created.
     """
     column = _sub_column(provider)
+    await account.erase_due_now(session, only=column == sub)
     # "Create it unless it exists" in ONE statement. Two first sign-ins at the same
     # moment can't create two users: the second insert hits UNIQUE(sub), does
     # nothing, and returns no row.
@@ -144,9 +150,10 @@ async def sign_in_with_provider(session: AsyncSession, provider: Provider, sub: 
     if user_id is None:  # the account already existed
         user_id = (await session.execute(select(User.id).where(column == sub))).scalar_one()
 
+    cancelled = await account.cancel_deletion(session, user_id)
     tokens = await _issue_token_pair(session, user_id, family_id=uuid.uuid4(), now=_now())
     await session.commit()
-    return tokens
+    return tokens.model_copy(update={"deletion_cancelled": cancelled})
 
 
 async def link_provider(session: AsyncSession, user: User, provider: Provider, sub: str) -> User:
@@ -161,6 +168,9 @@ async def link_provider(session: AsyncSession, user: User, provider: Provider, s
     if current_sub is not None:
         raise ProviderAlreadyLinkedError
 
+    # An old account past its 30 days still holding this sub is gone already (ADR 0024),
+    # even if the cleanup hasn't run: erase it so the link works instead of a 409.
+    await account.erase_due_now(session, only=column == sub)
     setattr(user, column.key, sub)
     user.is_guest = False
     try:

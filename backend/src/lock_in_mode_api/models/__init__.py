@@ -1,3 +1,4 @@
+from lock_in_mode_api.models.account import AccountDeletionReason
 from lock_in_mode_api.models.base import Base
 from lock_in_mode_api.models.comeback import Comeback
 from lock_in_mode_api.models.exercise import Exercise, exercise_alternatives
@@ -10,6 +11,7 @@ from lock_in_mode_api.models.swap import SwappedOutExercise
 from lock_in_mode_api.models.user import User
 
 __all__ = [
+    "AccountDeletionReason",
     "Base",
     "Comeback",
     "Exercise",

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Response, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lock_in_mode_api.api.deps import AppleIdentity, CurrentUser, DbSession, GoogleIdentity
@@ -8,8 +9,10 @@ from lock_in_mode_api.api.errors import (
     ProviderAlreadyLinked,
 )
 from lock_in_mode_api.models import User
+from lock_in_mode_api.models.enums import LeavingReason
 from lock_in_mode_api.schemas.profile import ProfileRead, ProfileWrite, SafetyScreen
-from lock_in_mode_api.schemas.user import UserRead, UserUpdate
+from lock_in_mode_api.schemas.user import AccountDeletion, UserRead, UserUpdate
+from lock_in_mode_api.services import account as account_service
 from lock_in_mode_api.services import auth as auth_service
 from lock_in_mode_api.services import profile as profile_service
 from lock_in_mode_api.services.auth import Provider
@@ -31,6 +34,39 @@ async def update_me(user: CurrentUser, body: UserUpdate, session: DbSession) -> 
     """Set or clear the optional name from the welcome screen."""
     user = await profile_service.set_display_name(session, user, body.display_name)
     return UserRead.model_validate(user)
+
+
+@router.delete(
+    "",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={
+        status.HTTP_202_ACCEPTED: {
+            "model": AccountDeletion,
+            "description": "Google/Apple account: erased on `delete_after`",
+        },
+        status.HTTP_204_NO_CONTENT: {"description": "Guest: erased now"},
+    },
+)
+async def delete_me(
+    user: CurrentUser, session: DbSession, reason: LeavingReason | None = None
+) -> Response:
+    """Delete the account and everything in it (ADR 0024). Show "This can't be undone" first.
+
+    - Guest → **204**: erased now.
+    - Google/Apple account → **202** `{delete_after}`: signed out on every device now,
+      erased after 30 days. Signing in with Google/Apple before then cancels it.
+
+    `reason` is the optional "Why are you leaving?". It's kept with no link to the person,
+    and only once the account is really gone.
+    """
+    if user.is_guest:
+        await account_service.delete_guest(session, user, reason)
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    delete_after = await account_service.schedule_deletion(session, user, reason)
+    return JSONResponse(
+        AccountDeletion(delete_after=delete_after).model_dump(mode="json"),
+        status_code=status.HTTP_202_ACCEPTED,
+    )
 
 
 # --- onboarding (ADR 0012) ----------------------------------------------------------

@@ -45,7 +45,9 @@ async def get_current_user(
         raise InvalidAccessToken from exc
 
     user = await session.get(User, user_id)
-    if user is None:  # valid token, but the account has since been deleted
+    # Valid token, but the account has since been deleted, or is waiting to be (ADR 0024:
+    # signed out everywhere at once, not when this 15-minute token runs out).
+    if user is None or user.is_leaving:
         raise InvalidAccessToken
     return user
 

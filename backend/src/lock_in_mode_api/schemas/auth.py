@@ -10,6 +10,13 @@ class TokenPair(BaseModel):
     refresh_token: str
     token_type: Literal["bearer"] = "bearer"
     expires_in: int = Field(description="Access token lifetime in seconds.")
+    deletion_cancelled: bool = Field(
+        default=False,
+        description=(
+            "True when this Google/Apple sign-in cancelled the account's deletion "
+            '(ADR 0024): show "Welcome back, your account won\'t be deleted".'
+        ),
+    )
 
 
 class RefreshRequest(BaseModel):

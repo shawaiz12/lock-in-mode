@@ -146,6 +146,18 @@ class ComebackEndReason(StrEnum):
     NEW_BREAK = "new_break"  # another break of 14+ days started a new comeback
 
 
+class LeavingReason(StrEnum):
+    """The optional "Why are you leaving?" on the delete screen (ADR 0024). Saved with no
+    link to the person, only once the account is really gone."""
+
+    TOO_HARD = "too_hard"
+    NO_TIME = "no_time"
+    INJURY = "injury"
+    SWITCHED_APPS = "switched_apps"
+    PRIVACY = "privacy"
+    OTHER = "other"
+
+
 class Feedback(StrEnum):
     """The one tap after a workout (brief 3.2). Skipped = no answer, never "just right"."""
 
