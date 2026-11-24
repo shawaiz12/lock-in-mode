@@ -6,6 +6,7 @@ Functions here own the transaction: they commit on success. Routes stay thin.
 import uuid
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
+from typing import Literal
 
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
@@ -21,7 +22,7 @@ from lock_in_mode_api.core.security import (
 )
 from lock_in_mode_api.models import RefreshToken, User
 from lock_in_mode_api.schemas.auth import TokenPair
-from lock_in_mode_api.services import account
+from lock_in_mode_api.services import account, events
 
 
 class InvalidRefreshTokenError(Exception):
@@ -44,6 +45,10 @@ class Provider(StrEnum):
 def _sub_column(provider: Provider) -> InstrumentedAttribute[str | None]:
     """The users column that stores this provider's account id."""
     return User.google_sub if provider is Provider.GOOGLE else User.apple_sub
+
+
+def _name(provider: Provider) -> Literal["google", "apple"]:
+    return "google" if provider is Provider.GOOGLE else "apple"
 
 
 def _now() -> datetime:
@@ -83,6 +88,7 @@ async def sign_in_as_guest(session: AsyncSession) -> TokenPair:
     user = User(is_guest=True)
     session.add(user)
     await session.flush()  # assigns user.id
+    await events.signed_up(session, user.id, "guest")
 
     tokens = await _issue_token_pair(session, user.id, family_id=uuid.uuid4(), now=now)
     await session.commit()
@@ -149,8 +155,12 @@ async def sign_in_with_provider(session: AsyncSession, provider: Provider, sub: 
     )
     if user_id is None:  # the account already existed
         user_id = (await session.execute(select(User.id).where(column == sub))).scalar_one()
+    else:
+        await events.signed_up(session, user_id, _name(provider))
 
     cancelled = await account.cancel_deletion(session, user_id)
+    if cancelled:
+        await events.deletion_cancelled(session, user_id)
     tokens = await _issue_token_pair(session, user_id, family_id=uuid.uuid4(), now=_now())
     await session.commit()
     return tokens.model_copy(update={"deletion_cancelled": cancelled})
@@ -171,9 +181,13 @@ async def link_provider(session: AsyncSession, user: User, provider: Provider, s
     # An old account past its 30 days still holding this sub is gone already (ADR 0024),
     # even if the cleanup hasn't run: erase it so the link works instead of a 409.
     await account.erase_due_now(session, only=column == sub)
+    was_guest = user.is_guest
     setattr(user, column.key, sub)
     user.is_guest = False
     try:
+        if was_guest:  # a guest saving their progress (a second provider isn't a new link)
+            await session.flush()  # the UPDATE first: a taken sub fails here
+            await events.account_linked(session, user.id, _name(provider))
         await session.commit()
     except IntegrityError as exc:
         # No "is it taken?" query first: two requests could both pass that check.

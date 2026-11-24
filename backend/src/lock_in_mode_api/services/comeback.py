@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from lock_in_mode_api.models import Comeback, Profile, SetLog, WorkoutSession
 from lock_in_mode_api.models.enums import ComebackEndReason
+from lock_in_mode_api.services import events
 from lock_in_mode_api.training import comeback as rules
 
 MAX_AWAY_DAYS = 32_000  # fits the SMALLINT column; anything past this is "very long"
@@ -145,6 +146,9 @@ async def start(session: AsyncSession, user_id: uuid.UUID, due: Now) -> Comeback
     )
     session.add(comeback)
     await session.flush()
+    await events.comeback_started(
+        session, user_id, away_days=comeback.away_days, weeks=comeback.weeks
+    )
     return comeback
 
 

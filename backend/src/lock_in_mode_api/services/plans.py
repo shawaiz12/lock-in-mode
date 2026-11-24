@@ -52,6 +52,7 @@ from lock_in_mode_api.schemas.plan import (
     WorkoutSummary,
 )
 from lock_in_mode_api.services import comeback as comeback_service
+from lock_in_mode_api.services import events
 from lock_in_mode_api.services import level_up as level_up_service
 from lock_in_mode_api.training import comeback as comeback_rules
 from lock_in_mode_api.training import intervals as interval_rules
@@ -747,17 +748,32 @@ async def start_plan(
         queue = await queue_of(session, current)
         if queue.upcoming is not None:
             raise PlanInProgressError
+        # Usually recorded already by the last finish or skip. Not when a break replaced
+        # the recovery week that was left (ADR 0021): then the block ended by time alone.
+        # Before the level changes below, so the offer is read as the user saw it.
+        await _record_block_complete(session, user_id, current, queue)
         if level_up:
             offer = await level_up_offer(session, user_id, queue, describe=False)
             if offer is None:
                 raise LevelUpNotOfferedError
+            from_level = profile.level
             profile.level = FitnessLevel(offer.to)
+            await events.level_up_accepted(
+                session, user_id, from_level=from_level, to=profile.level
+            )
         drop_recovery(current, queue)  # back after a break: the break was the rest
         _end(current, PlanEndReason.FINISHED)
         # Send the UPDATE first: the new current plan can't exist alongside this one.
         await session.flush()
     try:
-        await _add_plan(session, user_id, PlanAnswers.of(profile))
+        plan = await _add_plan(session, user_id, PlanAnswers.of(profile))
+        await events.plan_started(
+            session,
+            user_id,
+            block=plan.block_number,
+            level=profile.level,
+            reason="first" if current is None else "next_block",
+        )
         await session.commit()
     except IntegrityError as exc:
         # Two requests at once (a double tap): the one-current-plan index stopped the
@@ -765,6 +781,26 @@ async def start_plan(
         await session.rollback()
         raise PlanInProgressError from exc
     return await get_current_plan(session, user_id)
+
+
+async def note_block_complete(session: AsyncSession, user_id: uuid.UUID) -> None:
+    """After a workout is finished or skipped: if that was the block's last one, record
+    `block_complete` (once per block, ADR 0025), with whether "Ready for more?" will be
+    asked. Call after flushing the change; the caller commits."""
+    plan = await current_plan(session, user_id)
+    if plan is not None:
+        await _record_block_complete(session, user_id, plan, await queue_of(session, plan))
+
+
+async def _record_block_complete(
+    session: AsyncSession, user_id: uuid.UUID, plan: Plan, queue: Queue
+) -> None:
+    if queue.upcoming is not None:
+        return
+    offer = await level_up_offer(session, user_id, queue, describe=False)
+    await events.block_complete(
+        session, user_id, block=plan.block_number, level_up_offered=offer is not None
+    )
 
 
 async def is_out_of_date(session: AsyncSession, profile: Profile) -> bool:
@@ -800,12 +836,21 @@ async def replace_if_answers_changed(session: AsyncSession, profile: Profile) ->
     answers = PlanAnswers.of(profile)
     if current is None or current.generated_from == answers.to_json():
         return False
-    if await _untouched(session, current):
+    untouched = await _untouched(session, current)
+    if untouched:
         await session.delete(current)
     else:
         _end(current, PlanEndReason.ANSWERS_CHANGED)
     await session.flush()
-    await _add_plan(session, profile.user_id, answers)
+    plan = await _add_plan(session, profile.user_id, answers)
+    if not untouched:  # an untouched plan rebuilt keeps its block: not a new start
+        await events.plan_started(
+            session,
+            profile.user_id,
+            block=plan.block_number,
+            level=profile.level,
+            reason="answers_changed",
+        )
     return True
 
 
@@ -891,6 +936,8 @@ async def skip_workout(
     workout.status_changed_at = datetime.now(UTC)
     if any(row.is_test for row in workout.exercises):
         await _move_test(session, plan, workout)
+    await session.flush()
+    await note_block_complete(session, user_id)
     await session.commit()
     return await get_current_plan(session, user_id)
 

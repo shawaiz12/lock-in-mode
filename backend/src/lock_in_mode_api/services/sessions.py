@@ -37,6 +37,7 @@ from lock_in_mode_api.schemas.session import (
     SetLogWrite,
 )
 from lock_in_mode_api.services import comeback as comeback_service
+from lock_in_mode_api.services import events
 from lock_in_mode_api.services import plans as plan_service
 from lock_in_mode_api.services import progress as progress_service
 from lock_in_mode_api.training.placement import placed_exercise
@@ -181,6 +182,7 @@ async def _close(
     main = [row for row in workout.exercises if row.part == WorkoutPart.MAIN]
     await session.flush()  # this feedback counts in the streak and the week below
 
+    await events.workout_finished(session, workout_session, workout.kind)
     outcome = await progress_service.after_finish(session, workout_session, workout, main)
     placements = await _place_from_test(session, workout_session, main)
     if placements or outcome.rungs_changed:
@@ -208,6 +210,8 @@ async def finish_session(
     if workout_session.finished_at is not None:
         raise SessionFinishedError
     closed = await _close(session, workout_session, feedback)
+    await session.flush()
+    await plan_service.note_block_complete(session, user_id)
     await session.commit()
     plan = await plan_service.get_current_plan(session, user_id)
     return SessionResult(
@@ -253,6 +257,8 @@ async def start_session(
     try:
         await _join_comeback(session, plan, queue, new_session)
         session.add(new_session)
+        await session.flush()  # a double tap fails here; then counted below
+        await events.workout_started(session, user_id, queue.upcoming.kind)
         await session.commit()
     except IntegrityError:
         # A double tap: the first request opened it. Hand back that one.

@@ -146,6 +146,22 @@ class ComebackEndReason(StrEnum):
     NEW_BREAK = "new_break"  # another break of 14+ days started a new comeback
 
 
+class EventName(StrEnum):
+    """Funnel events the server records (ADR 0025). Each has fixed, typed details only."""
+
+    SIGNED_UP = "signed_up"
+    ACCOUNT_LINKED = "account_linked"
+    ONBOARDING_DONE = "onboarding_done"
+    PLAN_STARTED = "plan_started"
+    WORKOUT_STARTED = "workout_started"
+    WORKOUT_FINISHED = "workout_finished"
+    BLOCK_COMPLETE = "block_complete"
+    LEVEL_UP_ACCEPTED = "level_up_accepted"
+    COMEBACK_STARTED = "comeback_started"
+    DELETION_REQUESTED = "deletion_requested"
+    DELETION_CANCELLED = "deletion_cancelled"
+
+
 class LeavingReason(StrEnum):
     """The optional "Why are you leaving?" on the delete screen (ADR 0024). Saved with no
     link to the person, only once the account is really gone."""

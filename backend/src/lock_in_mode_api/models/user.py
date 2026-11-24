@@ -37,6 +37,9 @@ class User(Base):
     # Their optional "Why are you leaving?", kept here until the account is really gone.
     deletion_reason: Mapped[LeavingReason | None] = mapped_column(enum_column(LeavingReason))
 
+    # "Share usage data" (ADR 0025): off = no funnel events, and past ones are erased.
+    share_usage_data: Mapped[bool] = mapped_column(default=True, server_default=true())
+
     @property
     def is_leaving(self) -> bool:
         """Waiting to be deleted: signed out everywhere, every access token refused."""

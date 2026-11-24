@@ -31,8 +31,9 @@ async def read_me(user: CurrentUser) -> UserRead:
 
 @router.patch("")
 async def update_me(user: CurrentUser, body: UserUpdate, session: DbSession) -> UserRead:
-    """Set or clear the optional name from the welcome screen."""
-    user = await profile_service.set_display_name(session, user, body.display_name)
+    """Change only what's sent: the optional name (null clears it) and/or the
+    "Share usage data" switch (false also erases past usage events)."""
+    user = await profile_service.update_user(session, user, body)
     return UserRead.model_validate(user)
 
 

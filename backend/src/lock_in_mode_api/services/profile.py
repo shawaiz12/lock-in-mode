@@ -11,6 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from lock_in_mode_api.models import Profile, User
 from lock_in_mode_api.schemas.profile import ProfileWrite, SafetyScreen
+from lock_in_mode_api.schemas.user import UserUpdate
+from lock_in_mode_api.services import events
 from lock_in_mode_api.services import plans as plan_service
 from lock_in_mode_api.services import sessions as session_service
 
@@ -78,15 +80,26 @@ async def record_safety_screen(
     A changed result changes the plan at once: safety can't wait for the block to end.
     """
     profile = await get_profile(session, user_id)
+    first_time = profile.safety_screened_at is None
     profile.needs_low_intensity = screen.any_yes
     profile.safety_screened_at = datetime.now(UTC)
+    if first_time:  # profile + safety screen = onboarding done (ADR 0025)
+        await events.onboarding_done(session, profile)
     await _refresh_plan(session, profile)
     await session.commit()
     await session.refresh(profile)
     return profile
 
 
-async def set_display_name(session: AsyncSession, user: User, name: str | None) -> User:
-    user.display_name = name
+async def update_user(session: AsyncSession, user: User, changes: UserUpdate) -> User:
+    """PATCH /me: only the fields sent change. "Share usage data" off erases every past
+    funnel event too (ADR 0025)."""
+    sent = changes.model_fields_set
+    if "display_name" in sent:
+        user.display_name = changes.display_name
+    if "share_usage_data" in sent:
+        user.share_usage_data = changes.share_usage_data
+        if not changes.share_usage_data:
+            await events.erase_all(session, user.id)
     await session.commit()
     return user

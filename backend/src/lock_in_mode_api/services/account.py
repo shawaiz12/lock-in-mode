@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from lock_in_mode_api.core.db import SessionLocal
 from lock_in_mode_api.models import AccountDeletionReason, RefreshToken, User
 from lock_in_mode_api.models.enums import LeavingReason
+from lock_in_mode_api.services import events
 
 logger = logging.getLogger(__name__)
 
@@ -129,6 +130,7 @@ async def schedule_deletion(
         .where(RefreshToken.user_id == user.id, RefreshToken.revoked_at.is_(None))
         .values(revoked_at=func.now())
     )
+    await events.deletion_requested(session, user.id)
     await session.commit()
     assert delete_after is not None  # just set above
     return delete_after
