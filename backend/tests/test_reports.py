@@ -144,3 +144,53 @@ async def test_an_empty_database(db_session: AsyncSession) -> None:
     assert "Onboarding done 0 –" in lines
     assert "(nobody signed up in these days)" in lines
     assert "(none)" in lines
+
+
+# --- protect your progress (ADR 0026) ---------------------------------------------------
+
+
+async def test_offered_then_linked_within_7_days(db_session: AsyncSession) -> None:
+    now = await db_session.scalar(select(func.now()))
+    assert now is not None
+    a = await _user(db_session, now, 40)  # linked 2 days after the workout 3 offer
+    await a.add(1, E.SIGN_IN_OFFERED, milestone="workout_3", number=3)
+    await a.add(3, E.ACCOUNT_LINKED, provider="google")
+    b = await _user(db_session, now, 40)  # two offers: the link goes to the later one
+    await b.add(1, E.SIGN_IN_OFFERED, milestone="workout_3", number=3)
+    await b.add(10, E.SIGN_IN_OFFERED, milestone="workout_10", number=10)
+    await b.add(12, E.ACCOUNT_LINKED, provider="apple")
+    c = await _user(db_session, now, 40)  # linked 8 days later: not from the offer
+    await c.add(1, E.SIGN_IN_OFFERED, milestone="workout_3", number=3)
+    await c.add(9, E.ACCOUNT_LINKED, provider="google")
+    d = await _user(db_session, now, 40)  # linked before any offer
+    await d.add(2, E.ACCOUNT_LINKED, provider="google")
+    await d.add(5, E.SIGN_IN_OFFERED, milestone="workout_3", number=3)
+    e = await _user(db_session, now, 40)  # offered, never linked
+    await e.add(20, E.SIGN_IN_OFFERED, milestone="first_block", number=12)
+    f = await _user(db_session, now, 40)  # exactly 7 days still counts
+    await f.add(20, E.SIGN_IN_OFFERED, milestone="first_block", number=9)
+    await f.add(27, E.ACCOUNT_LINKED, provider="google")
+    await _user(db_session, now, 40)  # never offered
+    old = await _user(db_session, now, 200)  # signed up outside the 90 days
+    await old.add(1, E.SIGN_IN_OFFERED, milestone="workout_3", number=3)
+    await old.add(2, E.ACCOUNT_LINKED, provider="google")
+
+    report = await reports.build_report(db_session, days=90)
+
+    assert [(o.label, o.offered, o.linked) for o in report.offers] == [
+        ("After workout 3", 4, 1),
+        ("After workout 10", 1, 1),
+        ("First block finished", 2, 1),
+        ("Any offer", 6, 3),
+    ]
+    lines = _lines(reports.render(report))
+    assert "Protect your progress: guests offered sign-in, linked within 7 days" in lines
+    assert "After workout 3 4 1 25%" in lines
+    assert "Any offer 6 3 50%" in lines
+
+
+async def test_no_offers_yet(db_session: AsyncSession) -> None:
+    report = await reports.build_report(db_session, days=30)
+
+    assert all((o.offered, o.linked, o.rate) == (0, 0, None) for o in report.offers)
+    assert "After workout 10 0 0 –" in _lines(reports.render(report))

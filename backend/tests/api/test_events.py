@@ -447,13 +447,16 @@ async def test_no_health_answers_or_free_text_in_any_event(
     headers = await _guest(client)
     await _plan(client, headers)
     await _do(client, headers, feedback="too_hard")
+    await _do(client, headers)
+    await _do(client, headers)  # workout 3: sign_in_offered (ADR 0026)
     await _skip_rest(client, headers)
     await client.post(PLANS, headers=headers)
+    assert len(await _events(db_session, EventName.SIGN_IN_OFFERED)) == 1
 
     allowed = {
         "method", "provider", "goal", "level", "location", "days_per_week",
         "minutes_per_session", "block", "reason", "number", "kind", "feedback", "comeback",
-        "level_up_offered", "from", "to", "away_days", "weeks",
+        "level_up_offered", "from", "to", "away_days", "weeks", "milestone",
     }  # fmt: skip
     keys = {key for e in await _events(db_session) for key in e.props}
     assert keys <= allowed
