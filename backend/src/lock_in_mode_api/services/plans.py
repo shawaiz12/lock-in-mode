@@ -783,13 +783,17 @@ async def start_plan(
     return await get_current_plan(session, user_id)
 
 
-async def note_block_complete(session: AsyncSession, user_id: uuid.UUID) -> None:
+async def note_block_complete(session: AsyncSession, user_id: uuid.UUID) -> bool:
     """After a workout is finished or skipped: if that was the block's last one, record
     `block_complete` (once per block, ADR 0025), with whether "Ready for more?" will be
-    asked. Call after flushing the change; the caller commits."""
+    asked. Returns whether the block is complete now (the finish screen's
+    `block_complete`). Call after flushing the change; the caller commits."""
     plan = await current_plan(session, user_id)
-    if plan is not None:
-        await _record_block_complete(session, user_id, plan, await queue_of(session, plan))
+    if plan is None:
+        return False
+    queue = await queue_of(session, plan)
+    await _record_block_complete(session, user_id, plan, queue)
+    return queue.upcoming is None
 
 
 async def _record_block_complete(

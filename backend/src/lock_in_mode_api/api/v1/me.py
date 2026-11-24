@@ -15,6 +15,7 @@ from lock_in_mode_api.schemas.user import AccountDeletion, UserRead, UserUpdate
 from lock_in_mode_api.services import account as account_service
 from lock_in_mode_api.services import auth as auth_service
 from lock_in_mode_api.services import profile as profile_service
+from lock_in_mode_api.services import sign_in_offer
 from lock_in_mode_api.services.auth import Provider
 
 router = APIRouter(prefix="/me", tags=["me"])
@@ -24,9 +25,19 @@ router = APIRouter(prefix="/me", tags=["me"])
 # Every endpoint here works for guests: no sign-in is needed to onboard or train.
 
 
+async def _user_read(session: AsyncSession, user: User) -> UserRead:
+    """A guest also gets what they'd lose by losing this phone (ADR 0026)."""
+    read = UserRead.model_validate(user)
+    if not user.is_guest:
+        return read
+    summary = await sign_in_offer.summarize(session, user.id)
+    return read.model_copy(update={"progress_summary": summary})
+
+
 @router.get("")
-async def read_me(user: CurrentUser) -> UserRead:
-    return UserRead.model_validate(user)
+async def read_me(user: CurrentUser, session: DbSession) -> UserRead:
+    """Guests also get `progress_summary`: for a "Protect your progress" card (ADR 0026)."""
+    return await _user_read(session, user)
 
 
 @router.patch("")
@@ -34,7 +45,7 @@ async def update_me(user: CurrentUser, body: UserUpdate, session: DbSession) -> 
     """Change only what's sent: the optional name (null clears it) and/or the
     "Share usage data" switch (false also erases past usage events)."""
     user = await profile_service.update_user(session, user, body)
-    return UserRead.model_validate(user)
+    return await _user_read(session, user)
 
 
 @router.delete(
@@ -143,4 +154,4 @@ async def _link(
         raise ProviderAlreadyLinked(
             f"A different {name} account is already linked to this user"
         ) from exc
-    return UserRead.model_validate(user)
+    return await _user_read(session, user)

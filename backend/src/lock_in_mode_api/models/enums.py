@@ -160,6 +160,7 @@ class EventName(StrEnum):
     COMEBACK_STARTED = "comeback_started"
     DELETION_REQUESTED = "deletion_requested"
     DELETION_CANCELLED = "deletion_cancelled"
+    SIGN_IN_OFFERED = "sign_in_offered"  # ADR 0026
 
 
 class LeavingReason(StrEnum):

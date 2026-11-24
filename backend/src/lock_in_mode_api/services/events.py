@@ -156,3 +156,17 @@ async def deletion_requested(session: AsyncSession, user_id: uuid.UUID) -> None:
 
 async def deletion_cancelled(session: AsyncSession, user_id: uuid.UUID) -> None:
     await _record(session, user_id, EventName.DELETION_CANCELLED, {})
+
+
+async def sign_in_offered(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    *,
+    milestone: Literal["workout_3", "workout_10", "first_block"],
+    number: int,
+) -> None:
+    """The finish screen offered a guest "Protect your progress" (ADR 0026). `number`:
+    workouts finished so far."""
+    await _record(
+        session, user_id, EventName.SIGN_IN_OFFERED, {"milestone": milestone, "number": number}
+    )

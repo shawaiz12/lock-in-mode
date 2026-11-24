@@ -37,7 +37,7 @@ from lock_in_mode_api.schemas.session import (
     SetLogWrite,
 )
 from lock_in_mode_api.services import comeback as comeback_service
-from lock_in_mode_api.services import events
+from lock_in_mode_api.services import events, sign_in_offer
 from lock_in_mode_api.services import plans as plan_service
 from lock_in_mode_api.services import progress as progress_service
 from lock_in_mode_api.training.placement import placed_exercise
@@ -211,7 +211,9 @@ async def finish_session(
         raise SessionFinishedError
     closed = await _close(session, workout_session, feedback)
     await session.flush()
-    await plan_service.note_block_complete(session, user_id)
+    block_complete = await plan_service.note_block_complete(session, user_id)
+    # Guests at their 3rd or 10th workout or first finished block (ADR 0026).
+    offer = await sign_in_offer.offer_after_finish(session, user_id, block_complete=block_complete)
     await session.commit()
     plan = await plan_service.get_current_plan(session, user_id)
     return SessionResult(
@@ -222,6 +224,7 @@ async def finish_session(
         recovery_earned=closed.recovery_earned,
         next_workout_id=plan.next_workout_id,
         block_complete=plan.block_complete,
+        sign_in_offer=offer,
     )
 
 

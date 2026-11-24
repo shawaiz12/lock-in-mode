@@ -9,6 +9,8 @@ It reads the database the settings point at (your .env), and only reads.
   step before.
 - Weekly retention: per sign-up week, the share who finished a workout in week 1, 2 and 4
   after signing up. "…" = that week hasn't fully happened yet for everyone in the row.
+- Protect your progress (ADR 0026): per milestone, how many guests were offered sign-in
+  and how many linked within 7 days of it. A link counts for the latest offer before it.
 - Other counts in the same days: linked accounts, level-ups, deletions, leaving reasons.
 
 Users who switched "Share usage data" off have no events, so they aren't in it.
@@ -29,6 +31,12 @@ from lock_in_mode_api.models import AccountDeletionReason, Event
 from lock_in_mode_api.models.enums import EventName
 
 RETENTION_WEEKS = (1, 2, 4)
+LINK_WINDOW = timedelta(days=7)
+OFFER_MILESTONES = (
+    ("workout_3", "After workout 3"),
+    ("workout_10", "After workout 10"),
+    ("first_block", "First block finished"),
+)
 
 
 @dataclass(frozen=True)
@@ -46,11 +54,23 @@ class Cohort:
 
 
 @dataclass(frozen=True)
+class Offers:
+    label: str
+    offered: int  # offers made (for "Any offer": guests offered at least once)
+    linked: int  # links within LINK_WINDOW of that offer, each credited to one offer
+
+    @property
+    def rate(self) -> float | None:
+        return self.linked / self.offered if self.offered else None
+
+
+@dataclass(frozen=True)
 class Report:
     days: int
     now: datetime
     funnel: list[Step]
     retention: list[Cohort]
+    offers: list[Offers]
     counts: dict[str, int]
     reasons: dict[str, int]
 
@@ -146,6 +166,36 @@ async def _retention(
     return cohorts
 
 
+async def _offers(session: AsyncSession, cohort: Sequence[uuid.UUID]) -> list[Offers]:
+    """Offered → linked within 7 days, per milestone. A link is credited to the latest
+    offer before it, so one link never counts twice; a link with no offer in the 7 days
+    before it (they found the button themselves) isn't credited at all."""
+    offers: dict[uuid.UUID, list[tuple[datetime, str]]] = defaultdict(list)
+    rows = await session.execute(
+        select(Event.user_id, Event.at, Event.props["milestone"].as_string()).where(
+            Event.name == EventName.SIGN_IN_OFFERED, Event.user_id.in_(cohort)
+        )
+    )
+    for user_id, at, milestone in rows:
+        offers[user_id].append((at, milestone))
+    links = await session.execute(
+        select(Event.user_id, func.min(Event.at))
+        .where(Event.name == EventName.ACCOUNT_LINKED, Event.user_id.in_(list(offers)))
+        .group_by(Event.user_id)
+    )
+
+    offered = Counter(milestone for made in offers.values() for _, milestone in made)
+    linked: Counter[str] = Counter()
+    for user_id, linked_at in links:
+        before = [offer for offer in offers[user_id] if offer[0] <= linked_at]
+        if before:
+            at, milestone = max(before)
+            if linked_at - at <= LINK_WINDOW:
+                linked[milestone] += 1
+    rows_out = [Offers(label, offered[key], linked[key]) for key, label in OFFER_MILESTONES]
+    return [*rows_out, Offers("Any offer", len(offers), sum(linked.values()))]
+
+
 async def _counts(session: AsyncSession, since: datetime) -> dict[str, int]:
     async def count(name: EventName, condition: ColumnElement[bool] | None = None) -> int:
         query = select(func.count()).where(Event.name == name, Event.at >= since)
@@ -182,6 +232,7 @@ async def build_report(session: AsyncSession, days: int) -> Report:
         now=now,
         funnel=await _funnel(session, list(signups)),
         retention=await _retention(session, signups, now),
+        offers=await _offers(session, list(signups)),
         counts=await _counts(session, since),
         reasons=await _reasons(session, since),
     )
@@ -208,6 +259,13 @@ def render(report: Report) -> str:
     if not report.retention:
         lines.append("(nobody signed up in these days)")
 
+    lines += ["", "Protect your progress: guests offered sign-in, linked within 7 days"]
+    width = max(len(row.label) for row in report.offers)
+    lines.append(f"{'Offer':<{width}}  {'Offered':>7}  {'Linked':>6}  {'Rate':>5}")
+    for row in report.offers:
+        rate = "–" if row.rate is None else _pct(row.rate)
+        lines.append(f"{row.label:<{width}}  {row.offered:>7}  {row.linked:>6}  {rate:>5}")
+
     lines += ["", "Other counts in these days"]
     width = max(len(label) for label in report.counts)
     lines += [f"{label:<{width}}  {n:>6}" for label, n in report.counts.items()]
@@ -225,6 +283,6 @@ async def _main(days: int) -> None:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Lock In Mode funnel report (ADR 0025)")
+    parser = argparse.ArgumentParser(description="Lock In Mode funnel report (ADR 0025, 0026)")
     parser.add_argument("--days", type=int, default=90, help="sign-ups in the last N days")
     asyncio.run(_main(parser.parse_args().days))

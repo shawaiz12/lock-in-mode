@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from lock_in_mode_api.models.enums import Feedback, MovementSlot, ProgressChange
 from lock_in_mode_api.schemas.exercise import ExerciseRef
+from lock_in_mode_api.schemas.user import SignInOffer
 
 
 class SessionStart(BaseModel):
@@ -104,3 +105,10 @@ class SessionResult(SessionRead):
     )
     next_workout_id: uuid.UUID | None
     block_complete: bool
+    sign_in_offer: SignInOffer | None = Field(
+        default=None,
+        description=(
+            "Guests only, at their 3rd and 10th finished workout and their first finished "
+            'block (ADR 0026): show "Protect your progress". null otherwise.'
+        ),
+    )
