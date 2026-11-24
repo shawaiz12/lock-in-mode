@@ -1,0 +1,21 @@
+# Dependencies (npm ci recreates them from package-lock.json)
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native folders are generated from app.json (Continuous Native Generation)
+/ios
+/android
+
+# Local settings: your own API address. Commit .env.example only.
+.env
+.env*.local
+
+# Debug and OS
+npm-debug.*
+*.log
+.DS_Store
