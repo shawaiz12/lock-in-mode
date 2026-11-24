@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     jwt_secret: SecretStr
     access_token_ttl_minutes: int = 15
     refresh_token_ttl_days: int = 60
+    # Guests (ADR 0027): their refresh token is their only way back in, so it lasts a
+    # year from the last time the app used it. Google/Apple accounts can sign in again.
+    guest_refresh_token_ttl_days: int = 365
 
     # Sign in with Google / Apple (ADR 0005). Empty means that provider is switched off,
     # so the API runs fine before the mobile app exists.
@@ -39,6 +42,9 @@ class Settings(BaseSettings):
     # Deleting accounts (ADR 0024): how often the API erases accounts whose 30 days are
     # over. 0 switches the background task off (sign-in still erases a due account).
     account_cleanup_interval_seconds: int = 3600
+
+    # "Download my data" (ADR 0027): exports per account per hour.
+    export_rate_limit_per_hour: int = 3
 
     @field_validator("jwt_secret")
     @classmethod

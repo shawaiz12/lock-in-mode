@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Response, status
+from typing import Any
+
+from fastapi import APIRouter, Depends, Response, status
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -8,12 +11,14 @@ from lock_in_mode_api.api.errors import (
     ProviderAccountInUse,
     ProviderAlreadyLinked,
 )
+from lock_in_mode_api.api.rate_limit import export_rate_limit
 from lock_in_mode_api.models import User
 from lock_in_mode_api.models.enums import LeavingReason
 from lock_in_mode_api.schemas.profile import ProfileRead, ProfileWrite, SafetyScreen
 from lock_in_mode_api.schemas.user import AccountDeletion, UserRead, UserUpdate
 from lock_in_mode_api.services import account as account_service
 from lock_in_mode_api.services import auth as auth_service
+from lock_in_mode_api.services import export as export_service
 from lock_in_mode_api.services import profile as profile_service
 from lock_in_mode_api.services import sign_in_offer
 from lock_in_mode_api.services.auth import Provider
@@ -78,6 +83,35 @@ async def delete_me(
     return JSONResponse(
         AccountDeletion(delete_after=delete_after).model_dump(mode="json"),
         status_code=status.HTTP_202_ACCEPTED,
+    )
+
+
+@router.get(
+    "/export",
+    dependencies=[Depends(export_rate_limit)],
+    responses={
+        status.HTTP_200_OK: {
+            "description": "`lock-in-mode-data.json`: everything stored about this account",
+            "content": {"application/json": {}},
+        },
+        status.HTTP_429_TOO_MANY_REQUESTS: {"description": "More than 3 in this hour"},
+    },
+)
+async def export_my_data(user: CurrentUser, session: DbSession) -> Any:
+    """ "Download my data" (ADR 0027): one JSON file with the account, profile, every plan
+    and workout, every logged set, progress, swaps, comebacks and usage events. Guests too.
+
+    Not in it: sign-in tokens and Google/Apple account ids (`signed_in_with` names the
+    linked providers). 3 per account per hour; a 4th gets 429 `rate_limited`. An account
+    waiting to be deleted is signed out, so offer this on the delete screen first.
+    """
+    data = await export_service.build_export(session, user.id)
+    return JSONResponse(
+        jsonable_encoder(data),
+        headers={
+            "Content-Disposition": 'attachment; filename="lock-in-mode-data.json"',
+            "Cache-Control": "no-store",
+        },
     )
 
 

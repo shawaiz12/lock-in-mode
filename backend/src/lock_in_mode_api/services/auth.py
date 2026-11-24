@@ -55,8 +55,20 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
+def _refresh_ttl(*, guest: bool) -> timedelta:
+    """A guest's token lasts a year from its last use (ADR 0027): it's their only way back
+    in. Google/Apple accounts keep 60 days; they can always sign in again."""
+    days = settings.guest_refresh_token_ttl_days if guest else settings.refresh_token_ttl_days
+    return timedelta(days=days)
+
+
 async def _issue_token_pair(
-    session: AsyncSession, user_id: uuid.UUID, *, family_id: uuid.UUID, now: datetime
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    *,
+    family_id: uuid.UUID,
+    now: datetime,
+    guest: bool,
 ) -> TokenPair:
     """Store a new refresh token (hashed) and return it with a fresh access token."""
     raw_refresh_token = generate_refresh_token()
@@ -65,7 +77,7 @@ async def _issue_token_pair(
             user_id=user_id,
             family_id=family_id,
             token_hash=hash_refresh_token(raw_refresh_token),
-            expires_at=now + timedelta(days=settings.refresh_token_ttl_days),
+            expires_at=now + _refresh_ttl(guest=guest),
         )
     )
     return TokenPair(
@@ -90,7 +102,7 @@ async def sign_in_as_guest(session: AsyncSession) -> TokenPair:
     await session.flush()  # assigns user.id
     await events.signed_up(session, user.id, "guest")
 
-    tokens = await _issue_token_pair(session, user.id, family_id=uuid.uuid4(), now=now)
+    tokens = await _issue_token_pair(session, user.id, family_id=uuid.uuid4(), now=now, guest=True)
     await session.commit()
     return tokens
 
@@ -115,13 +127,21 @@ async def rotate_refresh_token(session: AsyncSession, raw_refresh_token: str) ->
         raise InvalidRefreshTokenError
 
     token.used_at = now
-    tokens = await _issue_token_pair(session, token.user_id, family_id=token.family_id, now=now)
+    # Read now, not when the family began: a guest who linked Google/Apple since then
+    # gets the account's 60 days from here on.
+    is_guest = await session.scalar(select(User.is_guest).where(User.id == token.user_id))
+    tokens = await _issue_token_pair(
+        session, token.user_id, family_id=token.family_id, now=now, guest=bool(is_guest)
+    )
     await session.commit()
     return tokens
 
 
 async def sign_out(session: AsyncSession, raw_refresh_token: str) -> None:
-    """Revoke this device's whole token family. Unknown tokens are ignored."""
+    """Revoke this device's whole token family. Unknown tokens are ignored.
+
+    A guest with no other device has no way back in after this, so the hourly cleanup
+    erases them (ADR 0027): the app must say so before a guest signs out."""
     family_id = await session.scalar(
         select(RefreshToken.family_id).where(
             RefreshToken.token_hash == hash_refresh_token(raw_refresh_token)
@@ -161,7 +181,9 @@ async def sign_in_with_provider(session: AsyncSession, provider: Provider, sub: 
     cancelled = await account.cancel_deletion(session, user_id)
     if cancelled:
         await events.deletion_cancelled(session, user_id)
-    tokens = await _issue_token_pair(session, user_id, family_id=uuid.uuid4(), now=_now())
+    tokens = await _issue_token_pair(
+        session, user_id, family_id=uuid.uuid4(), now=_now(), guest=False
+    )
     await session.commit()
     return tokens.model_copy(update={"deletion_cancelled": cancelled})
 

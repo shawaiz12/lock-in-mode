@@ -7,6 +7,9 @@
   tokens with it.
 - The optional leaving reason is copied to `account_deletion_reasons` (no user id) only
   when the account is really erased.
+- Lost guests (ADR 0027): a guest with no usable refresh token left (expired, signed out,
+  or locked after a stolen token was reused) can never get back in, so the hourly cleanup
+  erases them too.
 
 Every time comparison here uses the database clock (`now()`), never the app's.
 Functions that take a request's session own the transaction and commit (like the other
@@ -19,7 +22,7 @@ import uuid
 from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, date, datetime
 
-from sqlalchemy import ColumnElement, Row, delete, func, insert, select, update
+from sqlalchemy import ColumnElement, Row, delete, exists, func, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lock_in_mode_api.core.db import SessionLocal
@@ -33,6 +36,9 @@ DELETION_GRACE_DAYS = 30  # shown to users: "deleted on <date>"
 # make_interval(years, months, weeks, days): the 30 days as a Postgres interval.
 GRACE = func.make_interval(0, 0, 0, DELETION_GRACE_DAYS)
 CLEANUP_BATCH = 200  # accounts per transaction: one account can own thousands of set logs
+# Lost guests (ADR 0027): a token's expiry was set by the app's clock, the check uses the
+# database's; a day's margin keeps a small difference between them from mattering.
+LOST_GUEST_MARGIN = func.make_interval(0, 0, 0, 1)
 
 
 def _left_on(asked_at: datetime) -> date:
@@ -89,6 +95,51 @@ async def purge_due(session: AsyncSession, *, batch: int = CLEANUP_BATCH) -> int
     total = 0
     while True:
         erased = await erase_due_now(session, limit=batch)
+        await session.commit()
+        total += erased
+        if erased < batch:
+            return total
+
+
+def _can_get_back_in() -> ColumnElement[bool]:
+    """The user has a refresh token that still works: unused (the newest of its family),
+    not revoked, and not expired (with the margin)."""
+    return exists().where(
+        RefreshToken.user_id == User.id,
+        RefreshToken.used_at.is_(None),
+        RefreshToken.revoked_at.is_(None),
+        RefreshToken.expires_at > func.now() - LOST_GUEST_MARGIN,
+    )
+
+
+async def erase_lost_guests(session: AsyncSession, *, limit: int = CLEANUP_BATCH) -> int:
+    """Erase up to `limit` guests nobody can ever open again (ADR 0027). Doesn't commit.
+
+    A guest made in the last day is never touched: its first token is written in the same
+    transaction, but the margin keeps this rule from depending on that.
+    """
+    lost = (
+        select(User.id)
+        .where(
+            User.is_guest,
+            User.created_at < func.now() - LOST_GUEST_MARGIN,
+            ~_can_get_back_in(),
+        )
+        .order_by(User.created_at)
+        .limit(limit)
+        .with_for_update(skip_locked=True)
+    )
+    gone = await session.execute(
+        delete(User).where(User.id.in_(lost.scalar_subquery())).returning(User.id)
+    )
+    return len(gone.all())
+
+
+async def purge_lost_guests(session: AsyncSession, *, batch: int = CLEANUP_BATCH) -> int:
+    """The cleanup's second job: erase every lost guest, one batch per commit."""
+    total = 0
+    while True:
+        erased = await erase_lost_guests(session, limit=batch)
         await session.commit()
         total += erased
         if erased < batch:
@@ -157,7 +208,8 @@ async def cancel_deletion(session: AsyncSession, user_id: uuid.UUID) -> bool:
 async def run_cleanup(
     interval_seconds: float, *, sleep: Callable[[float], Awaitable[None]] = asyncio.sleep
 ) -> None:
-    """Erase due accounts now, then every `interval_seconds`, until cancelled.
+    """Erase due accounts and lost guests now, then every `interval_seconds`, until
+    cancelled.
 
     Runs in the API process (no cron job, no worker: no extra cost). A failed run is
     logged and tried again next time; it never stops the API. (`sleep` is for tests.)
@@ -166,8 +218,11 @@ async def run_cleanup(
         try:
             async with SessionLocal() as session:
                 erased = await purge_due(session)
+                lost = await purge_lost_guests(session)
             if erased:
                 logger.info("Account cleanup: erased %d account(s)", erased)
+            if lost:
+                logger.info("Account cleanup: erased %d lost guest(s)", lost)
         except Exception:
             logger.exception("Account cleanup failed; trying again in %ss", interval_seconds)
         await sleep(interval_seconds)

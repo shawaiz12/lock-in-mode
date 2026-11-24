@@ -22,6 +22,7 @@ from fastapi import Depends, Request
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
+from lock_in_mode_api.api.deps import CurrentUser
 from lock_in_mode_api.api.errors import RateLimited
 from lock_in_mode_api.core.config import settings
 from lock_in_mode_api.core.redis import get_redis
@@ -40,6 +41,23 @@ def client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
+async def _count(redis: Redis, key: str, window_seconds: int) -> int | None:
+    """Add one to this window's counter and return it. None: Redis is down."""
+    try:
+        # Both commands go to Redis in one round trip. INCR is atomic, so two
+        # requests arriving together can never both read "19" and both pass.
+        async with redis.pipeline(transaction=False) as pipe:
+            pipe.incr(key)
+            pipe.expire(key, window_seconds)
+            count, _ = await pipe.execute()
+    except (RedisError, OSError):
+        # Fail open: a Redis outage must not block every request. We lose abuse
+        # protection for that time, which is the smaller problem.
+        logger.warning("Rate limiting skipped: Redis unavailable", exc_info=True)
+        return None
+    return int(count)
+
+
 def rate_limit(scope: str) -> Callable[..., Awaitable[None]]:
     """Build a dependency that allows `auth_rate_limit_per_minute` calls per IP.
 
@@ -50,22 +68,8 @@ def rate_limit(scope: str) -> Callable[..., Awaitable[None]]:
     async def check(request: Request, redis: Annotated[Redis, Depends(get_redis)]) -> None:
         now = clock()
         window = int(now // WINDOW_SECONDS)
-        key = f"rl:{scope}:{client_ip(request)}:{window}"
-
-        try:
-            # Both commands go to Redis in one round trip. INCR is atomic, so two
-            # requests arriving together can never both read "19" and both pass.
-            async with redis.pipeline(transaction=False) as pipe:
-                pipe.incr(key)
-                pipe.expire(key, WINDOW_SECONDS)
-                count, _ = await pipe.execute()
-        except (RedisError, OSError):
-            # Fail open: a Redis outage must not block every sign-in. We lose abuse
-            # protection for that time, which is the smaller problem.
-            logger.warning("Rate limiting skipped: Redis unavailable", exc_info=True)
-            return
-
-        if count > settings.auth_rate_limit_per_minute:
+        count = await _count(redis, f"rl:{scope}:{client_ip(request)}:{window}", WINDOW_SECONDS)
+        if count is not None and count > settings.auth_rate_limit_per_minute:
             seconds_left = math.ceil((window + 1) * WINDOW_SECONDS - now)
             raise RateLimited(
                 "Too many attempts. Please wait a moment and try again.",
@@ -73,3 +77,23 @@ def rate_limit(scope: str) -> Callable[..., Awaitable[None]]:
             )
 
     return check
+
+
+HOUR_SECONDS = 3600
+
+
+async def export_rate_limit(user: CurrentUser, redis: Annotated[Redis, Depends(get_redis)]) -> None:
+    """ "Download my data" (ADR 0027): `export_rate_limit_per_hour` per account per clock
+    hour. Counted per account, not per IP: it protects the database, not sign-in."""
+    now = clock()
+    window = int(now // HOUR_SECONDS)
+    count = await _count(redis, f"rl:export:{user.id}:{window}", HOUR_SECONDS)
+    limit = settings.export_rate_limit_per_hour
+    if count is not None and count > limit:
+        seconds_left = math.ceil((window + 1) * HOUR_SECONDS - now)
+        minutes = max(1, math.ceil(seconds_left / 60))
+        raise RateLimited(
+            f"You can download your data {limit} times an hour. "
+            f"Try again in {minutes} minute{'' if minutes == 1 else 's'}.",
+            headers={"Retry-After": str(seconds_left)},
+        )
