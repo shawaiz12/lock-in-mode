@@ -7,6 +7,7 @@ never depend on real time (no sleeping, no flaky failures at a minute boundary).
 from collections.abc import AsyncIterator, Callable
 
 import pytest
+from fastapi import Request
 from httpx import ASGITransport, AsyncClient
 from redis.asyncio import Redis
 
@@ -117,3 +118,86 @@ async def test_redis_down_lets_requests_through(
 
     assert "Rate limiting skipped: Redis unavailable" in caplog.text
     await unreachable.aclose()
+
+
+# --- Behind the hosting proxy (ADR 0028) ------------------------------------------------
+# The test client's own address plays the proxy. X-Forwarded-For carries what the proxy
+# saw: its LAST entry is the real caller, anything before it was typed by the caller.
+
+
+def _from(*forwarded_for: str) -> dict[str, str]:
+    return {"X-Forwarded-For": ", ".join(forwarded_for)}
+
+
+async def test_behind_a_proxy_the_forwarded_caller_is_counted(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "trusted_proxy_hops", 1)
+    alice, bob = _from("198.51.100.1"), _from("198.51.100.2")
+
+    for _ in range(2):
+        assert (await client.post("/api/v1/auth/guest", headers=alice)).status_code == 201
+
+    # Same connection (the proxy), different real caller: a separate count.
+    assert (await client.post("/api/v1/auth/guest", headers=alice)).status_code == 429
+    assert (await client.post("/api/v1/auth/guest", headers=bob)).status_code == 201
+
+
+async def test_made_up_addresses_in_front_do_not_dodge_the_limit(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "trusted_proxy_hops", 1)
+
+    statuses = [
+        (
+            await client.post("/api/v1/auth/guest", headers=_from(f"10.0.0.{n}", "198.51.100.1"))
+        ).status_code
+        for n in range(3)
+    ]
+
+    assert statuses == [201, 201, 429]
+
+
+async def test_without_a_proxy_the_header_is_ignored(client: AsyncClient) -> None:
+    # Local setting (0 hops): anyone can send the header, so it must change nothing.
+    statuses = [
+        (await client.post("/api/v1/auth/guest", headers=_from(f"198.51.100.{n}"))).status_code
+        for n in range(3)
+    ]
+
+    assert statuses == [201, 201, 429]
+
+
+def _request(headers: list[tuple[str, str]], peer: str = "192.0.2.50") -> Request:
+    return Request(
+        {
+            "type": "http",
+            "headers": [(name.lower().encode(), value.encode()) for name, value in headers],
+            "client": (peer, 1234),
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    ("hops", "headers", "expected"),
+    [
+        (0, [("X-Forwarded-For", "198.51.100.1")], "192.0.2.50"),
+        (1, [("X-Forwarded-For", "198.51.100.1")], "198.51.100.1"),
+        (1, [("X-Forwarded-For", " 6.6.6.6 ,198.51.100.1 ")], "198.51.100.1"),
+        # Two proxies (e.g. a CDN in front of the platform): the second to last.
+        (2, [("X-Forwarded-For", "6.6.6.6, 198.51.100.1, 203.0.113.80")], "198.51.100.1"),
+        # Several headers are one list, in order.
+        (1, [("X-Forwarded-For", "6.6.6.6"), ("X-Forwarded-For", "198.51.100.1")], "198.51.100.1"),
+        # Missing or too short: not what our proxy sends, so use the connection.
+        (1, [], "192.0.2.50"),
+        (1, [("X-Forwarded-For", " , ")], "192.0.2.50"),
+        (2, [("X-Forwarded-For", "198.51.100.1")], "192.0.2.50"),
+    ],
+    ids=["no-proxy", "one-hop", "spaces", "two-hops", "two-headers", "missing", "blank", "short"],
+)
+def test_client_ip(
+    monkeypatch: pytest.MonkeyPatch, hops: int, headers: list[tuple[str, str]], expected: str
+) -> None:
+    monkeypatch.setattr(settings, "trusted_proxy_hops", hops)
+
+    assert rate_limit.client_ip(_request(headers)) == expected

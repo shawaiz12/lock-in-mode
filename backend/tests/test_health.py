@@ -4,6 +4,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.exc import OperationalError
 
+from lock_in_mode_api.core.config import settings
 from lock_in_mode_api.core.db import get_db_session
 from lock_in_mode_api.main import app
 
@@ -55,3 +56,25 @@ async def test_health_does_not_hide_unexpected_errors(client: AsyncClient) -> No
 
     with pytest.raises(RuntimeError, match="bug in our code"):
         await client.get("/health")
+
+
+async def test_live_check_says_ok_and_which_version_runs(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "app_version", "abc1234")
+
+    response = await client.get("/health/live")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok", "version": "abc1234"}
+
+
+async def test_live_check_never_touches_the_database(client: AsyncClient) -> None:
+    # The platform calls it every few seconds. If it used the database, hosted Postgres
+    # could never sleep and the free plan's hours would run out (ADR 0028).
+    _make_database_fail_with(ConnectionRefusedError("database is down"))
+
+    response = await client.get("/health/live")
+
+    assert response.status_code == 200
+    assert (await client.get("/health")).status_code == 503  # the full check does notice
