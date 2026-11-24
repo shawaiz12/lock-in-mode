@@ -20,7 +20,7 @@ problem document, sent as `Content-Type: application/problem+json`
 | Code | Status | Meaning | What the app should do |
 |---|---|---|---|
 | [`not_authenticated`](#not_authenticated) | 401 | No access token sent | Sign in (or start as guest) |
-| [`invalid_access_token`](#invalid_access_token) | 401 | Access token expired, invalid, or its user is gone | Refresh once, then retry |
+| [`invalid_access_token`](#invalid_access_token) | 401 | Access token expired, invalid, or its user is gone or waiting to be deleted | Refresh once, then retry |
 | [`invalid_refresh_token`](#invalid_refresh_token) | 401 | Refresh token unknown, expired, revoked or reused | Sign in again |
 | [`invalid_id_token`](#invalid_id_token) | 401 | Google/Apple token didn't verify (or wrong nonce) | Restart the Google/Apple sign-in |
 | [`not_found`](#not_found) | 404 | No such endpoint or resource | Bug in the app |
@@ -51,7 +51,9 @@ The request needs `Authorization: Bearer <access token>` and didn't send one.
 Sent with `WWW-Authenticate: Bearer`.
 
 ## invalid_access_token
-The access token is malformed, expired, not signed by us, or its user was deleted.
+The access token is malformed, expired, not signed by us, or its user was deleted or asked
+to be deleted (ADR 0024: a waiting account is signed out everywhere; signing in with
+Google/Apple cancels the deletion).
 Access tokens live 15 minutes: refresh once with `POST /api/v1/auth/refresh`, then retry.
 Sent with `WWW-Authenticate: Bearer`.
 
