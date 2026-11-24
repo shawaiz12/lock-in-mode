@@ -5,12 +5,25 @@
 A minimal, gamified fitness app where you're the main character.
 Personalised home or gym workouts, explained simply, and every workout levels you up.
 
-**Status:** 🚧 Phase 1 – Foundation
+**Status:** 🚧 Phase 3 – API online, mobile app from first launch to the plan
 
 ## Tech stack
 
-FastAPI · PostgreSQL · SQLAlchemy 2 (async) · Alembic · Redis · Docker Compose · uv ·
-pytest · Ruff · mypy (strict) · GitHub Actions
+**API:** FastAPI · PostgreSQL · SQLAlchemy 2 (async) · Alembic · Redis · Docker Compose · uv ·
+pytest · Ruff · mypy (strict)
+
+**App:** React Native · Expo (SDK 58) · TypeScript · Expo Router · TanStack Query ·
+openapi-fetch (types generated from the API) · Jest
+
+**Hosting:** Northflank (API) · Neon (Postgres) · Upstash (Redis) · GitHub Actions (CI, deploys,
+nightly tested backups)
+
+```
+lock-in-mode/
+├── backend/   FastAPI app, migrations, tests   (this README)
+├── mobile/    Expo app                          (mobile/README.md)
+└── docs/      decisions (ADRs), errors, onboarding playbook, deploy guide
+```
 
 ## Run it (Docker only)
 
@@ -92,6 +105,17 @@ apply all migrations to it, and roll back every test
 (see [ADR 0004](docs/decisions/0004-test-database-strategy.md)).
 Redis works the same way: tests use Redis database 15 and empty it before each test,
 so your dev data in database 0 is never touched.
+
+## Mobile app
+
+The Expo app lives in [`mobile/`](mobile/). How to run it on your phone with Expo Go,
+and how it's built: [mobile/README.md](mobile/README.md).
+
+## Hosting
+
+The API runs on free tiers: Northflank, Neon and Upstash, deployed by GitHub Actions after
+the tests pass, with nightly encrypted and restore-tested database backups. Setup, checks
+and restores: [docs/deploy.md](docs/deploy.md) ([ADR 0028](docs/decisions/0028-hosting-the-api.md)).
 
 ## Architecture decisions
 
