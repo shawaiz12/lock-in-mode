@@ -28,6 +28,9 @@ async def test_a_failed_run_is_logged_and_the_next_run_still_happens(
             raise RuntimeError("database down")
         return 3
 
+    async def purge_lost(session: Any) -> int:
+        return 2  # lost guests (ADR 0027)
+
     sleeps: list[float] = []
 
     async def sleep(seconds: float) -> None:
@@ -40,6 +43,7 @@ async def test_a_failed_run_is_logged_and_the_next_run_still_happens(
         yield object()
 
     monkeypatch.setattr(account, "purge_due", purge)
+    monkeypatch.setattr(account, "purge_lost_guests", purge_lost)
     monkeypatch.setattr(account, "SessionLocal", session_local)
     caplog.set_level(logging.INFO, logger=account.logger.name)
 
@@ -50,6 +54,7 @@ async def test_a_failed_run_is_logged_and_the_next_run_still_happens(
     assert sleeps == [3600, 3600, 3600]
     assert "Account cleanup failed" in caplog.text
     assert "erased 3 account(s)" in caplog.text
+    assert "erased 2 lost guest(s)" in caplog.text
 
 
 class _Closable:
