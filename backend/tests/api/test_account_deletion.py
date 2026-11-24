@@ -142,6 +142,7 @@ def test_the_user_tables_are_the_ones_we_expect() -> None:
         "interval_steps",
         "swapped_out_exercises",
         "comebacks",
+        "events",
     }
 
 
@@ -325,10 +326,10 @@ async def test_signing_in_within_30_days_cancels_and_keeps_everything(
     assert user.delete_after is None
     assert user.deletion_reason is None
     after = await _rows_left(db_session)
-    assert after["refresh_tokens"] == before["refresh_tokens"] + 1  # the new sign-in
-    assert {k: v for k, v in after.items() if k != "refresh_tokens"} == {
-        k: v for k, v in before.items() if k != "refresh_tokens"
-    }
+    assert after.pop("refresh_tokens") == before.pop("refresh_tokens") + 1  # the new sign-in
+    # Two funnel events (ADR 0025): the deletion asked, then cancelled.
+    assert after.pop("events") == before.pop("events") + 2
+    assert after == before
     # Cancelling saves no reason, and the next sign-in has nothing to cancel.
     assert await _reasons(db_session) == []
     assert (await _google(client, google_id_token("g-1"))).deletion_cancelled is False
@@ -383,6 +384,7 @@ async def test_after_30_days_sign_in_finds_a_new_account_even_without_the_cleanu
     left = await _rows_left(db_session)
     assert left.pop("users") == 1
     assert left.pop("refresh_tokens") == 1
+    assert left.pop("events") == 1  # the new account's signed_up (ADR 0025)
     assert set(left.values()) == {0}
     [kept] = await _reasons(db_session)
     assert (kept.reason, kept.was_guest, kept.left_on) == (
