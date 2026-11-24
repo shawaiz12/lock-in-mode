@@ -40,8 +40,20 @@ add_problem_handlers(app)
 app.include_router(v1.router)
 
 
+@app.get("/health/live", tags=["infrastructure"])
+async def live() -> dict[str, str]:
+    """Is the process up? For the hosting platform's frequent checks (ADR 0028).
+
+    It never touches the database on purpose: hosted Postgres (Neon) sleeps after
+    5 quiet minutes and its free plan counts awake hours. A check every few seconds
+    on /health would keep it awake all month and use up the free hours.
+    """
+    return {"status": "ok", "version": settings.app_version}
+
+
 @app.get("/health", tags=["infrastructure"])
 async def health(session: DbSession) -> dict[str, str]:
+    """Is the API up AND can it reach the database? For people and deploy checks."""
     try:
         await session.execute(text("SELECT 1"))
     except (OSError, SQLAlchemyError) as exc:

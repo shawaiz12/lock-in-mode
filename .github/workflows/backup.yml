@@ -1,0 +1,100 @@
+name: Database backup
+
+# Nightly copy of the hosted database (ADR 0028). Each run:
+#   1. dumps the database with pg_dump (same Postgres version as the server),
+#   2. restores that dump into a throwaway Postgres and checks the data is there
+#      (a backup that was never restored is only a hope),
+#   3. encrypts it with BACKUP_PASSPHRASE and keeps it as a run artifact for 30 days.
+# The repository is public, so the artifact is only safe because it's encrypted: lose
+# the passphrase and the backups are useless; leak it and they're readable.
+# Keeping 30 days matches the account deletion promise (ADR 0024): nothing older exists.
+
+on:
+  schedule:
+    - cron: "17 21 * * *" # every night, 02:17 in Pakistan (21:17 UTC)
+  workflow_dispatch: # "Run workflow" button, for the first run and restore drills
+
+permissions:
+  contents: read
+
+concurrency:
+  group: database-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    name: Back up, test the restore, encrypt
+    # Off until the secrets exist (docs/deploy.md): set the variable BACKUP_ENABLED=true.
+    if: vars.BACKUP_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    # The throwaway Postgres for step 2. Same major version as the server (Neon: 17).
+    services:
+      restore_check:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: restore
+          POSTGRES_PASSWORD: restore-check-only
+          POSTGRES_DB: restore_check
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U restore"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      PG_IMAGE: postgres:17-alpine
+      RESTORE_URL: postgresql://restore:restore-check-only@localhost:5432/restore_check
+
+    steps:
+      - name: Dump the database
+        env:
+          DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+        run: |
+          # --format=custom: compressed, and pg_restore can pick parts of it later.
+          # No owners or grants: the dump restores into any database, as any user.
+          docker run --rm --network host -v "$PWD:/out" -e DATABASE_URL "$PG_IMAGE" \
+            sh -c 'pg_dump "$DATABASE_URL" --format=custom --no-owner --no-privileges \
+                   --file=/out/lockin.dump'
+          ls -l lockin.dump
+
+      - name: Restore it into a throwaway database and check it
+        run: |
+          docker run --rm --network host -v "$PWD:/in" -e RESTORE_URL "$PG_IMAGE" \
+            sh -c 'pg_restore --no-owner --no-privileges --exit-on-error \
+                   --dbname="$RESTORE_URL" /in/lockin.dump'
+          check() {
+            docker run --rm --network host -e RESTORE_URL "$PG_IMAGE" \
+              psql "$RESTORE_URL" --tuples-only --no-align --command "$1"
+          }
+          version=$(check "SELECT version_num FROM alembic_version")
+          exercises=$(check "SELECT count(*) FROM exercises")
+          users=$(check "SELECT count(*) FROM users")
+          echo "Restored: schema $version, $exercises exercises, $users users"
+          # The exercise library is always loaded; none means a broken or empty dump.
+          test -n "$version"
+          test "$exercises" -gt 0
+
+      - name: Encrypt it
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          test -n "$BACKUP_PASSPHRASE"
+          name="lockin-$(date -u +%Y-%m-%dT%H%MZ).dump.gpg"
+          echo "$BACKUP_PASSPHRASE" | gpg --batch --yes --pinentry-mode loopback \
+            --passphrase-fd 0 --symmetric --cipher-algo AES256 \
+            --output "$name" lockin.dump
+          rm lockin.dump # only the encrypted copy leaves this machine
+          echo "BACKUP_FILE=$name" >> "$GITHUB_ENV"
+
+      - name: Keep it for 30 days
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.BACKUP_FILE }}
+          path: ${{ env.BACKUP_FILE }}
+          retention-days: 30
+          compression-level: 0 # already compressed and encrypted
+          if-no-files-found: error

@@ -36,9 +36,33 @@ clock: Callable[[], float] = time.time
 
 
 def client_ip(request: Request) -> str:
-    # Locally this is the real caller. Behind Render's proxy it needs proxy-header
-    # config at deploy time first (ADR 0008), or every user would share the proxy's IP.
-    return request.client.host if request.client else "unknown"
+    """The caller's IP, for per-IP limits (ADR 0008, ADR 0028).
+
+    Locally (TRUSTED_PROXY_HOPS=0) the connection comes straight from the caller.
+    Hosted, it comes from the platform's proxy, which appends the address it saw:
+
+        X-Forwarded-For: 6.6.6.6, 203.0.113.7
+                         ^ typed by the caller  ^ added by our proxy (trust this one)
+
+    Each trusted proxy appends one entry, so with N hops the caller is the Nth from the
+    end. Anything earlier can be made up, so a script can't dodge the limit by sending
+    a new fake address each time. A missing or short header means the request didn't
+    come through the proxy as expected: fall back to the connection's address.
+    """
+    peer = request.client.host if request.client else "unknown"
+    hops = settings.trusted_proxy_hops
+    if hops == 0:
+        return peer
+    # Several X-Forwarded-For headers count as one comma-separated list (RFC 9110).
+    entries = [
+        entry.strip()
+        for header in request.headers.getlist("x-forwarded-for")
+        for entry in header.split(",")
+        if entry.strip()
+    ]
+    if len(entries) < hops:
+        return peer
+    return entries[-hops]
 
 
 async def _count(redis: Redis, key: str, window_seconds: int) -> int | None:

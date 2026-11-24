@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch: # "Run workflow" button: re-run checks, and redeploy main (ADR 0028)
 
 jobs:
   backend:
@@ -72,4 +73,104 @@ jobs:
 
       - name: Build API Docker image
         working-directory: .
-        run: docker build --tag lock-in-mode-api:ci backend
+        run: docker build --build-arg APP_VERSION=ci-check --tag lock-in-mode-api:ci backend
+
+      # What the hosting platform runs (ADR 0028): the start script is in the image and
+      # parses, and the build's commit id reaches the app.
+      - name: Check the image is ready to host
+        working-directory: .
+        run: |
+          docker run --rm lock-in-mode-api:ci sh -n start-production.sh
+          test "$(docker run --rm lock-in-mode-api:ci printenv APP_VERSION)" = "ci-check"
+
+  mobile:
+    name: Mobile app (types, lint, tests, API types)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Install dependencies (exactly as locked)
+        run: npm ci
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Tests
+        run: npm test -- --ci
+
+      # The app's API types (src/api/schema.d.ts) must match the API in the same commit
+      # (ADR 0029). The schema comes from the backend code itself: no server, no database.
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: API types match the API
+        env:
+          POSTGRES_USER: unused
+          POSTGRES_PASSWORD: unused
+          POSTGRES_DB: unused
+          JWT_SECRET: ci-only-openapi-export-secret-not-used-anywhere
+        run: |
+          (cd ../backend && uv run --locked python -c \
+            "import json; from lock_in_mode_api.main import app; print(json.dumps(app.openapi()))") \
+            > "$RUNNER_TEMP/openapi.json"
+          npm run api:types -- --from "$RUNNER_TEMP/openapi.json" --check
+
+  # Main only, after the tests pass (ADR 0028): ask Northflank to build and deploy this
+  # exact commit, then wait until the live API reports it. Skipped until the repository
+  # variables exist (docs/deploy.md), so forks and the time before hosting stay green.
+  deploy:
+    name: Deploy API
+    needs: backend
+    if: >-
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      github.ref == 'refs/heads/main' && vars.NORTHFLANK_SERVICE_ID != ''
+    runs-on: ubuntu-latest
+    # One deploy at a time, in push order; a newer push waits rather than cancelling.
+    concurrency:
+      group: deploy-api
+      cancel-in-progress: false
+    env:
+      PROJECT_ID: ${{ vars.NORTHFLANK_PROJECT_ID }}
+      SERVICE_ID: ${{ vars.NORTHFLANK_SERVICE_ID }}
+      API_URL: ${{ vars.API_URL }}
+    steps:
+      - name: Start the build of this commit
+        env:
+          NORTHFLANK_API_TOKEN: ${{ secrets.NORTHFLANK_API_TOKEN }}
+        run: |
+          body=$(jq -n --arg sha "$GITHUB_SHA" --arg branch "main" \
+            '{sha: $sha, branch: $branch, overrides: {buildArguments: {APP_VERSION: $sha}}}')
+          curl --fail-with-body --silent --show-error \
+            --header "Authorization: Bearer $NORTHFLANK_API_TOKEN" \
+            --header "Content-Type: application/json" \
+            --data "$body" \
+            "https://api.northflank.com/v1/projects/$PROJECT_ID/services/$SERVICE_ID/build"
+
+      - name: Wait until the live API runs this commit
+        run: |
+          # Build + start usually takes 3-6 minutes; give up after 15.
+          for attempt in $(seq 1 90); do
+            live=$(curl --silent --max-time 10 "$API_URL/health/live" || true)
+            if [ "$(echo "$live" | jq -r '.version // empty' 2>/dev/null)" = "$GITHUB_SHA" ]; then
+              echo "Live: $live"
+              # The full check also proves the API reaches the database.
+              curl --fail --silent --show-error --max-time 30 "$API_URL/health"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::The API at $API_URL never reported version $GITHUB_SHA. Check the Northflank build and deploy logs."
+          exit 1

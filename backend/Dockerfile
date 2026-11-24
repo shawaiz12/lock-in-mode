@@ -36,9 +36,16 @@ WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
 COPY alembic.ini ./
 COPY migrations ./migrations
+# Hosted start: migrate, seed, then run the API (ADR 0028). Compose ignores it.
+COPY start-production.sh ./
 
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1
+
+# The commit being deployed (ADR 0028), shown by /health/live. Last, so changing it
+# only rebuilds this tiny layer. Local builds say "dev".
+ARG APP_VERSION=dev
+ENV APP_VERSION=$APP_VERSION
 
 USER app
 EXPOSE 8000

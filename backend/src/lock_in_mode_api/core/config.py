@@ -1,4 +1,7 @@
-from pydantic import SecretStr, field_validator
+import ssl
+from typing import Any, Literal
+
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import URL
 
@@ -16,6 +19,14 @@ class Settings(BaseSettings):
     postgres_db: str
     postgres_host: str = "localhost"
     postgres_port: int = 5432
+    # Encryption to Postgres (ADR 0028). "prefer" (asyncpg's own default) suits local
+    # Docker, which has no TLS. Hosted Postgres (Neon) needs "verify-full": encrypted AND
+    # the server's certificate checked, so nobody in the middle can pretend to be it.
+    postgres_sslmode: Literal["disable", "prefer", "require", "verify-full"] = "prefer"
+
+    # Which commit this server runs (ADR 0028). The deploy job passes the commit id into
+    # the Docker build; /health/live reports it, so CI can see the new version is live.
+    app_version: str = "dev"
 
     # Auth (ADR 0005). No default: the app refuses to start without a real secret.
     jwt_secret: SecretStr
@@ -38,6 +49,12 @@ class Settings(BaseSettings):
     # Rate limits (ADR 0008): max requests per client IP per minute, per sign-in endpoint.
     # Generous on purpose: mobile carriers put many phones behind one shared IP.
     auth_rate_limit_per_minute: int = 20
+
+    # Behind a hosting proxy (ADR 0028), the connection comes from the proxy, and the real
+    # caller is in the X-Forwarded-For header. 0 = no proxy: use the connection's address
+    # (local). 1 = one proxy in front: trust only the LAST entry, the one our own proxy
+    # added. Entries before it come from the caller and can be made up.
+    trusted_proxy_hops: int = Field(default=0, ge=0, le=5)
 
     # Deleting accounts (ADR 0024): how often the API erases accounts whose 30 days are
     # over. 0 switches the background task off (sign-in still erases a due account).
@@ -66,6 +83,19 @@ class Settings(BaseSettings):
             port=self.postgres_port,
             database=self.postgres_db,
         )
+
+    @property
+    def database_connect_args(self) -> dict[str, Any]:
+        """Extra asyncpg options, shared by the app's engine and Alembic's."""
+        # timeout: give up connecting after 5 s instead of hanging a request.
+        ssl_option: str | ssl.SSLContext = self.postgres_sslmode
+        if self.postgres_sslmode == "verify-full":
+            # Given the plain string, asyncpg looks for ~/.postgresql/root.crt like psql
+            # does, which no server image has. Python's default context checks the
+            # certificate AND the host name against the system's trusted certificates,
+            # the same ones a browser uses: exactly verify-full, nothing to install.
+            ssl_option = ssl.create_default_context()
+        return {"timeout": 5, "ssl": ssl_option}
 
 
 settings = Settings()

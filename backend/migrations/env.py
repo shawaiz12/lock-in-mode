@@ -80,6 +80,8 @@ async def run_async_migrations() -> None:
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        # Same encryption settings as the app (ADR 0028): hosted Postgres needs TLS.
+        connect_args=settings.database_connect_args,
     )
 
     async with connectable.connect() as connection:
