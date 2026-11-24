@@ -40,7 +40,7 @@ problem document, sent as `Content-Type: application/problem+json`
 | [`exercise_changed`](#exercise_changed) | 409 | That exercise was already swapped (a double tap) | Refresh the workout |
 | [`no_other_exercise`](#no_other_exercise) | 409 | "Show another": nothing else safe does this job | Hide "show another" for this exercise |
 | [`validation_failed`](#validation_failed) | 422 | Request body or parameters invalid; see `errors` | Bug in the app |
-| [`rate_limited`](#rate_limited) | 429 | Too many sign-in attempts from this IP | Wait `Retry-After` seconds, then retry |
+| [`rate_limited`](#rate_limited) | 429 | Too many sign-in attempts from this IP, or more than 3 data downloads this hour | Wait `Retry-After` seconds, then retry |
 | [`internal_error`](#internal_error) | 500 | Unexpected server error | Retry later |
 | [`provider_unavailable`](#provider_unavailable) | 503 | Google/Apple sign-in is switched off on the server | Hide that sign-in option |
 | [`database_unavailable`](#database_unavailable) | 503 | Health check can't reach the database | Retry later |
@@ -158,6 +158,9 @@ list. Submitted values are never echoed back, because they can contain tokens.
 ## rate_limited
 Too many requests to a sign-in endpoint (`/auth/guest`, `/auth/google`, `/auth/apple`)
 from this IP in the current minute ([ADR 0008](decisions/0008-rate-limiting.md)).
+Also sent by `GET /me/export` ("Download my data") after 3 downloads by the same account
+in the current clock hour ([ADR 0027](decisions/0027-guest-sign-in-life-and-data-export.md));
+its `detail` says how many minutes are left, ready to show.
 Always sent with `Retry-After: <seconds>`. Wait that long before retrying; don't retry
 in a tight loop.
 
