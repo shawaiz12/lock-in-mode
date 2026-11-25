@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from pydantic import ValidationError
 
 from lock_in_mode_api.core.config import Settings, settings
 from lock_in_mode_api.main import app
@@ -135,6 +136,35 @@ def test_the_upload_leaves_out_secrets_and_everything_but_the_api() -> None:
         assert pattern in ignored
 
 
+# --- Redis must use TLS off this machine (found going live) ------------------------------
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "redis://localhost:6379/0",  # this machine
+        "redis://127.0.0.1:6379/15",
+        "redis://redis:6379/0",  # the compose service
+        "rediss://default:secret@amusing-redfish-1.upstash.io:6379",  # hosted, TLS
+    ],
+)
+def test_redis_urls_that_are_fine(url: str) -> None:
+    assert Settings(redis_url=url).redis_url == url
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "redis://default:secret@amusing-redfish-1.upstash.io:6379",  # hosted, no TLS
+        "redis://10.0.0.5:6379/0",  # another machine by IP
+        "https://amusing-redfish-1.upstash.io",  # Upstash's REST URL, not Redis
+    ],
+)
+def test_redis_urls_that_stop_the_app_from_starting(url: str) -> None:
+    with pytest.raises(ValidationError, match="rediss://"):
+        Settings(redis_url=url)
+
+
 # --- the deploy job and the hourly cleanup ----------------------------------------------
 
 
@@ -161,3 +191,32 @@ def test_the_cleanup_runs_every_hour_with_the_same_code() -> None:
 
     assert schedule.split()[1:] == ["*", "*", "*", "*"]  # every hour, every day
     assert "python -m lock_in_mode_api.cleanup" in run
+
+
+def test_the_deploy_fails_when_the_live_api_has_no_redis() -> None:
+    steps = [step.get("run", "") for step in _workflow("ci.yml")["jobs"]["deploy"]["steps"]]
+    wait = next(run for run in steps if "/health/live" in run)
+
+    assert "jq -r '.redis'" in wait
+    assert '!= "ok"' in wait
+
+
+# --- secrets never inside a URL (found going live) -------------------------------------
+
+
+def test_the_backup_passes_the_password_on_its_own_and_checks_the_certificate() -> None:
+    dump = _workflow("backup.yml")["jobs"]["backup"]["steps"][0]
+
+    assert dump["env"]["PGPASSWORD"] == "${{ secrets.POSTGRES_PASSWORD }}"
+    assert dump["env"]["DATABASE_CA"] == "${{ vars.POSTGRES_SSL_ROOT_CERT }}"
+    assert "PGSSLMODE=verify-full" in dump["run"]
+    assert "DATABASE_URL" not in (REPO / ".github" / "workflows" / "backup.yml").read_text()
+
+
+def test_no_workflow_puts_a_secret_inside_a_url() -> None:
+    # A password inside a URL breaks on characters like "%", and tools print URLs in
+    # their errors, into logs that are public for this repository (2026-11-25).
+    for path in (REPO / ".github" / "workflows").glob("*.yml"):
+        for line in path.read_text().splitlines():
+            assert not ("://" in line and "secrets." in line), f"{path.name}: {line.strip()}"
+            assert "_URL: ${{ secrets." not in line, f"{path.name}: {line.strip()}"

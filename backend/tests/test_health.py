@@ -2,10 +2,12 @@ from collections.abc import AsyncIterator
 
 import pytest
 from httpx import AsyncClient
+from redis.asyncio import Redis
 from sqlalchemy.exc import OperationalError
 
 from lock_in_mode_api.core.config import settings
 from lock_in_mode_api.core.db import get_db_session
+from lock_in_mode_api.core.redis import get_redis
 from lock_in_mode_api.main import app
 
 
@@ -26,7 +28,24 @@ async def test_health_returns_200_when_database_is_up(client: AsyncClient) -> No
     response = await client.get("/health")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "database": "ok"}
+    assert response.json() == {"status": "ok", "database": "ok", "redis": "ok"}
+
+
+async def test_health_says_when_redis_is_missing_but_still_answers_200(
+    client: AsyncClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    # Without Redis the app works, but sign-in rate limiting is off (ADR 0008). The deploy
+    # job reads "redis" and fails the deploy (ADR 0031): found going live, when a wrong
+    # REDIS_URL switched rate limiting off with no sign anywhere but the logs.
+    app.dependency_overrides[get_redis] = lambda: Redis.from_url(
+        "redis://localhost:1/0", socket_connect_timeout=1, socket_timeout=1
+    )
+
+    response = await client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok", "database": "ok", "redis": "unavailable"}
+    assert "Redis unreachable, rate limiting is off" in caplog.text
 
 
 @pytest.mark.parametrize(
