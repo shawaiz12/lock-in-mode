@@ -10,10 +10,12 @@
 import type { ReactNode } from 'react';
 import {
   ActivityIndicator,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
   type StyleProp,
   type ViewStyle,
@@ -101,6 +103,124 @@ export function TextButton({ title, onPress }: { title: string; onPress: () => v
   );
 }
 
+/** A second action next to the main one ("+15 s", "Skip rest"): outlined, same height
+ * family, so it's easy to hit with a sweaty thumb. */
+export function OutlineButton({
+  title,
+  onPress,
+  disabled,
+}: {
+  title: string;
+  onPress: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ disabled }}
+      onPress={onPress}
+      disabled={disabled}
+      style={({ pressed }) => [styles.outline, disabled && styles.off, pressed && styles.pressed]}
+    >
+      <Text style={styles.outlineText}>{title}</Text>
+    </Pressable>
+  );
+}
+
+/** How far through something is, 0 to 1. */
+export function ProgressBar({ value }: { value: number }) {
+  const percent = Math.round(Math.min(Math.max(value, 0), 1) * 100);
+  return (
+    <View
+      style={styles.track}
+      accessibilityRole="progressbar"
+      accessibilityValue={{ min: 0, max: 100, now: percent }}
+    >
+      <View style={[styles.fill, { width: `${percent}%` }]} />
+    </View>
+  );
+}
+
+/** A panel that slides up over the screen (choices, "How to do it", editing a set).
+ * Tapping outside it or the phone's back button closes it. */
+export function Sheet({
+  visible,
+  onClose,
+  children,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <Pressable style={styles.scrim} onPress={onClose} accessibilityLabel="Close" />
+      <SafeAreaView style={styles.sheet} edges={['bottom']}>
+        <ScrollView contentContainerStyle={styles.sheetBody} keyboardShouldPersistTaps="handled">
+          {children}
+        </ScrollView>
+      </SafeAreaView>
+    </Modal>
+  );
+}
+
+/** A number with big − and + buttons, and the number itself typeable: reps, kg, seconds.
+ * `value` null shows "–" (not filled in yet). */
+export function Stepper({
+  label,
+  value,
+  unit,
+  onStep,
+  onType,
+}: {
+  label: string;
+  value: number | null;
+  unit: string;
+  onStep: (direction: -1 | 1) => void;
+  onType: (value: number | null) => void;
+}) {
+  return (
+    <View style={styles.stepper}>
+      <Text style={styles.label}>{label}</Text>
+      <View style={styles.stepperRow}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Less ${label.toLowerCase()}`}
+          onPress={() => onStep(-1)}
+          style={({ pressed }) => [styles.stepButton, pressed && styles.pressed]}
+        >
+          <Text style={styles.stepSign}>−</Text>
+        </Pressable>
+        <View style={styles.stepValue}>
+          <TextInput
+            accessibilityLabel={label}
+            value={value === null ? '' : String(value)}
+            placeholder="–"
+            placeholderTextColor={colors.muted}
+            keyboardType="decimal-pad"
+            onChangeText={(text) => {
+              const cleaned = text.replace(',', '.').trim();
+              const number = Number(cleaned);
+              onType(cleaned === '' || Number.isNaN(number) ? null : Math.max(0, number));
+            }}
+            style={styles.stepInput}
+            selectTextOnFocus
+          />
+          <Text style={styles.stepUnit}>{unit}</Text>
+        </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`More ${label.toLowerCase()}`}
+          onPress={() => onStep(1)}
+          style={({ pressed }) => [styles.stepButton, pressed && styles.pressed]}
+        >
+          <Text style={styles.stepSign}>+</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
 /** One answer of a question. `selected` shows it's picked (and tells screen readers). */
 export function Choice({
   label,
@@ -143,13 +263,21 @@ export function Loading({ message }: { message?: string }) {
   );
 }
 
-export function ErrorView({ message, onRetry }: { message: string; onRetry: () => void }) {
+export function ErrorView({
+  message,
+  onRetry,
+  retryTitle = 'Try again',
+}: {
+  message: string;
+  onRetry: () => void;
+  retryTitle?: string;
+}) {
   return (
     <SafeAreaView style={[styles.screen, styles.center, styles.padded]}>
       <Text style={[styles.title, styles.centerText]}>Hold on</Text>
       <Text style={[styles.body_text, styles.centerText]}>{message}</Text>
       <Gap size="l" />
-      <LockInButton title="Try again" onPress={onRetry} />
+      <LockInButton title={retryTitle} onPress={onRetry} />
     </SafeAreaView>
   );
 }
@@ -194,6 +322,44 @@ const styles = StyleSheet.create({
   choiceOn: { borderColor: colors.primary, backgroundColor: colors.primary },
   choiceText: { color: colors.text, fontSize: 17, fontWeight: '600' },
   choiceTextOn: { color: colors.onPrimary },
+  outline: {
+    borderColor: colors.text,
+    borderWidth: 1.5,
+    borderRadius: 14,
+    minHeight: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: space.m,
+    flexGrow: 1,
+  },
+  outlineText: { color: colors.text, fontSize: 16, fontWeight: '700' },
+  track: { height: 6, borderRadius: 3, backgroundColor: colors.border, overflow: 'hidden' },
+  fill: { height: 6, backgroundColor: colors.primary },
+  scrim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)' },
+  sheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    borderColor: colors.border,
+    borderWidth: 1,
+    maxHeight: '85%',
+  },
+  sheetBody: { padding: space.l, gap: space.m },
+  stepper: { gap: space.s },
+  stepperRow: { flexDirection: 'row', alignItems: 'center', gap: space.m },
+  stepButton: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    borderWidth: 1.5,
+    borderColor: colors.text,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepSign: { color: colors.text, fontSize: 28, fontWeight: '600', lineHeight: 32 },
+  stepValue: { flex: 1, flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', gap: space.xs },
+  stepInput: { color: colors.text, fontSize: 34, fontWeight: '800', minWidth: 60, textAlign: 'center', padding: 0 },
+  stepUnit: { color: colors.muted, fontSize: 16, fontWeight: '600' },
   card: {
     backgroundColor: colors.surface,
     borderColor: colors.border,

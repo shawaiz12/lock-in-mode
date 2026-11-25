@@ -6,7 +6,9 @@
  * work they can see. Then the week, the choices that only matter to some people
  * (shoulder day, bro split), and one big button for the next workout.
  *
- * The workout player is the next stage; for now the button opens a preview.
+ * The big button opens the next workout ("continue" if it's already open: GET
+ * /sessions/current). When the block is done, it starts the next one, after "Ready for
+ * more?" if moving up a level is on offer (ADR 0022).
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
@@ -14,12 +16,14 @@ import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import {
+  getOpenSessionOrNull,
   getOrCreatePlan,
   getProfileOrNull,
   type Plan,
   type ProfileWrite,
   profileWithChanges,
   saveProfile,
+  startNextBlock,
   type WorkoutSummary,
 } from '@/api/endpoints';
 import { describeError } from '@/api/problem';
@@ -35,6 +39,7 @@ import {
   Label,
   Loading,
   LockInButton,
+  OutlineButton,
   Screen,
   space,
   Title,
@@ -85,18 +90,37 @@ function Reveal({ reasons, onDone }: { reasons: string[]; onDone: () => void }) 
 function Week({ plan }: { plan: Plan }) {
   const next = plan.workouts.find((w) => w.id === plan.next_workout_id);
   const comeback = plan.comeback && !plan.comeback.started ? plan.comeback : null;
+  const open = useQuery({ queryKey: keys.openSession, queryFn: getOpenSessionOrNull });
+  const continuing = next !== undefined && open.data?.workout_id === next.id;
+  const nextBlock = useNextBlock();
+
+  let footer;
+  if (next && continuing) {
+    footer = (
+      <LockInButton
+        title={`Lock In: continue workout ${next.position}`}
+        onPress={() => router.push(`/workout/${next.id}/play`)}
+      />
+    );
+  } else if (next) {
+    footer = (
+      <LockInButton
+        title={`Lock In: workout ${next.position}`}
+        onPress={() => router.push(`/workout/${next.id}`)}
+      />
+    );
+  } else if (plan.block_complete && !plan.level_up) {
+    footer = (
+      <LockInButton
+        title={`Lock In: start block ${plan.block_number + 1}`}
+        busy={nextBlock.isPending}
+        onPress={() => nextBlock.mutate(false)}
+      />
+    );
+  }
 
   return (
-    <Screen
-      footer={
-        next ? (
-          <LockInButton
-            title={`Lock In: workout ${next.position}`}
-            onPress={() => router.push(`/workout/${next.id}`)}
-          />
-        ) : undefined
-      }
-    >
+    <Screen footer={footer}>
       <Label>
         Block {plan.block_number} · {plan.weeks} weeks
       </Label>
@@ -115,7 +139,9 @@ function Week({ plan }: { plan: Plan }) {
       {plan.block_complete ? (
         <Card>
           <Label>Block complete</Label>
-          <Body>Every workout of this block is done. The next block comes with the workout player.</Body>
+          <Body>Every workout of this block is done. Well locked in.</Body>
+          {plan.level_up ? <ReadyForMore plan={plan} nextBlock={nextBlock} /> : null}
+          {nextBlock.isError ? <Body>{describeError(nextBlock.error)}</Body> : null}
         </Card>
       ) : null}
 
@@ -159,6 +185,47 @@ function WorkoutRow({ workout, isNext }: { workout: WorkoutSummary; isNext: bool
       </View>
       {status ? <Text style={styles.status}>{status}</Text> : null}
     </Pressable>
+  );
+}
+
+/** Start the next block; the new plan replaces this one on screen. */
+function useNextBlock() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (levelUp: boolean) => startNextBlock(levelUp),
+    onSuccess: (plan) => {
+      queryClient.setQueryData(keys.plan, { plan, justCreated: false });
+    },
+  });
+}
+
+/** "Ready for more?" (ADR 0022): the offer's own lines, yes or not yet. Not yet asks
+ * again at the end of the next block. */
+function ReadyForMore({ plan, nextBlock }: { plan: Plan; nextBlock: ReturnType<typeof useNextBlock> }) {
+  const offer = plan.level_up;
+  if (!offer) return null;
+  return (
+    <>
+      <Gap size="s" />
+      <Label>Ready for more?</Label>
+      {offer.what_changes.map((line) => (
+        <Body key={line}>{line}</Body>
+      ))}
+      {offer.check_with_doctor ? (
+        <Body muted>Check with a doctor before pushing harder. Your low-intensity limits stay.</Body>
+      ) : null}
+      <LockInButton
+        title="Yes, move up"
+        busy={nextBlock.isPending && nextBlock.variables === true}
+        disabled={nextBlock.isPending}
+        onPress={() => nextBlock.mutate(true)}
+      />
+      <OutlineButton
+        title="Not yet"
+        disabled={nextBlock.isPending}
+        onPress={() => nextBlock.mutate(false)}
+      />
+    </>
   );
 }
 

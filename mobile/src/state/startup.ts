@@ -22,6 +22,11 @@ export const keys = {
   profile: ['profile'] as const,
   plan: ['plan'] as const,
   workout: (id: string) => ['workout', id] as const,
+  /** The workout in progress, if any (GET /sessions/current). */
+  openSession: ['workout-session', 'open'] as const,
+  /** The session the player started or continued for this workout (POST /sessions). */
+  playing: (workoutId: string) => ['workout-session', 'playing', workoutId] as const,
+  exercise: (id: string) => ['exercise', id] as const,
 };
 
 export type Stage = 'loading' | 'error' | 'onboarding' | 'safety' | 'plan';

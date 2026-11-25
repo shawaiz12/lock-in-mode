@@ -56,8 +56,13 @@ function Navigator() {
       <Stack.Protected guard={stage === 'plan'}>
         <Stack.Screen name="plan" />
         <Stack.Screen
-          name="workout/[id]"
+          name="workout/[id]/index"
           options={{ headerShown: true, title: '', animation: 'slide_from_right' }}
+        />
+        {/* The player has its own "Leave" button; a stray swipe mid-set shouldn't leave. */}
+        <Stack.Screen
+          name="workout/[id]/play"
+          options={{ animation: 'slide_from_bottom', gestureEnabled: false }}
         />
       </Stack.Protected>
     </Stack>
