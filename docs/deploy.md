@@ -12,7 +12,7 @@ phone ──https──▶ Vercel (API, Mumbai) ──TLS, Supabase CA, port 654
                                       └──TLS──────────────────────────▶ Upstash (Redis, Mumbai)
 GitHub Actions, on main:  tests ─▶ migrate + seed (port 5432) ─▶ vercel deploy ─▶ live check
 GitHub Actions, hourly:   account cleanup (port 5432)
-GitHub Actions, nightly:  pg_dump ─▶ test restore ─▶ encrypt ─▶ keep 30 days
+GitHub Actions, nightly:  pg_dump (port 5432) ─▶ test restore ─▶ encrypt ─▶ keep 30 days
 ```
 
 The Vercel project is **not connected to GitHub**: only the CI deploy job deploys, with
@@ -38,19 +38,21 @@ Vercel's command-line tool and a token. Vercel never reads the repository on its
    | `POSTGRES_PASSWORD` | the password from step 1 |
    | `POSTGRES_HOST` | `aws-0-ap-south-1.pooler.supabase.com` |
    | `POSTGRES_DB` | `postgres` |
-   The **session pooler** string (port 5432), with the real password in place of
-   `[YOUR-PASSWORD]` and **no** `?sslmode=…`, is the backup job's `BACKUP_DATABASE_URL`.
+   Never put the password inside a connection URL anywhere (a `%` in it breaks the URL,
+   and tools print URLs in their errors, in logs that are public for this repo). Every
+   job here takes the password as its own value.
 3. **Database → Settings → SSL configuration → Download certificate**. Open
    `prod-ca-2021.crt` in a text editor: `-----BEGIN CERTIFICATE----- … -----END
-   CERTIFICATE-----`. That whole text is `POSTGRES_SSL_ROOT_CERT` (and the backup's
-   `BACKUP_DATABASE_CA`). It's public, not a secret.
+   CERTIFICATE-----`. That whole text is `POSTGRES_SSL_ROOT_CERT`. It's public, not a
+   secret.
 4. Same page: switch **Enforce SSL on incoming connections** on.
 
 ## 2. Upstash: Redis
 1. upstash.com → **Create Database**: name `lock-in-mode`, primary region
    **Mumbai, India (ap-south-1)**, Free.
 2. The database → **Connect** → copy the URL that starts with **`rediss://`** (two s's =
-   TLS). That's `REDIS_URL`.
+   TLS). That's `REDIS_URL`. Not the `redis-cli --tls -u redis://…` line, and not the
+   `https://` REST URL: the API refuses to start with either.
 
 ## 3. Vercel: the API
 1. vercel.com (Hobby) → **Add New → Project** → at the bottom, **Create an empty project**.
@@ -89,6 +91,8 @@ Vercel's command-line tool and a token. Vercel never reads the repository on its
    - `certificate verify failed`: `POSTGRES_SSL_ROOT_CERT` isn't Supabase's, or is cut off.
    - `password authentication failed`: the user must be `postgres.<project ref>`.
    - `prepared statement ... does not exist`: `POSTGRES_TRANSACTION_POOLER=true` is missing.
+   - `/health` says `"redis": "unavailable"`: `REDIS_URL` points at another (or deleted)
+     database. The API works, but sign-in rate limiting is off; the deploy job fails on it.
 5. Project → Settings → **Functions**: the region shows **Mumbai (bom1)** (from
    `backend/vercel.json`).
 
@@ -112,16 +116,17 @@ Repository → Settings → Secrets and variables → **Actions**.
 | Variable | `POSTGRES_USER` | `postgres.<project ref>` |
 | Secret | `POSTGRES_PASSWORD` | the database password |
 | Variable | `POSTGRES_SSL_ROOT_CERT` | the certificate text |
-| Secret | `BACKUP_DATABASE_URL` | the session pooler string with the password, no `?sslmode` |
-| Secret | `BACKUP_DATABASE_CA` | the same certificate text |
 | Secret | `BACKUP_PASSPHRASE` | a new long random one, also in your password manager |
 | Variable | `BACKUP_ENABLED` | `true` (only after the backup secrets exist) |
 
 Setting `VERCEL_PROJECT_ID` switches on the deploy job and the hourly cleanup.
 
+The backup uses the same `POSTGRES_*` values as the deploy (session pooler, port 5432).
+
 Test the deploy: Actions → **CI → Run workflow** (branch `main`). `Deploy API` shows the
 migrations, `Exercise library: 257 in the seed file`, the Vercel URL, then
-`Live: {"status":"ok","version":"<this commit>"}` and the `/health` reply.
+`Live: {"status":"ok","version":"<this commit>"}` and
+`Health: {"status":"ok","database":"ok","redis":"ok"}`.
 
 Test the cleanup: Actions → **Account cleanup → Run workflow**. It ends with
 `Account cleanup: erased 0 account(s) and 0 lost guest(s)`.
@@ -159,6 +164,11 @@ Expected: 20 non-429 codes, then **429**. Never 429: tell Claude.
 - Migrations run before the new code goes live, while the old version still serves:
   keep them backwards-compatible (add first, remove in a later release).
 - Never deploy from your laptop (`vercel` in a terminal): only CI deploys, after the tests.
+- Changed a variable on Vercel? It applies from the next deployment: redeploy with
+  **CI → Run workflow**. Vercel's own *Redeploy* works too, but drops the commit id
+  (`/health/live` then says `"version":"dev"` until the next CI deploy).
+- A secret ever shows in a log (this repo's logs are public): delete that run's logs
+  (run → ⋯ → Delete all logs) AND change the secret. Deleting alone isn't enough.
 
 ## Restoring a backup (last resort)
 1. Actions → Database backup → a run → download the artifact.

@@ -77,3 +77,25 @@ job, the nightly tested backups and the real-caller-IP rule (ADR 0028) stay.
 - Untested until live: Vercel's Python runtime itself (how it runs the lifespan, reuses
   instances and keeps the event loop). The first deploy's `/health` and the real-IP
   check (docs/deploy.md §5) are the proof.
+
+## Found going live (2026-11-25)
+- **The API ran with sign-in rate limiting off and nobody noticed but the logs.**
+  `REDIS_URL` first pointed at the deleted Singapore Upstash, then started with
+  `redis://` (Upstash's `redis-cli --tls -u redis://…` line) instead of `rediss://`:
+  Upstash hangs up on plain connections. Rate limiting fails open by design (ADR 0008),
+  so everything else worked. Now: the API refuses to start with a `redis://` URL to
+  another machine (a host with a dot) or a non-Redis URL; `/health` adds
+  `"redis": "ok" | "unavailable"` (still 200: the app works without it); the deploy job
+  fails unless it's `ok`.
+- **The database password leaked into a public log.** The backup job took a connection
+  URL with the password inside; the password had a `%`, the URL didn't parse, and
+  `pg_dump`'s error quoted that part of it. GitHub hides a secret's exact value only, not
+  a piece of it. The log was deleted and the password changed the same hour. Now the
+  backup uses the deploy job's settings, the password as `PGPASSWORD` (libpq never prints
+  it, checked with a wrong password), verify-full with `POSTGRES_SSL_ROOT_CERT`; the
+  secrets `BACKUP_DATABASE_URL` and `BACKUP_DATABASE_CA` are gone, and a test refuses any
+  workflow line that puts a secret inside a URL.
+- Vercel's dashboard *Redeploy* of a CLI deployment drops `--env APP_VERSION`; redeploy
+  with CI's *Run workflow*.
+- Measured live from Pakistan: warm requests about 100 ms (function and edge both in
+  `bom1`); a full guest journey worked end to end and erased cleanly.
