@@ -213,6 +213,28 @@ def test_the_backup_passes_the_password_on_its_own_and_checks_the_certificate() 
     assert "DATABASE_URL" not in (REPO / ".github" / "workflows" / "backup.yml").read_text()
 
 
+def test_the_backup_holds_only_the_apps_tables() -> None:
+    # Supabase's own schemas and extensions can't be restored into a plain Postgres
+    # (found on the first backup, 2026-11-25).
+    dump = _workflow("backup.yml")["jobs"]["backup"]["steps"][0]["run"]
+
+    for flag in ("--schema=public", "--no-publications", "--no-subscriptions"):
+        assert flag in dump
+
+
+def test_the_restore_drill_runs_the_restore_from_the_deploy_guide() -> None:
+    # The nightly drill only proves something if it's the restore you'd really run.
+    steps = _workflow("backup.yml")["jobs"]["backup"]["steps"]
+    drill = next(step["run"] for step in steps if step["name"].startswith("Restore"))
+    guide = (REPO / "docs" / "deploy.md").read_text()
+    skip_public = 'grep -vE " (SCHEMA - public|COMMENT - SCHEMA public) "'
+    restore = '--use-list=/tmp/restore.list --dbname="$RESTORE_URL" /in/lockin.dump'
+
+    for part in (skip_public, restore, "--no-owner --no-privileges --exit-on-error"):
+        assert part in drill
+        assert part in guide
+
+
 def test_no_workflow_puts_a_secret_inside_a_url() -> None:
     # A password inside a URL breaks on characters like "%", and tools print URLs in
     # their errors, into logs that are public for this repository (2026-11-25).
