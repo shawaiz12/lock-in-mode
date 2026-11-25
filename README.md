@@ -15,8 +15,8 @@ pytest · Ruff · mypy (strict)
 **App:** React Native · Expo (SDK 58) · TypeScript · Expo Router · TanStack Query ·
 openapi-fetch (types generated from the API) · Jest
 
-**Hosting:** Northflank (API) · Neon (Postgres) · Upstash (Redis) · GitHub Actions (CI, deploys,
-nightly tested backups)
+**Hosting:** Vercel (API) · Supabase (Postgres) · Upstash (Redis), all in Mumbai · GitHub
+Actions (CI, deploys, hourly cleanup, nightly tested backups)
 
 ```
 lock-in-mode/
@@ -113,9 +113,10 @@ and how it's built: [mobile/README.md](mobile/README.md).
 
 ## Hosting
 
-The API runs on free tiers: Northflank, Neon and Upstash, deployed by GitHub Actions after
-the tests pass, with nightly encrypted and restore-tested database backups. Setup, checks
-and restores: [docs/deploy.md](docs/deploy.md) ([ADR 0028](docs/decisions/0028-hosting-the-api.md)).
+The API runs on free tiers: Vercel, Supabase and Upstash, all in Mumbai, deployed by GitHub
+Actions after the tests pass, with nightly encrypted and restore-tested database backups.
+Setup, checks and restores: [docs/deploy.md](docs/deploy.md)
+([ADR 0028](docs/decisions/0028-hosting-the-api.md), [ADR 0031](docs/decisions/0031-vercel-and-mumbai.md)).
 
 ## Architecture decisions
 

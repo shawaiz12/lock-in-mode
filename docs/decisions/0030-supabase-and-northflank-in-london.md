@@ -4,6 +4,8 @@
 **Status:** Accepted. Changes the *where* of ADR 0028 (Neon + Northflank in Singapore);
 its *how* (start script, health checks, deploy from CI, nightly tested backups, real
 caller IP) is unchanged.
+**Superseded in part by [ADR 0031](0031-vercel-and-mumbai.md):** the API moved to Vercel and
+everything to Mumbai. Supabase, its own CA and the Data API being off still stand.
 
 ## Context
 Setting up the accounts on 2026-11-25 found three things the free-tier research had not:
