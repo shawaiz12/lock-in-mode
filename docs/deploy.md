@@ -15,8 +15,8 @@ GitHub Actions, hourly:   account cleanup (port 5432)
 GitHub Actions, nightly:  pg_dump ─▶ test restore ─▶ encrypt ─▶ keep 30 days
 ```
 
-**Before part 3, the code with `backend/app.py` and `backend/vercel.json` must be on
-`main`**: Vercel builds `main` as soon as you import the repository.
+The Vercel project is **not connected to GitHub**: only the CI deploy job deploys, with
+Vercel's command-line tool and a token. Vercel never reads the repository on its own.
 
 ## 1. Supabase: the database
 1. supabase.com → **New project**:
@@ -53,13 +53,15 @@ GitHub Actions, nightly:  pg_dump ─▶ test restore ─▶ encrypt ─▶ keep
    TLS). That's `REDIS_URL`.
 
 ## 3. Vercel: the API
-1. vercel.com (Hobby) → **Add New → Project → Import** `shawaiz12/lock-in-mode`. If asked,
-   install Vercel's GitHub app for **only that repository**.
-2. Configure:
-   - Project name `lock-in-mode-api`.
-   - **Root Directory: `backend`** (Edit → pick the folder). Framework: FastAPI (found
-     by itself). Leave the build settings alone.
-3. **Environment Variables** (before the first deploy; all of them, for Production):
+1. vercel.com (Hobby) → **Add New → Project** → at the bottom, **Create an empty project**.
+   Don't import the repository (that would connect GitHub and deploy on every push).
+2. Project → Settings:
+   - General → **Project Name** `lock-in-mode-api`.
+   - Build and Deployment → **Framework Preset: FastAPI**, **Root Directory: `backend`**
+     (Save each). Leave the commands alone.
+   - Domains → **Edit** the `….vercel.app` domain to `lock-in-mode-api.vercel.app`.
+3. **Environment Variables**, for Production. The secrets as type **Secret**, the rest as
+   **Config** (pasting several `KEY=value` lines into the Key box adds them all):
    ```
    POSTGRES_USER=postgres.<project ref>          (part 1)
    POSTGRES_PASSWORD=...                         (part 1)       secret
@@ -77,13 +79,13 @@ GitHub Actions, nightly:  pg_dump ─▶ test restore ─▶ encrypt ─▶ keep
    `JWT_SECRET`: `python3 -c "import secrets; print(secrets.token_urlsafe(48))"`.
    If a field won't take several lines, paste the certificate on one line with `\n`
    between its lines (the API accepts both).
-4. **Deploy.** Vercel builds `main` once. Copy the production domain, e.g.
-   `https://lock-in-mode-api.vercel.app`: that's `API_URL` (no `/` at the end). Check:
+4. Nothing deploys yet: the first deploy is CI's (part 4), after the migrations.
+   `API_URL` is `https://lock-in-mode-api.vercel.app` (no `/` at the end). After it:
    ```bash
-   curl https://lock-in-mode-api.vercel.app/health/live   # {"status":"ok","version":"dev"}
+   curl https://lock-in-mode-api.vercel.app/health/live   # {"status":"ok","version":"<commit>"}
    curl https://lock-in-mode-api.vercel.app/health        # {"status":"ok","database":"ok"}
    ```
-   The tables don't exist yet: the first CI deploy (part 4) creates them.
+   If `/health` fails, the deployment's logs (Vercel → Deployments → the deployment → Logs) say why:
    - `certificate verify failed`: `POSTGRES_SSL_ROOT_CERT` isn't Supabase's, or is cut off.
    - `password authentication failed`: the user must be `postgres.<project ref>`.
    - `prepared statement ... does not exist`: `POSTGRES_TRANSACTION_POOLER=true` is missing.
@@ -92,8 +94,8 @@ GitHub Actions, nightly:  pg_dump ─▶ test restore ─▶ encrypt ─▶ keep
 
 ### The ids and token for CI
 - Project → Settings → General: **Project ID** (`prj_…`) → `VERCEL_PROJECT_ID`.
-- Account (avatar) → Settings → General: **Vercel ID** (your personal account's id) →
-  `VERCEL_ORG_ID`.
+- Team (top left) → Settings → General: **Team ID** (`team_…`; Hobby accounts are a
+  one-person team) → `VERCEL_ORG_ID`.
 - Account → Settings → **Tokens → Create**: name `github-deploy`, scope your account,
   an expiry date you'll remember. Copy it once → `VERCEL_TOKEN`.
 
@@ -103,7 +105,7 @@ Repository → Settings → Secrets and variables → **Actions**.
 | Kind | Name | Value |
 |---|---|---|
 | Secret | `VERCEL_TOKEN` | the token above |
-| Variable | `VERCEL_ORG_ID` | your Vercel ID |
+| Variable | `VERCEL_ORG_ID` | `team_…` |
 | Variable | `VERCEL_PROJECT_ID` | `prj_…` |
 | Variable | `API_URL` | e.g. `https://lock-in-mode-api.vercel.app` |
 | Variable | `POSTGRES_HOST` | `aws-0-ap-south-1.pooler.supabase.com` |

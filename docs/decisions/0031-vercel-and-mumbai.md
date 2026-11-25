@@ -40,11 +40,13 @@ job, the nightly tested backups and the real-caller-IP rule (ADR 0028) stay.
    pin each setting one by one.
 4. **Migrations, the seed, backups and the cleanup use the session pooler (port 5432)**:
    they need one whole session, and they run from GitHub Actions, not on Vercel.
-5. **Deploys only from CI.** `vercel.json` turns off Vercel's own deploy per push
-   (`git.deploymentEnabled: false`): a preview deployment would run unreviewed code
-   against the real database. The CI `deploy` job, after the tests: `alembic upgrade
-   head` + seed → `vercel deploy --prod --env APP_VERSION=<commit>` → waits until
-   `/health/live` reports that commit, then `/health`. Migrations stay backwards
+5. **Deploys only from CI.** The Vercel project is created empty and never connected to
+   GitHub (Vercel needs no access to the repository), and `vercel.json` also turns off
+   Vercel's own deploy per push (`git.deploymentEnabled: false`) in case it ever is: a
+   preview deployment would run unreviewed code against the real database. The CI
+   `deploy` job, after the tests: `alembic upgrade head` + seed → `vercel deploy --prod
+   --env APP_VERSION=<commit>` → waits until `/health/live` reports that commit, then
+   `/health`. Migrations stay backwards
    compatible (ADR 0028) because the old version serves while they run.
 6. **The hourly account cleanup (ADR 0024) moves to GitHub Actions**
    (`.github/workflows/cleanup.yml`, every hour at :41), running the same code once:
