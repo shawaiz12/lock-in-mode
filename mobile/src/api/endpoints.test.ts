@@ -1,15 +1,22 @@
 import { api } from './client';
 import {
+  deleteSet,
+  finishSession,
+  getOpenSessionOrNull,
   getOrCreatePlan,
   getProfileOrNull,
+  logSet,
   type Profile,
   profileWithChanges,
   saveDisplayName,
+  sayWhereItHurts,
+  startNextBlock,
+  startSession,
 } from './endpoints';
 import { ApiError } from './problem';
 
 jest.mock('./client', () => ({
-  api: { GET: jest.fn(), POST: jest.fn(), PUT: jest.fn(), PATCH: jest.fn() },
+  api: { GET: jest.fn(), POST: jest.fn(), PUT: jest.fn(), PATCH: jest.fn(), DELETE: jest.fn() },
   auth: {},
 }));
 
@@ -121,5 +128,68 @@ describe('profileWithChanges', () => {
       shoulder_day: 'legs',
       obstacles: ['get_bored'],
     });
+  });
+});
+
+describe('the workout player', () => {
+  const where = { sessionId: 's1', plannedExerciseId: 'pe1', setNumber: 2 };
+
+  it('no workout in progress is not an error (404 session_not_found)', async () => {
+    client.GET.mockResolvedValueOnce(problem(404, 'session_not_found') as never);
+
+    expect(await getOpenSessionOrNull()).toBeNull();
+  });
+
+  it('starting and continuing are the same call', async () => {
+    client.POST.mockResolvedValueOnce(ok({ id: 's1', sets: [] }) as never);
+
+    expect(await startSession('w1')).toEqual({ id: 's1', sets: [] });
+    expect(client.POST).toHaveBeenCalledWith('/api/v1/sessions', { body: { workout_id: 'w1' } });
+  });
+
+  it('ticks a set with a PUT to its own address', async () => {
+    client.PUT.mockResolvedValueOnce(ok({ set_number: 2 }) as never);
+
+    await logSet(where, { reps: 10, weight_kg: 20, seconds: null });
+
+    expect(client.PUT).toHaveBeenCalledWith('/api/v1/sessions/{session_id}/sets/{planned_exercise_id}/{set_number}', {
+      params: { path: { session_id: 's1', planned_exercise_id: 'pe1', set_number: 2 } },
+      body: { reps: 10, weight_kg: 20, seconds: null },
+    });
+  });
+
+  it('unticking succeeds on 204 (no body) and fails on an error', async () => {
+    client.DELETE.mockResolvedValueOnce({ data: undefined, response: new Response(null, { status: 204 }) } as never);
+    await expect(deleteSet(where)).resolves.toBeUndefined();
+
+    client.DELETE.mockResolvedValueOnce(problem(409, 'session_finished') as never);
+    await expect(deleteSet(where)).rejects.toMatchObject({ code: 'session_finished' });
+  });
+
+  it('a skipped "How did that feel?" is sent as null, never as "just right"', async () => {
+    client.POST.mockResolvedValueOnce(ok({ id: 's1' }) as never);
+
+    await finishSession('s1', null);
+
+    expect(client.POST).toHaveBeenCalledWith('/api/v1/sessions/{session_id}/finish', {
+      params: { path: { session_id: 's1' } },
+      body: { feedback: null },
+    });
+  });
+
+  it('"Where does it hurt?" passes on the limit to offer', async () => {
+    client.PATCH.mockResolvedValueOnce(ok({ suggest_limit: 'knees' }) as never);
+    expect(await sayWhereItHurts('x1', 'knees')).toBe('knees');
+
+    client.PATCH.mockResolvedValueOnce(ok({ suggest_limit: null }) as never);
+    expect(await sayWhereItHurts('x1', 'other')).toBeNull();
+  });
+
+  it('a double tap on "start the next block" reads the block the first tap made', async () => {
+    client.POST.mockResolvedValueOnce(problem(409, 'plan_in_progress') as never);
+    client.GET.mockResolvedValueOnce(ok({ id: 'p2' }) as never);
+
+    expect(await startNextBlock(true)).toEqual({ id: 'p2' });
+    expect(client.POST).toHaveBeenCalledWith('/api/v1/plans', { body: { level_up: true } });
   });
 });
