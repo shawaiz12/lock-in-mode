@@ -95,6 +95,18 @@ job, the nightly tested backups and the real-caller-IP rule (ADR 0028) stay.
   it, checked with a wrong password), verify-full with `POSTGRES_SSL_ROOT_CERT`; the
   secrets `BACKUP_DATABASE_URL` and `BACKUP_DATABASE_CA` are gone, and a test refuses any
   workflow line that puts a secret inside a URL.
+- **The first backup dumped fine but couldn't be restored.** `pg_dump` copied the whole
+  Supabase database: Supabase's own schemas (auth, storage, vault…), its extensions,
+  event triggers and the realtime publication live next to ours, and the throwaway
+  Postgres stopped at `extension "supabase_vault" is not available`. The app uses no
+  extensions and keeps every table in `public`, so the backup now dumps only `public`
+  (`--schema=public --no-publications --no-subscriptions`). Dumping one schema makes
+  the restore try `CREATE SCHEMA public`, which every database already has, so the
+  restore drops that line (and the schema's comment) from the dump's list first. Tested
+  on a fake Supabase-like database before changing the workflow: only `public` came back,
+  sequences and foreign keys worked. The restore drill in CI and the manual restore in
+  `docs/deploy.md` are the same commands (a test keeps them in step). If the app ever
+  needs an extension, the backup must add it (`--extension`).
 - Vercel's dashboard *Redeploy* of a CLI deployment drops `--env APP_VERSION`; redeploy
   with CI's *Run workflow*.
 - Measured live from Pakistan: warm requests about 100 ms (function and edge both in

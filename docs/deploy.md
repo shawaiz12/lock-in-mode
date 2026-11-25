@@ -177,10 +177,17 @@ Expected: 20 non-429 codes, then **429**. Never 429: tell Claude.
 3. Restore into a **new, empty** Postgres (a second Supabase project, or local Docker),
    never straight over the live one:
    ```bash
-   docker run --rm -v "$PWD:/in" postgres:17-alpine \
-     pg_restore --no-owner --no-privileges --exit-on-error \
-     --dbname="<that database's connection string>" /in/lockin.dump
+   docker run --rm -v "$PWD:/in" -e RESTORE_URL="<that database's connection string>" \
+     postgres:17-alpine sh -c '
+       set -e
+       pg_restore --list /in/lockin.dump \
+         | grep -vE " (SCHEMA - public|COMMENT - SCHEMA public) " > /tmp/restore.list
+       pg_restore --no-owner --no-privileges --exit-on-error \
+         --use-list=/tmp/restore.list --dbname="$RESTORE_URL" /in/lockin.dump'
    ```
+   The backup holds only the app's tables (the `public` schema), not Supabase's own
+   parts. Every database already has a `public` schema, so the list skips creating it.
+   These are the same commands the nightly backup runs to test each copy.
 4. Check it, then point the API's `POSTGRES_*` (Vercel and GitHub) at it.
 5. **Accounts erased after the backup was taken come back** (ADR 0028, known gap): erase
    them again before opening the API to users.
