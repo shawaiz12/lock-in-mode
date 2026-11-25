@@ -65,6 +65,14 @@ was set up):
 npx expo install --check
 ```
 
+## Offline (ADR 0033)
+Once the app has been online, it opens without a connection, and the next workout (kept
+downloaded by the plan screen) can be started, trained and finished offline. Everything
+done in a workout goes into the journal on the phone first and is sent from there,
+online a moment later, offline once the phone is back, with the time each thing happened.
+To try it: open the plan online once, switch on airplane mode, close and reopen the app,
+do the workout, then switch airplane mode off: the plan shows what changed.
+
 ## When the API changes
 The app's API types (`src/api/schema.d.ts`) are generated from the API's OpenAPI schema, so a
 renamed field is a compile error here instead of a crash on a phone. After a backend change
@@ -92,6 +100,11 @@ Commit it with the backend change. CI fails if they don't match.
 | `src/features/player/clock.ts` | Timers that store when they end | A `DateTime` deadline instead of `timer -= Time.deltaTime` |
 | `useRef` | A value that survives redraws but doesn't trigger one | A private field that isn't serialized |
 | `useKeepAwake`, `useAudioPlayer` | Keep the screen on; play a sound | `Screen.sleepTimeout = NeverSleep`; an `AudioSource` |
+| The journal (`src/state/journal.tsx`) | The workout in progress, written on the phone first, sent after | An outbox table drained by a `BackgroundService` |
+| `expo-sqlite/kv-store` | Small key-value storage on the phone (sync or async) | `PlayerPrefs` / a JSON file in `Application.persistentDataPath` |
+| `PersistQueryClientProvider` | Saves the query cache on the phone, reads it back at launch | An offline cache of `HttpClient` responses on disk |
+| `onlineManager` + `expo-network` | One app-wide "online?" flag that queries obey | `NetworkChange.NetworkAvailabilityChanged` |
+| `useSyncExternalStore` | Redraw when something outside React changes | Subscribing to a C# `event` in `OnEnable` |
 
 ```
 src/
@@ -106,11 +119,16 @@ src/
 │       └── play.tsx     the player → "How did that feel?" → what changed
 ├── api/                 client, auth, tokens, errors, every call (endpoints.ts)
 ├── features/            pure + tested: onboarding flow, plan labels, safety answers,
-│   └── player/          steps (screens and sets), entry (pre-fill), clock, words, result
+│   ├── player/          steps (screens and sets), entry (pre-fill), clock, words, result
+│   └── offline/         journal (the workout on the phone) and sync (sending it)
 ├── state/
 │   ├── startup.ts       "where should this person be?" → drives the navigator
-│   └── player.ts        the player's state and actions (usePlayer)
-├── test/fixtures.ts     small workouts for tests
+│   ├── player.ts        the player's state and actions (usePlayer)
+│   ├── journal.tsx      the journal store: saved at once, sent with retries
+│   ├── online.ts        online or not (expo-network → TanStack's onlineManager)
+│   ├── persist.ts       what's kept on the phone between launches, for 14 days
+│   └── ready.ts         keeps the next workout downloaded
+├── test/                fixtures, fakes of expo-sqlite's store and expo-network
 └── ui/
     ├── kit.tsx          Screen, Title, Choice, LockInButton, Sheet, Stepper…
     ├── player.tsx       the player's screens (draws what usePlayer returns)
@@ -119,7 +137,7 @@ assets/sounds/           tick.wav (3-2-1) and done.wav (made for this app)
 ```
 
 **One rule drives navigation:** `src/state/startup.ts` works out a stage (loading, error,
-onboarding, safety, plan) from the sign-in and the profile. `_layout.tsx` opens only that
+offline, onboarding, safety, plan) from the sign-in and the profile. `_layout.tsx` opens only that
 stage's screens (`Stack.Protected`). Saving onboarding updates the cached profile, the stage
 becomes "safety", and Expo Router moves the person there. No screen navigates by hand
 after a save.
