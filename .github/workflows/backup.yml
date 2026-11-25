@@ -71,18 +71,29 @@ jobs:
           printf '%s\n' "$DATABASE_CA" > db-ca.pem
           # --format=custom: compressed, and pg_restore can pick parts of it later.
           # No owners or grants: the dump restores into any database, as any user.
+          # --schema=public: only the app's tables. Supabase keeps its own parts (auth,
+          # storage, vault, its extensions, event triggers, the realtime publication) in
+          # the same database, and a plain Postgres can't restore them (found 2026-11-25:
+          # 'extension "supabase_vault" is not available').
           docker run --rm --network host -v "$PWD:/out" \
             -e PGHOST -e PGPORT -e PGUSER -e PGDATABASE -e PGPASSWORD \
             -e PGSSLMODE=verify-full -e PGSSLROOTCERT=/out/db-ca.pem "$PG_IMAGE" \
-            pg_dump --format=custom --no-owner --no-privileges --file=/out/lockin.dump
+            pg_dump --format=custom --no-owner --no-privileges \
+              --schema=public --no-publications --no-subscriptions --file=/out/lockin.dump
           rm -f db-ca.pem
           ls -l lockin.dump
 
       - name: Restore it into a throwaway database and check it
+        # Exactly the restore in docs/deploy.md ("Restoring a backup"), so this nightly
+        # drill tests the commands you'd use on a bad day. Every database already has a
+        # "public" schema, so the restore skips creating it (and its comment).
         run: |
-          docker run --rm --network host -v "$PWD:/in" -e RESTORE_URL "$PG_IMAGE" \
-            sh -c 'pg_restore --no-owner --no-privileges --exit-on-error \
-                   --dbname="$RESTORE_URL" /in/lockin.dump'
+          docker run --rm --network host -v "$PWD:/in" -e RESTORE_URL "$PG_IMAGE" sh -c '
+            set -e
+            pg_restore --list /in/lockin.dump \
+              | grep -vE " (SCHEMA - public|COMMENT - SCHEMA public) " > /tmp/restore.list
+            pg_restore --no-owner --no-privileges --exit-on-error \
+              --use-list=/tmp/restore.list --dbname="$RESTORE_URL" /in/lockin.dump'
           check() {
             docker run --rm --network host -e RESTORE_URL "$PG_IMAGE" \
               psql "$RESTORE_URL" --tuples-only --no-align --command "$1"
