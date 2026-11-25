@@ -45,6 +45,10 @@ const api = jest.mocked(endpoints);
 const AT = expect.any(String);
 notifyManager.setScheduler((callback) => callback());
 
+// A whole-app test does a lot: on a fresh checkout (CI) the first one also compiles every
+// screen. Jest's default of 5 s per test is too tight on a busy machine.
+jest.setTimeout(30_000);
+
 // What the phone saved (the cache, the journal) starts empty, and the phone online.
 beforeEach(() => {
   resetStorage();

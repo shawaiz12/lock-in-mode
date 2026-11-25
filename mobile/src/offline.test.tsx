@@ -49,6 +49,10 @@ jest.mock('expo-keep-awake', () => ({ useKeepAwake: jest.fn() }));
 const api = jest.mocked(endpoints);
 notifyManager.setScheduler((callback) => callback());
 
+// A whole-app test does a lot: on a fresh checkout (CI) the first one also compiles every
+// screen. Jest's default of 5 s per test is too tight on a busy machine.
+jest.setTimeout(30_000);
+
 const DAY = 24 * 60 * 60 * 1000;
 
 const PROFILE = {
