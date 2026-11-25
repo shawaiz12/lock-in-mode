@@ -3,8 +3,10 @@
  * choice, ADR 0032), so nobody has to watch the screen between sets. Short beeps at
  * 3, 2, 1 seconds say "get ready".
  *
- * - The beep plays alongside their music ("mixWithOthers": the music keeps going) and
- *   respects the iPhone's silent switch: on silent, only the buzz.
+ * - The beep plays even with the ringer on silent (his choice after trying it, ADR 0032:
+ *   at the gym the phone is often on silent, and the beep is the point), and alongside
+ *   their music ("mixWithOthers": the music keeps going). The phone's volume buttons
+ *   still set how loud it is.
  * - The buzz is the phone's vibration motor (React Native's Vibration), stronger than a
  *   haptic tap, so it's felt with the phone on the floor or in a pocket.
  * - A tick of a set gets a light haptic tap: the button really did something.
@@ -20,6 +22,9 @@ import { Vibration } from 'react-native';
 
 const TICK = require('../../assets/sounds/tick.wav');
 const DONE = require('../../assets/sounds/done.wav');
+
+/** Beep on silent too; never stop their music. */
+export const AUDIO_MODE = { playsInSilentMode: true, interruptionMode: 'mixWithOthers' } as const;
 
 const quietly = (work: () => unknown) => {
   try {
@@ -44,7 +49,7 @@ export function useAlerts(): Alerts {
   const done = useAudioPlayer(DONE);
 
   useEffect(() => {
-    quietly(() => setAudioModeAsync({ playsInSilentMode: false, interruptionMode: 'mixWithOthers' }));
+    quietly(() => setAudioModeAsync(AUDIO_MODE));
   }, []);
 
   const play = (player: typeof tick) =>
