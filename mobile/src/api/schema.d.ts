@@ -623,7 +623,11 @@ export interface paths {
         };
         /**
          * Health
-         * @description Is the API up AND can it reach the database? For people and deploy checks.
+         * @description Is the API up, can it reach the database, and is Redis there? For deploy checks.
+         *
+         *     No database is an error (503): nothing works without it. No Redis still answers 200
+         *     with "redis": "unavailable": the app works, but sign-in rate limiting is off (ADR 0008).
+         *     The deploy job treats that as a failed deploy (ADR 0031).
          */
         get: operations["health_health_get"];
         put?: never;
