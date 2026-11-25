@@ -26,12 +26,14 @@ You need Node.js 22 (LTS) and the **Expo Go** app on the phone.
 3. **Open it:** scan the QR code in the terminal. Android: with Expo Go. iPhone: with the
    Camera app, which hands it to Expo Go. Phone and computer on the same Wi-Fi.
    - Office or public Wi-Fi often blocks phone↔computer traffic. Then use
-     `npx expo start --tunnel` (it may offer to install `@expo/ngrok` once: say yes).
+     `npx expo start --tunnel`. The tunnel goes through Expo's relay, which needs you
+     logged in once on the computer: `npx expo login` (the same free account as Expo Go),
+     check with `npx expo whoami`.
 
 ### Which API?
 `EXPO_PUBLIC_API_URL` in `mobile/.env`:
-- **The hosted API** (after [docs/deploy.md](../docs/deploy.md)):
-  `https://p01--api--….code.run`. Works anywhere, phone data included. Easiest.
+- **The hosted API** ([docs/deploy.md](../docs/deploy.md)):
+  `https://lock-in-mode-api.vercel.app`. Works anywhere, phone data included. Easiest.
 - **Your computer's API** (`docker compose up -d`): `http://<computer's LAN IP>:8000`
   (Linux: `hostname -I`, Windows: `ipconfig`). Never `localhost`: on the phone, that's the
   phone itself.
@@ -86,6 +88,10 @@ Commit it with the backend change. CI fails if they don't match.
 | `src/api/tokens.ts` | Keychain/Keystore storage for the sign-in | DPAPI / `ProtectedData` |
 | `src/features/` | Plain TypeScript rules (onboarding steps, labels) | Domain/service classes, unit-tested |
 | `src/ui/kit.tsx` | The few shared building blocks | A UI prefab library |
+| `src/state/player.ts` (`usePlayer`) | The workout player's state: next set, timers, sending ticks | A MonoBehaviour that owns the game state |
+| `src/features/player/clock.ts` | Timers that store when they end | A `DateTime` deadline instead of `timer -= Time.deltaTime` |
+| `useRef` | A value that survives redraws but doesn't trigger one | A private field that isn't serialized |
+| `useKeepAwake`, `useAudioPlayer` | Keep the screen on; play a sound | `Screen.sleepTimeout = NeverSleep`; an `AudioSource` |
 
 ```
 src/
@@ -95,11 +101,21 @@ src/
 │   ├── onboarding.tsx   the quiz, one question per screen
 │   ├── safety.tsx       four yes/no questions
 │   ├── plan.tsx         reveal, the week, choices, Lock In button
-│   └── workout/[id].tsx a workout's exercises (preview)
+│   └── workout/[id]/
+│       ├── index.tsx    a workout's exercises, Start / Continue / Skip
+│       └── play.tsx     the player → "How did that feel?" → what changed
 ├── api/                 client, auth, tokens, errors, every call (endpoints.ts)
-├── features/            onboarding flow, plan labels, safety answers (pure + tested)
-├── state/startup.ts     "where should this person be?" → drives the navigator
-└── ui/kit.tsx           Screen, Title, Choice, LockInButton…
+├── features/            pure + tested: onboarding flow, plan labels, safety answers,
+│   └── player/          steps (screens and sets), entry (pre-fill), clock, words, result
+├── state/
+│   ├── startup.ts       "where should this person be?" → drives the navigator
+│   └── player.ts        the player's state and actions (usePlayer)
+├── test/fixtures.ts     small workouts for tests
+└── ui/
+    ├── kit.tsx          Screen, Title, Choice, LockInButton, Sheet, Stepper…
+    ├── player.tsx       the player's screens (draws what usePlayer returns)
+    └── alerts.ts        beep + buzz at the end of a rest or a timed move
+assets/sounds/           tick.wav (3-2-1) and done.wav (made for this app)
 ```
 
 **One rule drives navigation:** `src/state/startup.ts` works out a stage (loading, error,
