@@ -56,8 +56,11 @@ Ticking a set starts its rest (+15 s and Skip rest). The end of a rest or a time
 beeps and buzzes; short beeps at 3, 2, 1 seconds. Timed moves start with one tap; in the
 warm-up, cool-down, HIIT and finishers one tap runs the whole station (pause, skip a move,
 stop early). The screen stays on while the player is open.
-- The beep mixes with the person's music (doesn't stop it) and respects the iPhone's
-  silent switch; the vibration still comes. A light haptic tap confirms each tick.
+- The beep plays **even with the ringer on silent** (his call after trying it on the
+  iPhone: at the gym the phone is usually on silent, and the beep is the point), mixes
+  with the person's music without stopping it, and the volume buttons set how loud it
+  is. A light haptic tap confirms each tick. (First version respected the silent switch:
+  tried on the phone, the beep was missing exactly when it mattered.)
 - Timers store when they end, not seconds left, so a late frame or a locked phone never
   makes them drift; they catch up the moment the app is back.
 - ❌ "Manual rest": one more tap per set.
