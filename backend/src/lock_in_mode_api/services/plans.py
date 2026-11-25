@@ -153,10 +153,14 @@ class Queue:
     started: frozenset[uuid.UUID]
 
 
-async def queue_of(session: AsyncSession, plan: Plan) -> Queue:
+async def queue_of(session: AsyncSession, plan: Plan, *, now: datetime | None = None) -> Queue:
     """Work out the queue. Reads only; call after loading the plan, before loading any
-    workout (reloading the plan would drop a workout's exercises)."""
-    comeback = await comeback_service.find(session, plan.user_id)
+    workout (reloading the plan would drop a workout's exercises).
+
+    `now`: the moment to work it out for. A workout started offline and synced later
+    (ADR 0033) asks as of when it was started, so a break is judged by when they trained.
+    """
+    comeback = await comeback_service.find(session, plan.user_id, now=now)
     rows = await session.execute(
         select(WorkoutSession, Comeback.weeks)
         .outerjoin(Comeback, Comeback.id == WorkoutSession.comeback_id)

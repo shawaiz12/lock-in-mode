@@ -2,6 +2,7 @@
 
 The player calls these while the user trains. Every set is one small request, so a
 dropped connection loses one tick at most, and ticking the same set again is safe.
+A workout done offline is sent the same way later, with the phone's times (ADR 0033).
 """
 
 import uuid
@@ -43,10 +44,13 @@ async def start_session(
     """ "Lock In: start workout". 201 when started, 200 when continuing the open one.
 
     Only the next workout can be started. A different workout left open is finished
-    first with what was logged (half counts), so the queue moves on.
+    first with what was logged (half counts), so the queue moves on. `started_at`: when
+    the phone started it, for a workout done offline.
     """
     try:
-        started, created = await session_service.start_session(session, user.id, body.workout_id)
+        started, created = await session_service.start_session(
+            session, user.id, body.workout_id, body.started_at
+        )
     except plan_service.WorkoutNotFoundError as exc:
         raise NotFound("No workout with this id") from exc
     except plan_service.NotNextWorkoutError as exc:
@@ -123,7 +127,9 @@ async def finish_session(
     ("3 push-ups → knee push-ups") and the rest of the block already uses it.
     """
     try:
-        return await session_service.finish_session(session, user.id, session_id, body.feedback)
+        return await session_service.finish_session(
+            session, user.id, session_id, body.feedback, body.finished_at
+        )
     except session_service.SessionNotFoundError as exc:
         raise SessionNotFound("No session with this id") from exc
     except session_service.SessionFinishedError as exc:

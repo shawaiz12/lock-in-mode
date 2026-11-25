@@ -1,10 +1,15 @@
-"""Doing a workout: start, tick sets, finish (ADR 0018)."""
+"""Doing a workout: start, tick sets, finish (ADR 0018).
+
+A workout done offline (ADR 0033) reaches the API later: each call can say when it really
+happened on the phone (`started_at`, `logged_at`, `finished_at`). The server checks
+those times and keeps them in order; leave them out and the server's time is used.
+"""
 
 import uuid
 from datetime import datetime
 from typing import Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
 from lock_in_mode_api.models.enums import Feedback, MovementSlot, ProgressChange
 from lock_in_mode_api.schemas.exercise import ExerciseRef
@@ -15,6 +20,11 @@ class SessionStart(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     workout_id: uuid.UUID = Field(description="The next workout (plans/current/next).")
+    started_at: AwareDatetime | None = Field(
+        default=None,
+        description="When the phone started it, for a workout started offline (ADR 0033). "
+        "Kept between the user's last workout and now. Ignored when continuing.",
+    )
 
 
 class SetLogWrite(BaseModel):
@@ -25,6 +35,11 @@ class SetLogWrite(BaseModel):
     reps: int | None = Field(default=None, ge=0, le=1000)
     weight_kg: float | None = Field(default=None, ge=0, le=1000, description="Weighted moves.")
     seconds: int | None = Field(default=None, ge=0, le=10800, description="Timed moves.")
+    logged_at: AwareDatetime | None = Field(
+        default=None,
+        description="When the phone ticked it (ADR 0033). Kept between the workout's start "
+        "and now.",
+    )
 
     @model_validator(mode="after")
     def _reps_or_seconds(self) -> Self:
@@ -59,6 +74,11 @@ class SessionFinish(BaseModel):
 
     feedback: Feedback | None = Field(
         default=None, description="Too easy / just right / too hard. Leave out to skip."
+    )
+    finished_at: AwareDatetime | None = Field(
+        default=None,
+        description="When the phone finished it (ADR 0033). Kept between the last ticked "
+        "set and now.",
     )
 
 

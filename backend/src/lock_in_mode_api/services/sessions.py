@@ -2,16 +2,23 @@
 on finishing, progression (ADR 0019). Starting the first workout after a break saves the
 comeback and links the session to it (ADR 0021).
 
+A workout done offline arrives later with the phone's times (ADR 0033). Each one is kept
+in order by the database (`_kept_between`): never before what came before it, never after
+the database's now. A phone clock that is wrong can't put a workout in the future or
+before the last one.
+
 Functions that change data own the transaction and commit, except `finish_open_session`,
 which joins the caller's (the profile service's: answers changed, plan about to be
 replaced).
 """
 
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Any
 
-from sqlalchemy import delete, select
+from sqlalchemy import ColumnElement, DateTime, ScalarSelect, delete, func, literal, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +28,7 @@ from lock_in_mode_api.models import (
     Exercise,
     MovementRung,
     Plan,
+    PlannedWorkout,
     PlannedWorkoutExercise,
     SetLog,
     WorkoutSession,
@@ -53,6 +61,47 @@ class SessionFinishedError(Exception):
 
 class PlannedExerciseNotFoundError(Exception):
     """That exercise isn't part of this session's workout. Callers answer 404."""
+
+
+# --- the phone's times (ADR 0033) ------------------------------------------------------
+
+
+type Floor = ColumnElement[Any] | ScalarSelect[Any] | datetime
+
+
+async def _kept_between(session: AsyncSession, at: datetime, floors: Sequence[Floor]) -> datetime:
+    """`at`, moved up to the latest floor and down to the database's now.
+
+    Worked out by the database: its `now()` is the one server clock these times are ever
+    compared with. A floor that is NULL (no earlier workout yet) is left out by GREATEST.
+    """
+    stamp = DateTime(timezone=True)
+    lowest = [literal(f, stamp) if isinstance(f, datetime) else f for f in floors]
+    kept: datetime | None = await session.scalar(
+        select(func.least(func.greatest(literal(at, stamp), *lowest), func.now()))
+    )
+    assert kept is not None
+    return kept
+
+
+async def _start_time(
+    session: AsyncSession, user_id: uuid.UUID, workout_id: uuid.UUID, at: datetime
+) -> datetime:
+    """When an offline start really happened: not before the plan existed or the last
+    finished workout (which is never before its own sets), so workouts stay in the order
+    they were done."""
+    plan_made = (
+        select(Plan.created_at)
+        .join(PlannedWorkout, PlannedWorkout.plan_id == Plan.id)
+        .where(PlannedWorkout.id == workout_id)
+        .scalar_subquery()
+    )
+    last_finish = (
+        select(func.max(WorkoutSession.finished_at))
+        .where(WorkoutSession.user_id == user_id)
+        .scalar_subquery()
+    )
+    return await _kept_between(session, at, [plan_made, last_finish])
 
 
 # --- reading --------------------------------------------------------------------------
@@ -162,15 +211,29 @@ class _Closed:
 
 
 async def _close(
-    session: AsyncSession, workout_session: WorkoutSession, feedback: Feedback | None
+    session: AsyncSession,
+    workout_session: WorkoutSession,
+    feedback: Feedback | None,
+    finished_at: datetime | None = None,
 ) -> _Closed:
     """Finish with whatever was logged: half a workout still counts (ADR 0018).
 
     Then, in order: progression and the test placement (both may move rungs), one
     rebuild of the rest of the block if they did, and the early recovery week, which
     must come after the rebuild because it changes which workouts are pending.
+
+    `finished_at`: the phone's time for a workout finished offline (ADR 0033), kept
+    after its start and its last ticked set.
     """
-    now = datetime.now(UTC)
+    if finished_at is None:
+        now = datetime.now(UTC)
+    else:
+        last_set = (
+            select(func.max(SetLog.logged_at))
+            .where(SetLog.session_id == workout_session.id)
+            .scalar_subquery()
+        )
+        now = await _kept_between(session, finished_at, [workout_session.started_at, last_set])
     workout_session.finished_at = now
     workout_session.feedback = feedback
     workout = await plan_service.load_workout(
@@ -204,12 +267,16 @@ async def finish_open_session(session: AsyncSession, user_id: uuid.UUID) -> None
 
 
 async def finish_session(
-    session: AsyncSession, user_id: uuid.UUID, session_id: uuid.UUID, feedback: Feedback | None
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    session_id: uuid.UUID,
+    feedback: Feedback | None,
+    finished_at: datetime | None = None,
 ) -> SessionResult:
     workout_session = await _load(session, user_id, session_id)
     if workout_session.finished_at is not None:
         raise SessionFinishedError
-    closed = await _close(session, workout_session, feedback)
+    closed = await _close(session, workout_session, feedback, finished_at)
     await session.flush()
     block_complete = await plan_service.note_block_complete(session, user_id)
     # Guests at their 3rd or 10th workout or first finished block (ADR 0026).
@@ -232,12 +299,18 @@ async def finish_session(
 
 
 async def start_session(
-    session: AsyncSession, user_id: uuid.UUID, workout_id: uuid.UUID
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    workout_id: uuid.UUID,
+    started_at: datetime | None = None,
 ) -> tuple[SessionRead, bool]:
     """Start the next workout, or continue it. Returns (session, created).
 
     If another workout is still open, it's finished first with what was logged, so the
     queue moves on and this one can become the next.
+
+    `started_at`: the phone's time for a workout started offline (ADR 0033). The queue
+    and a break are then judged as of that moment. Continuing keeps the first start.
     """
     await plan_service.load_workout(session, user_id, workout_id)  # 404 if not theirs
     open_session = await _open_session(session, user_id)
@@ -250,13 +323,16 @@ async def start_session(
         await _close(session, open_session, None)
         await session.flush()
 
+    at = None if started_at is None else await _start_time(session, user_id, workout_id, started_at)
     plan = await plan_service.current_plan(session, user_id)
-    queue = None if plan is None else await plan_service.queue_of(session, plan)
+    queue = None if plan is None else await plan_service.queue_of(session, plan, now=at)
     if plan is None or queue is None or queue.upcoming is None or queue.upcoming.id != workout_id:
         await session.rollback()  # don't keep the half-done finish above
         raise plan_service.NotNextWorkoutError
 
     new_session = WorkoutSession(user_id=user_id, planned_workout_id=workout_id)
+    if at is not None:
+        new_session.started_at = at
     try:
         await _join_comeback(session, plan, queue, new_session)
         session.add(new_session)
@@ -337,10 +413,18 @@ async def log_set(
     set_number: int,
     values: SetLogWrite,
 ) -> SetLogRead:
-    """Tick a set. Ticking it again replaces it: an upsert on (session, exercise, set)."""
+    """Tick a set. Ticking it again replaces it: an upsert on (session, exercise, set).
+
+    `logged_at` (ADR 0033): the phone's time, kept between the workout's start and now.
+    Without it, the server's time.
+    """
     workout_session = await _load(session, user_id, session_id)
     await _check_exercise(session, workout_session, planned_exercise_id)
-    fields = values.model_dump()
+    fields = values.model_dump(exclude={"logged_at"})
+    phone = values.logged_at
+    when = (
+        None if phone is None else await _kept_between(session, phone, [workout_session.started_at])
+    )
     await session.execute(
         insert(SetLog)
         .values(
@@ -348,10 +432,11 @@ async def log_set(
             planned_exercise_id=planned_exercise_id,
             set_number=set_number,
             **fields,
+            **({} if when is None else {"logged_at": when}),
         )
         .on_conflict_do_update(
             constraint="uq_set_logs_session_exercise_set",
-            set_={**fields, "logged_at": datetime.now(UTC)},
+            set_={**fields, "logged_at": datetime.now(UTC) if when is None else when},
         )
     )
     await session.commit()
