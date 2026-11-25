@@ -4,11 +4,13 @@
  * -> what changed -> back to the plan. Plus continuing, editing, HIIT running by itself,
  * swaps, a failed save, and the next block.
  */
-import { notifyManager } from '@tanstack/react-query';
+import { notifyManager, onlineManager } from '@tanstack/react-query';
 import { act, fireEvent, renderRouter, screen } from 'expo-router/testing-library';
 
 import type { Plan, Profile, Session, SessionResult, WorkoutDetail } from '@/api/endpoints';
 import * as endpoints from '@/api/endpoints';
+import { resetStorage } from '@/test/kv-store';
+import { setConnected } from '@/test/network';
 import { detail, row, timed, workout } from '@/test/fixtures';
 
 jest.mock('@/api/client', () => ({
@@ -39,7 +41,16 @@ jest.mock('@/ui/alerts', () => ({ useAlerts: () => mockAlerts }));
 jest.mock('expo-keep-awake', () => ({ useKeepAwake: jest.fn() }));
 
 const api = jest.mocked(endpoints);
+/** Any phone time (ISO): the journal sends when each thing happened (ADR 0033). */
+const AT = expect.any(String);
 notifyManager.setScheduler((callback) => callback());
+
+// What the phone saved (the cache, the journal) starts empty, and the phone online.
+beforeEach(() => {
+  resetStorage();
+  setConnected(true);
+  onlineManager.setOnline(true);
+});
 
 const PROFILE = {
   goal: 'build_muscle',
@@ -169,14 +180,14 @@ it('does a whole workout: timer, sets, rest, feedback, what changed, back to the
   // Warm-up: one Start runs the timer; at zero it beeps, buzzes and logs by itself.
   expect(await find('Lock In: start warm-up')).toBeOnTheScreen();
   expect(router.getPathname()).toBe('/workout/w1/play');
-  expect(api.startSession).toHaveBeenCalledWith('w1');
+  expect(api.startSession).toHaveBeenCalledWith('w1', AT);
   await tap('Lock In: start warm-up');
   expect(await find('0:05')).toBeOnTheScreen();
   await wait(5_100);
   expect(mockAlerts.done).toHaveBeenCalledTimes(1);
   expect(api.logSet).toHaveBeenCalledWith(
     { sessionId: 's1', plannedExerciseId: 'wu', setNumber: 1 },
-    { reps: null, weight_kg: null, seconds: 5 },
+    { reps: null, weight_kg: null, seconds: 5, logged_at: AT },
   );
 
   // Main: pre-filled at the bottom of the range with the suggested weight; one tap.
@@ -184,7 +195,7 @@ it('does a whole workout: timer, sets, rest, feedback, what changed, back to the
   await tap('✓ 8 reps · 40 kg');
   expect(api.logSet).toHaveBeenLastCalledWith(
     { sessionId: 's1', plannedExerciseId: 'a', setNumber: 1 },
-    { reps: 8, weight_kg: 40, seconds: null },
+    { reps: 8, weight_kg: 40, seconds: null, logged_at: AT },
   );
 
   // Rest: counts down, then beeps and shows the next set.
@@ -199,7 +210,7 @@ it('does a whole workout: timer, sets, rest, feedback, what changed, back to the
   expect(await find('Workout done')).toBeOnTheScreen();
   await tap('Just right');
   expect(await find('Locked in.')).toBeOnTheScreen();
-  expect(api.finishSession).toHaveBeenCalledWith('s1', 'just_right');
+  expect(api.finishSession).toHaveBeenCalledWith('s1', 'just_right', AT);
   expect(screen.getByText('Stepping up')).toBeOnTheScreen();
   expect(screen.getByText('Dumbbell bench press: 42.5 kg next time')).toBeOnTheScreen();
 
@@ -233,7 +244,7 @@ it('changes a set before ticking it: − / + by a real weight step', async () =>
   await tap('Save');
 
   await tap(await find('✓ 10 reps · 42.5 kg'));
-  expect(api.logSet).toHaveBeenCalledWith(expect.anything(), { reps: 10, weight_kg: 42.5, seconds: null });
+  expect(api.logSet).toHaveBeenCalledWith(expect.anything(), { reps: 10, weight_kg: 42.5, seconds: null, logged_at: AT });
 });
 
 it('runs HIIT by itself after one Start: work, rest, next move, every round', async () => {
@@ -267,7 +278,7 @@ it('the strength test asks how many, then saves it', async () => {
   await tap('Save');
   await tap(await find('✓ Save 14 reps'));
 
-  expect(api.logSet).toHaveBeenCalledWith(expect.anything(), { reps: 14, weight_kg: null, seconds: null });
+  expect(api.logSet).toHaveBeenCalledWith(expect.anything(), { reps: 14, weight_kg: null, seconds: null, logged_at: AT });
 });
 
 it('"This hurts": swaps it, asks where, and offers a limit after the workout', async () => {
@@ -298,41 +309,38 @@ it('"This hurts": swaps it, asks where, and offers a limit after the workout', a
   await tap(await find(/^✓ /));
   await tap(await find('Skip'));
   expect(await find('Go easy on your shoulders in every workout?')).toBeOnTheScreen();
-  expect(api.finishSession).toHaveBeenCalledWith('s1', null);
+  expect(api.finishSession).toHaveBeenCalledWith('s1', null, AT);
   await tap('Yes');
   await wait(100);
   expect(api.saveProfile).toHaveBeenCalledWith(expect.objectContaining({ limits: ['shoulders'] }));
 });
 
-it('a set that did not save says so and can be sent again', async () => {
+it('a set that could not be sent waits on the phone, and goes when asked', async () => {
   setUp(workout({ main: [row('a', 'Push-up', { sets: 2, rest_seconds: 0 })] }));
   api.logSet.mockRejectedValueOnce(new TypeError('Network request failed'));
   await openPlayer();
 
   await tap(await find('✓ 8 reps'));
-  expect(await find('1 set isn’t saved yet.')).toBeOnTheScreen();
-  await tap('Retry');
+  expect(await find('1 set is saved on this phone. It syncs when you’re online.')).toBeOnTheScreen();
+  await tap('Try now');
   await wait(100);
 
-  expect(screen.queryByText('1 set isn’t saved yet.')).toBeNull();
+  expect(screen.queryByText('1 set is saved on this phone. It syncs when you’re online.')).toBeNull();
   expect(api.logSet).toHaveBeenCalledTimes(2);
 });
 
-it('never finishes with a set missing: retry first', async () => {
+it('finishing sends a set that failed first, then shows what changed', async () => {
   setUp(workout({ main: [row('a', 'Push-up', { sets: 1 })] }));
   api.logSet.mockRejectedValueOnce(new TypeError('Network request failed'));
   await openPlayer();
 
   await tap(await find('✓ 8 reps'));
   await tap(await find('Just right'));
-  expect(await find('Some sets aren’t saved yet. Retry them first.')).toBeOnTheScreen();
-  expect(api.finishSession).not.toHaveBeenCalled();
 
-  await tap('Retry');
-  await wait(100);
-  await tap('Just right');
   expect(await find('Locked in.')).toBeOnTheScreen();
   expect(api.logSet).toHaveBeenCalledTimes(2);
+  const [lastSet] = api.logSet.mock.invocationCallOrder.slice(-1);
+  expect(lastSet).toBeLessThan(api.finishSession.mock.invocationCallOrder[0] ?? 0);
 });
 
 it('finishing early still counts, and can be taken back', async () => {

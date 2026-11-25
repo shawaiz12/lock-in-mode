@@ -140,21 +140,23 @@ describe('the workout player', () => {
     expect(await getOpenSessionOrNull()).toBeNull();
   });
 
-  it('starting and continuing are the same call', async () => {
+  it('starting and continuing are the same call, with the phone’s start time', async () => {
     client.POST.mockResolvedValueOnce(ok({ id: 's1', sets: [] }) as never);
 
-    expect(await startSession('w1')).toEqual({ id: 's1', sets: [] });
-    expect(client.POST).toHaveBeenCalledWith('/api/v1/sessions', { body: { workout_id: 'w1' } });
+    expect(await startSession('w1', '2026-11-25T10:00:00.000Z')).toEqual({ id: 's1', sets: [] });
+    expect(client.POST).toHaveBeenCalledWith('/api/v1/sessions', {
+      body: { workout_id: 'w1', started_at: '2026-11-25T10:00:00.000Z' },
+    });
   });
 
   it('ticks a set with a PUT to its own address', async () => {
     client.PUT.mockResolvedValueOnce(ok({ set_number: 2 }) as never);
 
-    await logSet(where, { reps: 10, weight_kg: 20, seconds: null });
+    await logSet(where, { reps: 10, weight_kg: 20, seconds: null, logged_at: '2026-11-25T10:05:00.000Z' });
 
     expect(client.PUT).toHaveBeenCalledWith('/api/v1/sessions/{session_id}/sets/{planned_exercise_id}/{set_number}', {
       params: { path: { session_id: 's1', planned_exercise_id: 'pe1', set_number: 2 } },
-      body: { reps: 10, weight_kg: 20, seconds: null },
+      body: { reps: 10, weight_kg: 20, seconds: null, logged_at: '2026-11-25T10:05:00.000Z' },
     });
   });
 
@@ -169,11 +171,11 @@ describe('the workout player', () => {
   it('a skipped "How did that feel?" is sent as null, never as "just right"', async () => {
     client.POST.mockResolvedValueOnce(ok({ id: 's1' }) as never);
 
-    await finishSession('s1', null);
+    await finishSession('s1', null, '2026-11-25T10:40:00.000Z');
 
     expect(client.POST).toHaveBeenCalledWith('/api/v1/sessions/{session_id}/finish', {
       params: { path: { session_id: 's1' } },
-      body: { feedback: null },
+      body: { feedback: null, finished_at: '2026-11-25T10:40:00.000Z' },
     });
   });
 

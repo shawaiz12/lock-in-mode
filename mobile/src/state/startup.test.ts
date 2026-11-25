@@ -23,6 +23,22 @@ describe('stageFor', () => {
     expect(stageFor(ok(true), failed)).toBe('error');
   });
 
+  it('offline with nothing saved: connect once', () => {
+    expect(stageFor(ok(true), pending, false)).toBe('offline');
+    expect(stageFor(pending, pending, false)).toBe('loading'); // the sign-in check needs no network
+  });
+
+  it('what the phone saved carries on, even when refreshing it failed (offline)', () => {
+    const saved = { status: 'error' as const, data: profile('2026-11-24T10:00:00Z'), error: new TypeError('Network request failed') };
+    expect(stageFor(ok(true), saved, false)).toBe('plan');
+    expect(stageFor(ok(true), ok(profile('2026-11-24T10:00:00Z')), false)).toBe('plan');
+  });
+
+  it('an ended sign-in always stops at the error screen, saved profile or not', () => {
+    const ended = { status: 'error' as const, data: profile('2026-11-24T10:00:00Z'), error: new SignedOutError() };
+    expect(stageFor(ok(true), ended)).toBe('error');
+  });
+
   it('sends new people to onboarding, then the safety check, then the plan', () => {
     expect(stageFor(ok(true), ok(null))).toBe('onboarding');
     expect(stageFor(ok(true), ok(profile(null)))).toBe('safety');

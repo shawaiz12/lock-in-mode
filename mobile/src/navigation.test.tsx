@@ -4,11 +4,13 @@
  * a workout preview. It checks the one thing unit tests can't: that unlocking a group
  * of screens (src/app/_layout.tsx) really moves the person to it.
  */
-import { notifyManager } from '@tanstack/react-query';
+import { notifyManager, onlineManager } from '@tanstack/react-query';
 import { act, fireEvent, renderRouter, screen } from 'expo-router/testing-library';
 
 import type { Plan, Profile, ProfileWrite, WorkoutDetail } from '@/api/endpoints';
 import * as endpoints from '@/api/endpoints';
+import { resetStorage } from '@/test/kv-store';
+import { setConnected } from '@/test/network';
 
 jest.mock('@/api/client', () => ({
   auth: { ensureSignedIn: jest.fn(async () => {}), forget: jest.fn(async () => {}) },
@@ -30,6 +32,13 @@ const api = jest.mocked(endpoints);
 // renderRouter switches Jest to fake timers. TanStack Query hands results to screens
 // with setTimeout(0), which fake timers would hold back: deliver them at once instead.
 notifyManager.setScheduler((callback) => callback());
+
+// What the phone saved (the cache, the journal) starts empty, and the phone online.
+beforeEach(() => {
+  resetStorage();
+  setConnected(true);
+  onlineManager.setOnline(true);
+});
 
 function profile(overrides: Partial<Profile> = {}): Profile {
   return {
