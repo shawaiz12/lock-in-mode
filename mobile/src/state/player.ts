@@ -5,39 +5,36 @@
  *
  * - Where you are is never stored: it's worked out from what's logged (steps.ts
  *   `nextPosition`). Leave mid-workout, come back tomorrow: it picks up at the first set
- *   not done, because the server keeps the open session (ADR 0018).
- * - A tick shows as done at once and is sent in the background. Sends for the same set
- *   go one after another (tick, then untick, never the other way round). A send that
- *   fails is kept and offered again ("Not saved. Retry"); finishing waits for all of them.
+ *   not done.
+ * - Everything goes into the journal on the phone first (ADR 0033, src/state/journal.tsx)
+ *   and is sent from there: online a moment later, offline once the phone is back. So a
+ *   tick is never "not saved", and finishing works without a connection too: the results
+ *   show once the finish reaches the server.
+ * - Swaps need the server (it picks the replacement), so they need a connection.
  * - Timers store when they end (clock.ts). This hook re-reads them 4 times a second while
  *   one is running and acts when one is over: beep, buzz, log or move on.
  *
  * .NET/Unity: like a MonoBehaviour that owns the game state, with the pure rules in
  * plain C# classes it calls; React redraws the screen whenever the state changes.
  */
-import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import { onlineManager, useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   type BodyLimit,
   type BodyArea,
-  deleteSet,
   type ExerciseDetail,
   type Feedback,
-  finishSession,
   getExercise,
   getWorkout,
-  logSet,
   type PlannedExercise,
-  type SessionResult,
-  type SetLog,
   sayWhereItHurts,
-  startSession,
   swapExercise,
   type SwapReason,
   type WorkoutDetail,
 } from '@/api/endpoints';
 import { isApiError } from '@/api/problem';
+import { hasProgress, type Lost, loggedSets, setKey, waiting } from '@/features/offline/journal';
 import {
   type Clock,
   addSeconds,
@@ -50,7 +47,7 @@ import {
   secondsDone,
   stopwatch,
 } from '@/features/player/clock';
-import { type Entry, isWeighted, prefill, toSetLog } from '@/features/player/entry';
+import { type Entry, isWeighted, prefill } from '@/features/player/entry';
 import {
   buildStations,
   type Item,
@@ -59,6 +56,9 @@ import {
   nextPosition,
   progress,
 } from '@/features/player/steps';
+import { useJournal, useJournalStore } from '@/state/journal';
+import { useOnline } from '@/state/online';
+import { offlineReady } from '@/state/persist';
 import { keys } from '@/state/startup';
 import type { Alerts } from '@/ui/alerts';
 
@@ -73,15 +73,35 @@ export type Phase =
 export type Notice = { text: string };
 
 const TICK_MS = 250;
+/** How long opening waits for the server's copy of the session before going on without. */
+const OPEN_WAIT_MS = 4_000;
+/** How long "How did that feel?" waits for the results before saying "saved here". */
+const FINISH_WAIT_MS = 10_000;
 
-/** Finishing was asked for while some sets still aren't saved. */
-export class UnsavedSetsError extends Error {
-  constructor() {
-    super('Some sets aren’t saved yet. Retry them first.');
-    this.name = 'UnsavedSetsError';
+/** Something here needs a connection first (ADR 0033). */
+export class NeedsConnectionError extends Error {
+  constructor(
+    /** missing: not on the phone. stale: downloaded over 14 days ago. waiting: the last
+     * workout isn't sent yet. swap: swapping asks the server. */
+    readonly why: 'missing' | 'stale' | 'waiting' | 'swap',
+  ) {
+    super(`Needs a connection (${why})`);
+    this.name = 'NeedsConnectionError';
   }
 }
+
+/** The journal can't be saved (the plan moved on, the sign-in ended). */
+export class JournalLostError extends Error {
+  constructor(readonly why: Lost) {
+    super(`Can't be saved (${why})`);
+    this.name = 'JournalLostError';
+  }
+}
+
 const READY: Phase = { name: 'ready' };
+
+const iso = (ms: number) => new Date(ms).toISOString();
+const pause_ = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 function withKey<T>(set: ReadonlySet<T>, value: T): Set<T> {
   const next = new Set(set);
@@ -89,40 +109,22 @@ function withKey<T>(set: ReadonlySet<T>, value: T): Set<T> {
   return next;
 }
 
-function exerciseIds(workout: WorkoutDetail | undefined): string[] {
+/** Every exercise in a workout, once each: their library pages ("How to do it", which
+ * moves are holds) are fetched with it, and kept on the phone for offline. */
+export function exerciseIds(workout: WorkoutDetail | undefined): string[] {
   if (!workout) return [];
   const rows = [...workout.warm_up, ...workout.main, ...workout.finisher, ...workout.cool_down];
   return [...new Set(rows.map((row) => row.exercise.id))];
 }
 
-function asLog(item: Item, entry: Entry): SetLog {
-  return {
-    planned_exercise_id: item.exercise.id,
-    set_number: item.set,
-    reps: entry.reps,
-    weight_kg: entry.weight_kg,
-    seconds: entry.seconds,
-  };
-}
-
 export function usePlayer(workoutId: string, alerts: Alerts, now: () => number = Date.now) {
   const queryClient = useQueryClient();
+  const store = useJournalStore();
+  const { journal, syncing, stop: lastSync } = useJournal();
+  const online = useOnline();
 
-  // --- what the server has -------------------------------------------------------------
+  // --- the workout (saved on the phone, or fetched) ---------------------------------------
   const workout = useQuery({ queryKey: keys.workout(workoutId), queryFn: () => getWorkout(workoutId) });
-  // POST /sessions starts the workout, or continues it: the same answer every time, so it
-  // can be read like a query. Never refetched by itself: this screen owns the sets now.
-  const session = useQuery({
-    queryKey: keys.playing(workoutId),
-    queryFn: () => startSession(workoutId),
-    staleTime: Infinity,
-    gcTime: 0,
-  });
-  // The plan screen asks "is a workout open?": it is now.
-  const started = session.isSuccess;
-  useEffect(() => {
-    if (started) void queryClient.invalidateQueries({ queryKey: keys.openSession });
-  }, [started, queryClient]);
   const ids = exerciseIds(workout.data);
   const details = useQueries({
     queries: ids.map((id) => ({
@@ -136,34 +138,48 @@ export function usePlayer(workoutId: string, alerts: Alerts, now: () => number =
       ) as Map<string, ExerciseDetail>,
       // A library page that fails isn't a reason to stop the workout: the player falls
       // back to what the workout itself says (no "How to do it", weights only if known).
-      settled: results.every((r) => !r.isPending),
+      // Offline, a page that isn't on the phone waits ("paused"): don't wait for it.
+      settled: results.every((r) => !r.isPending || r.fetchStatus === 'paused'),
     }),
   });
 
-  // --- what happened on this phone -----------------------------------------------------
-  const [logged, setLogged] = useState<Map<string, SetLog> | null>(null);
+  // --- the journal: this workout's sets, on the phone first ------------------------------
+  const mine = journal?.workoutId === workoutId ? journal : null;
+  // Another workout still waiting to be sent: the next one needs it sent first.
+  const blocking = journal !== null && mine === null && !journal.done && !journal.lost;
+  const [opening, setOpening] = useState(false);
+  const begun = useRef(false);
+  const [openedAt] = useState(now);
+  const position_ = workout.data?.position;
+  // Offline, only a copy downloaded in the last 14 days can start (ADR 0033).
+  const copy = workout.data === undefined ? undefined : { data: workout.data, dataUpdatedAt: workout.dataUpdatedAt };
+  const offlineCopy = online ? 'ready' : offlineReady(copy, openedAt);
+  const openError = !mine && offlineCopy !== 'ready' ? new NeedsConnectionError(offlineCopy) : null;
+  useEffect(() => {
+    // Opening the player starts the workout: a new journal, sent at once if online. At
+    // most once per visit (leaving after "done" must not start it again).
+    if (begun.current || mine || blocking || position_ === undefined || offlineCopy !== 'ready') return;
+    begun.current = true;
+    store.begin(workoutId, position_, iso(now()));
+    setOpening(true);
+    // Online, wait a moment for the server's copy (continuing: sets ticked earlier).
+    void Promise.race([store.sync(), pause_(OPEN_WAIT_MS)]).finally(() => setOpening(false));
+  }, [mine, blocking, position_, offlineCopy, workoutId, store, now]);
+
   const [localDone, setLocalDone] = useState<ReadonlySet<string>>(new Set());
   const [passed, setPassed] = useState<ReadonlySet<string>>(new Set());
   const [drafts, setDrafts] = useState<ReadonlyMap<string, Entry>>(new Map());
-  const [unsaved, setUnsaved] = useState<ReadonlyMap<string, { item: Item; entry: Entry | null }>>(
-    new Map(),
-  );
   const [phase, setPhase] = useState<Phase>(READY);
   const [nowMs, setNowMs] = useState(now);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [askWhere, setAskWhere] = useState<{ exerciseId: string; name: string } | null>(null);
   const [suggestLimit, setSuggestLimit] = useState<BodyLimit | null>(null);
-  const sends = useRef(new Map<string, Promise<void>>());
-  // Sets whose last send failed, known at once (state only shows after a redraw):
-  // finishing checks this after waiting for every send.
-  const failed = useRef(new Set<string>());
+  const [finishing, setFinishing] = useState(false);
 
-  // The sets the server already had (continuing a workout), once. Set while drawing,
-  // React's way to start state from data that arrives later (no extra effect pass).
-  const sessionId = session.data?.id;
-  if (session.data && logged === null) {
-    setLogged(new Map(session.data.sets.map((s) => [`${s.planned_exercise_id}/${s.set_number}`, s])));
-  }
+  const logged = useMemo(
+    () => new Map((mine ? loggedSets(mine) : []).map((s) => [setKey(s.planned_exercise_id, s.set_number), s])),
+    [mine],
+  );
 
   // --- derived -------------------------------------------------------------------------
   const isTimed = (id: string) => details.byId.get(id)?.is_timed;
@@ -172,7 +188,7 @@ export function usePlayer(workoutId: string, alerts: Alerts, now: () => number =
     // eslint-disable-next-line react-hooks/exhaustive-deps -- byId is rebuilt each render; settled + data say when it changed
     [workout.data, details.settled, details.byId.size],
   );
-  const loggedKeys = useMemo(() => new Set(logged?.keys() ?? []), [logged]);
+  const loggedKeys = useMemo(() => new Set(logged.keys()), [logged]);
   const position = nextPosition(stations, loggedKeys, localDone, passed);
   const current = position ? stations[position.station] : undefined;
   const currentItem = position && current ? current.items[position.item] : undefined;
@@ -185,37 +201,15 @@ export function usePlayer(workoutId: string, alerts: Alerts, now: () => number =
   function entryFor(item: Item): Entry {
     const draft = drafts.get(item.key);
     if (draft) return draft;
-    const done = logged?.get(item.key);
+    const done = logged.get(item.key);
     if (done) return { reps: done.reps, weight_kg: done.weight_kg, seconds: done.seconds };
     return prefill(item, weighted(item.exercise));
   }
 
-  // --- sending -------------------------------------------------------------------------
-  function send(item: Item, entry: Entry | null) {
-    if (!sessionId) return;
-    const where = { sessionId, plannedExerciseId: item.exercise.id, setNumber: item.set };
-    const previous = sends.current.get(item.key) ?? Promise.resolve();
-    const next = previous.then(async () => {
-      try {
-        if (entry) await logSet(where, toSetLog(entry));
-        else await deleteSet(where);
-        failed.current.delete(item.key);
-        setUnsaved((map) => {
-          if (!map.has(item.key)) return map;
-          const copy = new Map(map);
-          copy.delete(item.key);
-          return copy;
-        });
-      } catch {
-        failed.current.add(item.key);
-        setUnsaved((map) => new Map(map).set(item.key, { item, entry }));
-      }
-    });
-    sends.current.set(item.key, next);
-  }
-
-  function retryUnsaved() {
-    for (const { item, entry } of unsaved.values()) send(item, entry);
+  // --- saving --------------------------------------------------------------------------
+  /** Into the journal (on the phone at once), then sent. `entry` null: untick. */
+  function save(item: Item, entry: Entry | null) {
+    store.record(item.exercise.id, item.set, entry, iso(now()));
   }
 
   // --- moving through the workout ------------------------------------------------------
@@ -251,10 +245,8 @@ export function usePlayer(workoutId: string, alerts: Alerts, now: () => number =
       moveOn(item, { logged: loggedKeys, local }, chain);
       return;
     }
-    const nextLogged = new Map(logged ?? []).set(item.key, asLog(item, entry));
-    setLogged(nextLogged);
-    send(item, entry);
-    moveOn(item, { logged: new Set(nextLogged.keys()), local: localDone }, chain);
+    save(item, entry);
+    moveOn(item, { logged: new Set(loggedKeys).add(item.key), local: localDone }, chain);
   }
 
   /** "Start": a countdown for timed moves, a stopwatch for a strength-test hold. */
@@ -292,19 +284,15 @@ export function usePlayer(workoutId: string, alerts: Alerts, now: () => number =
   }
 
   function untick(item: Item) {
-    if (!logged?.has(item.key)) return;
-    const copy = new Map(logged);
-    copy.delete(item.key);
-    setLogged(copy);
-    send(item, null);
+    if (!logged.has(item.key)) return;
+    save(item, null);
     if (phase.name === 'rest' && phase.after === item.key) setPhase(READY);
   }
 
   /** Change a set: before it's done (a draft), or after (sent again: PUT replaces it). */
   function edit(item: Item, entry: Entry) {
-    if (logged?.has(item.key)) {
-      setLogged(new Map(logged).set(item.key, asLog(item, entry)));
-      send(item, entry);
+    if (logged.has(item.key)) {
+      save(item, entry);
     } else {
       setDrafts((map) => new Map(map).set(item.key, entry));
     }
@@ -377,8 +365,16 @@ export function usePlayer(workoutId: string, alerts: Alerts, now: () => number =
 
   // --- swaps (ADR 0020) ----------------------------------------------------------------
   const swap = useMutation({
-    mutationFn: ({ row, reason }: { row: PlannedExercise; reason: SwapReason }) =>
-      swapExercise(workoutId, row.id, row.exercise.id, reason),
+    networkMode: 'always', // offline it fails at once with a clear message, never waits
+    mutationFn: async ({ row, reason }: { row: PlannedExercise; reason: SwapReason }) => {
+      // The server works out the sets left from what it has: send everything first.
+      await store.sync();
+      const now_ = store.current();
+      if (!onlineManager.isOnline() || !now_ || now_.sessionId === null || waiting(now_) > 0) {
+        throw new NeedsConnectionError('swap');
+      }
+      return swapExercise(workoutId, row.id, row.exercise.id, reason);
+    },
     onSuccess: (result, { reason }) => {
       queryClient.setQueryData(keys.workout(workoutId), result.workout);
       setPhase(READY);
@@ -389,7 +385,9 @@ export function usePlayer(workoutId: string, alerts: Alerts, now: () => number =
       if (reason === 'hurts') setAskWhere({ exerciseId: result.swapped_out.id, name: out });
     },
     onError: (error) => {
-      if (isApiError(error, 'no_other_exercise')) {
+      if (error instanceof NeedsConnectionError) {
+        setNotice({ text: 'Swapping needs a connection. Your sets are safe on this phone.' });
+      } else if (isApiError(error, 'no_other_exercise')) {
         setNotice({ text: 'Nothing else does the same job for you, so this one stays today.' });
       } else if (isApiError(error, 'exercise_changed')) {
         void queryClient.invalidateQueries({ queryKey: keys.workout(workoutId) });
@@ -400,6 +398,7 @@ export function usePlayer(workoutId: string, alerts: Alerts, now: () => number =
   });
 
   const where = useMutation({
+    networkMode: 'always',
     mutationFn: ({ exerciseId, area }: { exerciseId: string; area: BodyArea }) =>
       sayWhereItHurts(exerciseId, area),
     onSuccess: (limit) => {
@@ -409,31 +408,36 @@ export function usePlayer(workoutId: string, alerts: Alerts, now: () => number =
   });
 
   // --- finishing -----------------------------------------------------------------------
-  const finish = useMutation({
-    mutationFn: async (feedback: Feedback | null): Promise<SessionResult> => {
-      if (!sessionId) throw new Error('No session');
-      await Promise.all(sends.current.values());
-      // Never finish with a set missing: finished sets are locked (409 session_finished).
-      if (failed.current.size > 0) throw new UnsavedSetsError();
-      return finishSession(sessionId, feedback);
-    },
-    onSuccess: () => {
-      setPhase(READY);
-      void queryClient.invalidateQueries({ queryKey: keys.plan });
-      void queryClient.invalidateQueries({ queryKey: keys.openSession });
-      void queryClient.invalidateQueries({ queryKey: keys.workout(workoutId) });
-    },
-  });
+  /** Into the journal, then sent. Waits a little for the results; offline, the play
+   * screen says it's saved on the phone instead. */
+  function finish(feedback: Feedback | null) {
+    if (!mine || mine.finish || finishing) return;
+    setPhase(READY);
+    setFinishing(true);
+    void Promise.race([store.finish(feedback, iso(now())), pause_(FINISH_WAIT_MS)]).finally(() =>
+      setFinishing(false),
+    );
+  }
 
-  const loading = workout.isPending || session.isPending || !details.settled || (session.isSuccess && logged === null);
-  const error = workout.error ?? session.error ?? null;
+  // Sets the server doesn't have yet, worth a word when they can't be sent right now.
+  const unsent = mine ? Object.values(mine.sets).filter((s) => s.version !== s.sent).length : 0;
+  const stuck = !online || lastSync === 'offline' || lastSync === 'later';
+
+  const lost = mine?.lost && !hasProgress(mine) ? new JournalLostError(mine.lost) : null;
+  const missing = workout.isPending && !online ? new NeedsConnectionError('missing') : null;
+  const error =
+    workout.error ?? openError ?? missing ?? (blocking ? new NeedsConnectionError('waiting') : null) ?? lost;
+  const loading = error === null && (workout.isPending || !details.settled || opening || mine === null);
 
   return {
     loading,
     error,
     retryLoading: () => {
       void workout.refetch();
-      void session.refetch();
+    },
+    /** Leave a journal that can't be saved, so the next visit starts cleanly. */
+    dropLost: () => {
+      if (mine?.lost) store.clear();
     },
     workout: workout.data,
     stations,
@@ -448,8 +452,10 @@ export function usePlayer(workoutId: string, alerts: Alerts, now: () => number =
     detail: (exerciseId: string) => details.byId.get(exerciseId),
     weighted,
     entryFor,
-    unsaved: unsaved.size,
-    retryUnsaved,
+    online,
+    /** Sets saved on this phone that can't be sent right now. */
+    waitingSets: stuck && !syncing ? unsent : 0,
+    syncNow: () => void store.sync(),
     notice,
     clearNotice: () => setNotice(null),
     askWhere,
@@ -470,10 +476,16 @@ export function usePlayer(workoutId: string, alerts: Alerts, now: () => number =
     addRest,
     swap: (row: PlannedExercise, reason: SwapReason) => swap.mutate({ row, reason }),
     swapping: swap.isPending,
-    finish: (feedback: Feedback | null) => finish.mutate(feedback),
-    finishing: finish.isPending,
-    finishError: finish.error,
-    result: finish.data,
+    finish,
+    finishing,
+    /** Finished on this phone. */
+    finished: mine?.finish != null,
+    /** The finish reached the server. */
+    done: mine?.done === true,
+    /** What the server answered (null if that answer was lost on the way). */
+    result: mine?.done ? mine.result : null,
+    /** The workout was seen through: forget the journal. */
+    close: () => store.clear(),
   };
 }
 

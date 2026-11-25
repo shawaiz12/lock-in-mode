@@ -48,3 +48,10 @@ export function upNext(item: Item, station: Pick<Station, 'layout'>): string {
 
 /** Safety line, always on screen while training (brief 3.1). */
 export const SAFETY_LINE = 'Stop if you feel sharp pain, dizziness or chest pain.';
+
+/** Sets ticked offline (ADR 0033): kept on the phone, nothing to fix. */
+export function waitingLine(sets: number): string {
+  return sets === 1
+    ? '1 set is saved on this phone. It syncs when you’re online.'
+    : `${sets} sets are saved on this phone. They sync when you’re online.`;
+}

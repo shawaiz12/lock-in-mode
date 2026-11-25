@@ -7,12 +7,12 @@
  *   MoreSheet     how to do it, "this hurts", "show another", skip, finish now
  *   FeedbackView  "How did that feel?" (one tap, or skip)
  *   ResultView    what moved up or back, the strength test, what's next
+ *   SavedView     finished offline: saved on the phone, results once it's sent (ADR 0033)
  */
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import type { BodyArea, BodyLimit, PlannedExercise, SessionResult } from '@/api/endpoints';
-import { describeError } from '@/api/problem';
 import { formatClock, reading } from '@/features/player/clock';
 import { type Entry, entryText, isReady, step, targetText, weightStep } from '@/features/player/entry';
 import {
@@ -25,8 +25,8 @@ import {
   progressLine,
 } from '@/features/player/result';
 import type { Item, Station } from '@/features/player/steps';
-import { coachLine, partLabel, SAFETY_LINE, setLabel, upNext } from '@/features/player/words';
-import { type Player, UnsavedSetsError } from '@/state/player';
+import { coachLine, partLabel, SAFETY_LINE, setLabel, upNext, waitingLine } from '@/features/player/words';
+import type { Player } from '@/state/player';
 import {
   Body,
   Card,
@@ -87,12 +87,10 @@ export function PlayerView({
       </View>
       <ProgressBar value={totals.total === 0 ? 0 : totals.done / totals.total} />
 
-      {player.unsaved > 0 ? (
-        <Card style={styles.warning}>
-          <Body>
-            {player.unsaved === 1 ? '1 set isn’t saved yet.' : `${player.unsaved} sets aren’t saved yet.`}
-          </Body>
-          <TextButton title="Retry" onPress={player.retryUnsaved} />
+      {player.waitingSets > 0 ? (
+        <Card>
+          <Body muted>{waitingLine(player.waitingSets)}</Body>
+          {player.online ? <TextButton title="Try now" onPress={player.syncNow} /> : null}
         </Card>
       ) : null}
 
@@ -382,20 +380,26 @@ function MoreSheet({
         <View key={row.id} style={styles.menuGroup}>
           <Label>{row.exercise.name}</Label>
           <TextButton title="How to do it" onPress={() => onHowTo(row)} />
-          <TextButton
-            title="This hurts: swap it"
-            onPress={() => {
-              onClose();
-              player.swap(row, 'hurts');
-            }}
-          />
-          <TextButton
-            title="Show another (today only)"
-            onPress={() => {
-              onClose();
-              player.swap(row, 'another');
-            }}
-          />
+          {player.online ? (
+            <>
+              <TextButton
+                title="This hurts: swap it"
+                onPress={() => {
+                  onClose();
+                  player.swap(row, 'hurts');
+                }}
+              />
+              <TextButton
+                title="Show another (today only)"
+                onPress={() => {
+                  onClose();
+                  player.swap(row, 'another');
+                }}
+              />
+            </>
+          ) : (
+            <Body muted>Swapping needs a connection. If it hurts, skip it: stop, and skip this exercise.</Body>
+          )}
         </View>
       ))}
       <View style={styles.menuGroup}>
@@ -484,20 +488,8 @@ export function FeedbackView({ player, onBack }: { player: Player; onBack: (() =
       <Label>{player.workout ? `Workout ${player.workout.position}` : 'Workout'}</Label>
       <Title>{finishTitle(done, total)}</Title>
       <Body muted>{finishSubtitle(done, total)}</Body>
-      {player.unsaved > 0 ? (
-        <Card style={styles.warning}>
-          <Body>Some sets aren’t saved yet. Check your connection.</Body>
-          <TextButton title="Retry" onPress={player.retryUnsaved} />
-        </Card>
-      ) : null}
-      {player.finishError ? (
-        <Card style={styles.warning}>
-          <Body>
-            {player.finishError instanceof UnsavedSetsError
-              ? player.finishError.message
-              : describeError(player.finishError)}
-          </Body>
-        </Card>
+      {!player.online ? (
+        <Body muted>You’re offline: your workout saves on this phone and syncs when you’re back.</Body>
       ) : null}
       <Label>How did that feel?</Label>
       {FEEDBACK.map(([value, label]) => (
@@ -515,6 +507,39 @@ export function FeedbackView({ player, onBack }: { player: Player; onBack: (() =
   );
 }
 
+/** Finished, but the results aren't here (yet): offline, or the server's answer was lost
+ * on the way (`sent`: the workout itself is saved on the server). */
+export function SavedView({
+  position,
+  sent,
+  online,
+  onDone,
+}: {
+  position: number | null;
+  sent: boolean;
+  online: boolean;
+  onDone: () => void;
+}) {
+  return (
+    <Screen footer={<LockInButton title="Lock In: done" onPress={onDone} />}>
+      <Label>{position === null ? 'Workout' : `Workout ${position}`} done</Label>
+      <Title>Locked in.</Title>
+      {sent ? (
+        <Body>Your workout is saved.</Body>
+      ) : (
+        <Card>
+          <Label>Saved on this phone</Label>
+          <Body>
+            {online
+              ? 'Sending it now. What moves up next time shows on your plan once it’s there.'
+              : 'It syncs when you’re online. Then your plan shows what moves up next time, and your next workout gets ready.'}
+          </Body>
+        </Card>
+      )}
+    </Screen>
+  );
+}
+
 export function ResultView({
   result,
   position,
@@ -522,6 +547,7 @@ export function ResultView({
   onLimit,
   limitSaving,
   onDone,
+  synced = false,
 }: {
   result: SessionResult;
   position: number | null;
@@ -529,6 +555,8 @@ export function ResultView({
   onLimit: (yes: boolean) => void;
   limitSaving: boolean;
   onDone: () => void;
+  /** Done offline and sent later: say so. */
+  synced?: boolean;
 }) {
   const up = result.progress.filter(isStepUp);
   const back = result.progress.filter((p) => !isStepUp(p));
@@ -536,6 +564,7 @@ export function ResultView({
     <Screen footer={<LockInButton title="Lock In: done" onPress={onDone} />}>
       <Label>{position === null ? 'Workout' : `Workout ${position}`} done</Label>
       <Title>Locked in.</Title>
+      {synced ? <Body muted>Done offline, synced just now.</Body> : null}
       <Body muted>
         {result.sets.length} {result.sets.length === 1 ? 'set' : 'sets'} logged.
       </Body>

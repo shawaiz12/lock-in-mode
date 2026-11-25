@@ -2,6 +2,7 @@
  * "/workout/<id>": one workout before it starts, with what's in it. For the next workout
  * in the queue: "Lock In: start" (or "continue", if it's already open) and "Skip".
  * `[id]` in the folder name is a route parameter, like {id} in an ASP.NET route.
+ * Offline (ADR 0033): shows the copy saved on the phone; starts only a recent one.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
@@ -17,6 +18,9 @@ import {
 } from '@/api/endpoints';
 import { describeError, isApiError } from '@/api/problem';
 import { formatDetails, formatTarget } from '@/features/plan/format';
+import { useJournal } from '@/state/journal';
+import { useOnline } from '@/state/online';
+import { offlineReady } from '@/state/persist';
 import { keys } from '@/state/startup';
 import {
   Body,
@@ -36,14 +40,47 @@ export default function WorkoutPreview() {
   const workout = useQuery({ queryKey: keys.workout(id), queryFn: () => getWorkout(id) });
   const plan = useQuery({ queryKey: keys.plan, queryFn: getOrCreatePlan });
   const open = useQuery({ queryKey: keys.openSession, queryFn: getOpenSessionOrNull });
+  const online = useOnline();
+  const { journal } = useJournal();
+  const [openedAt] = useState(Date.now);
 
-  if (workout.isPending) return <Loading />;
-  if (workout.isError) {
+  if (workout.isPending) {
+    if (!online) {
+      return (
+        <ErrorView
+          message="This workout isn’t on your phone. Connect to see it."
+          onRetry={() => workout.refetch()}
+        />
+      );
+    }
+    return <Loading />;
+  }
+  if (workout.data === undefined) {
     return <ErrorView message={describeError(workout.error)} onRetry={() => workout.refetch()} />;
   }
   const w = workout.data;
   const isNext = plan.data?.plan.next_workout_id === w.id && w.status === 'pending';
-  const started = open.data?.workout_id === w.id;
+  const here = journal?.workoutId === w.id && !journal.lost ? journal : null;
+  // Another workout finished on this phone and not sent yet: this one waits for it.
+  const waitingForOther = journal !== null && !here && journal.finish !== null && !journal.done && !journal.lost;
+  const started = open.data?.workout_id === w.id || (here !== null && here.finish === null);
+  const canStartOffline = online || offlineReady({ data: w, dataUpdatedAt: workout.dataUpdatedAt }, openedAt) === 'ready';
+
+  let footer;
+  if (here?.finish) {
+    footer = <LockInButton title="Saved on this phone" disabled onPress={() => {}} />;
+  } else if (isNext && waitingForOther) {
+    footer = <LockInButton title="Connect to sync your last workout" disabled onPress={() => {}} />;
+  } else if (isNext && !canStartOffline) {
+    footer = <LockInButton title="Connect once to get it ready" disabled onPress={() => {}} />;
+  } else if (isNext) {
+    footer = (
+      <LockInButton
+        title={started ? 'Lock In: continue' : 'Lock In: start'}
+        onPress={() => router.push(`/workout/${w.id}/play`)}
+      />
+    );
+  }
   const sections: [string, PlannedExercise[]][] = [
     ['Warm-up', w.warm_up],
     ['Main', w.main],
@@ -52,16 +89,7 @@ export default function WorkoutPreview() {
   ];
 
   return (
-    <Screen
-      footer={
-        isNext ? (
-          <LockInButton
-            title={started ? 'Lock In: continue' : 'Lock In: start'}
-            onPress={() => router.push(`/workout/${w.id}/play`)}
-          />
-        ) : undefined
-      }
-    >
+    <Screen footer={footer}>
       <Stack.Screen options={{ title: `Workout ${w.position}` }} />
       <Label>
         Week {w.week} · {w.total_minutes} min{w.recovery ? ' · lighter week' : ''}
@@ -77,7 +105,7 @@ export default function WorkoutPreview() {
             ))}
           </View>
         ))}
-      {isNext && !started && open.isSuccess ? <SkipWorkout workoutId={w.id} /> : null}
+      {isNext && !started && !here && open.isSuccess && online ? <SkipWorkout workoutId={w.id} /> : null}
     </Screen>
   );
 }

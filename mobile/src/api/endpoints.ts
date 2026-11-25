@@ -113,9 +113,12 @@ export async function getOpenSessionOrNull(): Promise<Session | null> {
 
 /** "Lock In: start". Starts the next workout, or continues it if it's already open (the
  * server answers 201 or 200 with the same session), so calling it twice is safe.
+ * `startedAt`: when the phone started it (ADR 0033: it may have been offline).
  * 409 not_next_workout: the plan moved on (refresh it). */
-export async function startSession(workoutId: string): Promise<Session> {
-  return unwrap(await api.POST('/api/v1/sessions', { body: { workout_id: workoutId } }));
+export async function startSession(workoutId: string, startedAt?: string): Promise<Session> {
+  return unwrap(
+    await api.POST('/api/v1/sessions', { body: { workout_id: workoutId, started_at: startedAt ?? null } }),
+  );
 }
 
 type SetPath = { sessionId: string; plannedExerciseId: string; setNumber: number };
@@ -126,7 +129,8 @@ function setPath({ sessionId, plannedExerciseId, setNumber }: SetPath) {
   };
 }
 
-/** Tick a set. PUT: sending it again (a retry, an edit) replaces it. */
+/** Tick a set. PUT: sending it again (a retry, an edit) replaces it. `logged_at` in the
+ * body: when the phone ticked it (ADR 0033). */
 export async function logSet(where: SetPath, body: SetLogWrite): Promise<SetLog> {
   return unwrap(
     await api.PUT('/api/v1/sessions/{session_id}/sets/{planned_exercise_id}/{set_number}', {
@@ -145,12 +149,17 @@ export async function deleteSet(where: SetPath): Promise<void> {
   );
 }
 
-/** Finish, early or not: it counts either way. No feedback = skipped, never "just right". */
-export async function finishSession(sessionId: string, feedback: Feedback | null): Promise<SessionResult> {
+/** Finish, early or not: it counts either way. No feedback = skipped, never "just right".
+ * `finishedAt`: when the phone finished it (ADR 0033). */
+export async function finishSession(
+  sessionId: string,
+  feedback: Feedback | null,
+  finishedAt?: string,
+): Promise<SessionResult> {
   return unwrap(
     await api.POST('/api/v1/sessions/{session_id}/finish', {
       params: { path: { session_id: sessionId } },
-      body: { feedback },
+      body: { feedback, finished_at: finishedAt ?? null },
     }),
   );
 }

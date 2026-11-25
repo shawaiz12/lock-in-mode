@@ -418,7 +418,8 @@ export interface paths {
          * @description "Lock In: start workout". 201 when started, 200 when continuing the open one.
          *
          *     Only the next workout can be started. A different workout left open is finished
-         *     first with what was logged (half counts), so the queue moves on.
+         *     first with what was logged (half counts), so the queue moves on. `started_at`: when
+         *     the phone started it, for a workout done offline.
          */
         post: operations["start_session_api_v1_sessions_post"];
         delete?: never;
@@ -1351,6 +1352,11 @@ export interface components {
         SessionFinish: {
             /** @description Too easy / just right / too hard. Leave out to skip. */
             feedback?: components["schemas"]["Feedback"] | null;
+            /**
+             * Finished At
+             * @description When the phone finished it (ADR 0033). Kept between the last ticked set and now.
+             */
+            finished_at?: string | null;
         };
         /**
          * SessionKind
@@ -1438,6 +1444,11 @@ export interface components {
              * @description The next workout (plans/current/next).
              */
             workout_id: string;
+            /**
+             * Started At
+             * @description When the phone started it, for a workout started offline (ADR 0033). Kept between the user's last workout and now. Ignored when continuing.
+             */
+            started_at?: string | null;
         };
         /** SetLogRead */
         SetLogRead: {
@@ -1472,6 +1483,11 @@ export interface components {
              * @description Timed moves.
              */
             seconds?: number | null;
+            /**
+             * Logged At
+             * @description When the phone ticked it (ADR 0033). Kept between the workout's start and now.
+             */
+            logged_at?: string | null;
         };
         /**
          * ShoulderDay
