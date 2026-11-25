@@ -1,7 +1,7 @@
 import ssl
 from typing import Any, Literal
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import URL
 
@@ -23,6 +23,12 @@ class Settings(BaseSettings):
     # Docker, which has no TLS. Hosted Postgres (Neon) needs "verify-full": encrypted AND
     # the server's certificate checked, so nobody in the middle can pretend to be it.
     postgres_sslmode: Literal["disable", "prefer", "require", "verify-full"] = "prefer"
+    # The certificate authority to trust instead of the system's (ADR 0030), as PEM text:
+    # "-----BEGIN CERTIFICATE----- ...". Supabase signs its database certificates with
+    # its own CA ("Supabase Root 2021 CA"), which no system trusts, so verify-full needs
+    # it. Empty: trust the system's certificates (Neon and most hosts). A value pasted
+    # on one line with literal \n between lines works too.
+    postgres_ssl_root_cert: str | None = None
 
     # Which commit this server runs (ADR 0028). The deploy job passes the commit id into
     # the Docker build; /health/live reports it, so CI can see the new version is live.
@@ -73,6 +79,29 @@ class Settings(BaseSettings):
             )
         return value
 
+    @field_validator("postgres_ssl_root_cert")
+    @classmethod
+    def root_cert_must_be_a_certificate(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        pem = value.strip().replace("\\n", "\n")
+        try:
+            ssl.create_default_context(cadata=pem)
+        except (ssl.SSLError, ValueError) as error:
+            raise ValueError(
+                "POSTGRES_SSL_ROOT_CERT must be the PEM text of a CA certificate "
+                "(-----BEGIN CERTIFICATE----- ... -----END CERTIFICATE-----)."
+            ) from error
+        return pem
+
+    @model_validator(mode="after")
+    def root_cert_needs_verify_full(self) -> "Settings":
+        # Any other mode would never look at the certificate: refuse rather than
+        # quietly connect without the check someone thought they had turned on.
+        if self.postgres_ssl_root_cert and self.postgres_sslmode != "verify-full":
+            raise ValueError("POSTGRES_SSL_ROOT_CERT only works with POSTGRES_SSLMODE=verify-full.")
+        return self
+
     @property
     def database_url(self) -> URL:
         return URL.create(
@@ -94,7 +123,9 @@ class Settings(BaseSettings):
             # does, which no server image has. Python's default context checks the
             # certificate AND the host name against the system's trusted certificates,
             # the same ones a browser uses: exactly verify-full, nothing to install.
-            ssl_option = ssl.create_default_context()
+            # With POSTGRES_SSL_ROOT_CERT it trusts ONLY that CA (ADR 0030), still
+            # checking the host name.
+            ssl_option = ssl.create_default_context(cadata=self.postgres_ssl_root_cert)
         return {"timeout": 5, "ssl": ssl_option}
 
 

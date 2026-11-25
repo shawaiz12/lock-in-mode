@@ -53,12 +53,22 @@ jobs:
       - name: Dump the database
         env:
           DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+          # The database's own CA as PEM text (Supabase, ADR 0030). Set: the connection is
+          # verify-full against ONLY that CA, like the API's. Empty: the URL's own sslmode.
+          DATABASE_CA: ${{ secrets.BACKUP_DATABASE_CA }}
         run: |
+          tls=""
+          if [ -n "$DATABASE_CA" ]; then
+            printf '%s\n' "$DATABASE_CA" > db-ca.pem
+            tls="-e PGSSLMODE=verify-full -e PGSSLROOTCERT=/out/db-ca.pem"
+          fi
           # --format=custom: compressed, and pg_restore can pick parts of it later.
           # No owners or grants: the dump restores into any database, as any user.
-          docker run --rm --network host -v "$PWD:/out" -e DATABASE_URL "$PG_IMAGE" \
+          # $tls is unquoted on purpose: empty, or two -e options.
+          docker run --rm --network host -v "$PWD:/out" -e DATABASE_URL $tls "$PG_IMAGE" \
             sh -c 'pg_dump "$DATABASE_URL" --format=custom --no-owner --no-privileges \
                    --file=/out/lockin.dump'
+          rm -f db-ca.pem
           ls -l lockin.dump
 
       - name: Restore it into a throwaway database and check it
