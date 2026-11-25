@@ -1,6 +1,7 @@
 import ssl
 import uuid
 from typing import Any, Literal
+from urllib.parse import urlsplit
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -62,6 +63,7 @@ class Settings(BaseSettings):
 
     # Redis (rate limiting now; caching and Celery later). A URL, because hosted Redis
     # (e.g. Upstash) hands you one: rediss://default:<password>@<host>:6379
+    # rediss = TLS. Plain redis:// only for this machine or a compose service (ADR 0031).
     redis_url: str = "redis://localhost:6379/0"
 
     # Rate limits (ADR 0008): max requests per client IP per minute, per sign-in endpoint.
@@ -89,6 +91,25 @@ class Settings(BaseSettings):
                 "JWT_SECRET must be at least 32 characters. Generate one with: "
                 'python -c "import secrets; print(secrets.token_urlsafe(48))"'
             )
+        return value
+
+    @field_validator("redis_url")
+    @classmethod
+    def remote_redis_must_use_tls(cls, value: str) -> str:
+        # Found going live (ADR 0031): a redis:// URL to Upstash connects, then the server
+        # hangs up (it only speaks TLS), and rate limiting quietly switches itself off.
+        # A Redis on another machine is one whose host has a dot (a real domain or an IP
+        # address): localhost and compose service names ("redis") have none.
+        parts = urlsplit(value)
+        host = parts.hostname or ""
+        local = host in {"localhost", "127.0.0.1", "::1"} or "." not in host
+        if parts.scheme == "redis" and not local:
+            raise ValueError(
+                "REDIS_URL must start with rediss:// (two s's: TLS) for a Redis on another "
+                "machine. Copy the rediss:// URL from Upstash, not the redis-cli line."
+            )
+        if parts.scheme not in {"redis", "rediss"}:
+            raise ValueError("REDIS_URL must start with rediss:// (or redis:// locally).")
         return value
 
     @field_validator("postgres_ssl_root_cert")

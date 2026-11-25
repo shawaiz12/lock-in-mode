@@ -2,8 +2,11 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
+from typing import Annotated
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
+from redis.asyncio import Redis
+from redis.exceptions import RedisError
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -12,7 +15,7 @@ from lock_in_mode_api.api.deps import DbSession
 from lock_in_mode_api.api.errors import DatabaseUnavailable, add_problem_handlers
 from lock_in_mode_api.core.config import settings
 from lock_in_mode_api.core.db import engine
-from lock_in_mode_api.core.redis import redis_client
+from lock_in_mode_api.core.redis import get_redis, redis_client
 from lock_in_mode_api.services.account import run_cleanup
 
 logger = logging.getLogger(__name__)
@@ -51,8 +54,13 @@ async def live() -> dict[str, str]:
 
 
 @app.get("/health", tags=["infrastructure"])
-async def health(session: DbSession) -> dict[str, str]:
-    """Is the API up AND can it reach the database? For people and deploy checks."""
+async def health(session: DbSession, redis: Annotated[Redis, Depends(get_redis)]) -> dict[str, str]:
+    """Is the API up, can it reach the database, and is Redis there? For deploy checks.
+
+    No database is an error (503): nothing works without it. No Redis still answers 200
+    with "redis": "unavailable": the app works, but sign-in rate limiting is off (ADR 0008).
+    The deploy job treats that as a failed deploy (ADR 0031).
+    """
     try:
         await session.execute(text("SELECT 1"))
     except (OSError, SQLAlchemyError) as exc:
@@ -60,4 +68,10 @@ async def health(session: DbSession) -> dict[str, str]:
         # SQLAlchemyError: connected, but the driver failed (auth, dropped connection).
         logger.warning("Health check failed: database unreachable", exc_info=exc)
         raise DatabaseUnavailable from exc
-    return {"status": "ok", "database": "ok"}
+    redis_state = "ok"
+    try:
+        await redis.ping()
+    except (RedisError, OSError):
+        logger.warning("Health check: Redis unreachable, rate limiting is off", exc_info=True)
+        redis_state = "unavailable"
+    return {"status": "ok", "database": "ok", "redis": redis_state}

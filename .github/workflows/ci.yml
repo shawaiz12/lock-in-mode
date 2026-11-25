@@ -232,8 +232,14 @@ jobs:
             live=$(curl --silent --max-time 10 "$API_URL/health/live" || true)
             if [ "$(echo "$live" | jq -r '.version // empty' 2>/dev/null)" = "$GITHUB_SHA" ]; then
               echo "Live: $live"
-              # The full check also proves the API reaches the database.
-              curl --fail --silent --show-error --max-time 30 "$API_URL/health"
+              # The full check: the database must answer (else 503), and Redis must be
+              # there, or sign-in rate limiting is quietly off (ADR 0031).
+              health=$(curl --fail --silent --show-error --max-time 30 "$API_URL/health")
+              echo "Health: $health"
+              if [ "$(echo "$health" | jq -r '.redis')" != "ok" ]; then
+                echo "::error::The API can't reach Redis. Check REDIS_URL on Vercel (rediss://, the Mumbai database)."
+                exit 1
+              fi
               exit 0
             fi
             sleep 10

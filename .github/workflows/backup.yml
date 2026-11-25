@@ -24,7 +24,7 @@ concurrency:
 jobs:
   backup:
     name: Back up, test the restore, encrypt
-    # Off until the secrets exist (docs/deploy.md): set the variable BACKUP_ENABLED=true.
+    # Off until the passphrase exists (docs/deploy.md): set the variable BACKUP_ENABLED=true.
     if: vars.BACKUP_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -51,23 +51,30 @@ jobs:
 
     steps:
       - name: Dump the database
+        # The same settings as the deploy job (ADR 0031): Supabase's session pooler, the
+        # password as its own value, verify-full against ONLY Supabase's CA. Never a URL
+        # with the password inside: a "%" in it broke the URL, and pg_dump's error printed
+        # that part of it into this public log (2026-11-25). PGPASSWORD is never printed.
         env:
-          DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
-          # The database's own CA as PEM text (Supabase, ADR 0030). Set: the connection is
-          # verify-full against ONLY that CA, like the API's. Empty: the URL's own sslmode.
-          DATABASE_CA: ${{ secrets.BACKUP_DATABASE_CA }}
+          PGHOST: ${{ vars.POSTGRES_HOST }}
+          PGPORT: "5432"
+          PGUSER: ${{ vars.POSTGRES_USER }}
+          PGDATABASE: postgres
+          PGPASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          DATABASE_CA: ${{ vars.POSTGRES_SSL_ROOT_CERT }}
         run: |
-          tls=""
-          if [ -n "$DATABASE_CA" ]; then
-            printf '%s\n' "$DATABASE_CA" > db-ca.pem
-            tls="-e PGSSLMODE=verify-full -e PGSSLROOTCERT=/out/db-ca.pem"
-          fi
+          for name in PGHOST PGUSER PGPASSWORD DATABASE_CA; do
+            if [ -z "$(printenv "$name")" ]; then
+              echo "::error::$name is empty: see docs/deploy.md part 4"; exit 1
+            fi
+          done
+          printf '%s\n' "$DATABASE_CA" > db-ca.pem
           # --format=custom: compressed, and pg_restore can pick parts of it later.
           # No owners or grants: the dump restores into any database, as any user.
-          # $tls is unquoted on purpose: empty, or two -e options.
-          docker run --rm --network host -v "$PWD:/out" -e DATABASE_URL $tls "$PG_IMAGE" \
-            sh -c 'pg_dump "$DATABASE_URL" --format=custom --no-owner --no-privileges \
-                   --file=/out/lockin.dump'
+          docker run --rm --network host -v "$PWD:/out" \
+            -e PGHOST -e PGPORT -e PGUSER -e PGDATABASE -e PGPASSWORD \
+            -e PGSSLMODE=verify-full -e PGSSLROOTCERT=/out/db-ca.pem "$PG_IMAGE" \
+            pg_dump --format=custom --no-owner --no-privileges --file=/out/lockin.dump
           rm -f db-ca.pem
           ls -l lockin.dump
 
