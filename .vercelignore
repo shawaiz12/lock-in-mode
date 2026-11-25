@@ -1,0 +1,17 @@
+# What `vercel deploy` never uploads (ADR 0031). The deploy job runs it from the repo
+# root, and the Vercel project's Root Directory is backend/: only the API goes live.
+# Secrets first: they live in Vercel's settings, never in an upload.
+.env
+.env.*
+!.env.example
+
+/mobile
+/docs
+/.github
+/backend/tests
+/backend/scripts
+/backend/.venv
+**/__pycache__
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache

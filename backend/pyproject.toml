@@ -35,6 +35,10 @@ dev = [
     "types-pyyaml>=6.0.12.20261113",
 ]
 
+# Vercel (ADR 0031): the FastAPI object it serves, as "file:variable".
+[tool.vercel]
+entrypoint = "app:app"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
@@ -61,7 +65,7 @@ select = [
 python_version = "3.13"
 strict = true
 plugins = ["pydantic.mypy"]
-files = ["src", "tests", "migrations/env.py"]
+files = ["src", "tests", "migrations/env.py", "app.py"]
 
 [tool.pydantic-mypy]
 init_forbid_extra = true

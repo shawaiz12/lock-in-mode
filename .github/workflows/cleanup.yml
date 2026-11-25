@@ -1,0 +1,52 @@
+name: Account cleanup
+
+# Every hour (ADR 0024, 0031): erase accounts whose 30 days are over, and guests not seen
+# for a year. On Vercel the API only runs while it answers a request, so the hourly task
+# inside the API can't run there; this job does the same pass from GitHub's servers,
+# with the same code (python -m lock_in_mode_api.cleanup).
+# GitHub switches scheduled workflows off after 60 days without a commit: if that
+# happens, switch it back on in the repository's Actions tab.
+
+on:
+  schedule:
+    - cron: "41 * * * *" # every hour at :41 (not :00, when GitHub is busiest)
+  workflow_dispatch: # "Run workflow" button
+
+permissions:
+  contents: read
+
+concurrency:
+  group: account-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    name: Erase due accounts
+    # Off until hosting exists (docs/deploy.md), like the deploy job.
+    if: vars.VERCEL_PROJECT_ID != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      POSTGRES_HOST: ${{ vars.POSTGRES_HOST }}
+      POSTGRES_PORT: "5432" # Supabase's session pooler
+      POSTGRES_USER: ${{ vars.POSTGRES_USER }}
+      POSTGRES_DB: postgres
+      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      POSTGRES_SSLMODE: verify-full
+      POSTGRES_SSL_ROOT_CERT: ${{ vars.POSTGRES_SSL_ROOT_CERT }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Erase due accounts and lost guests
+        run: |
+          # The settings insist on a JWT secret; the cleanup never signs anything.
+          export JWT_SECRET="$(openssl rand -hex 32)"
+          uv sync --locked --no-dev
+          uv run --no-sync python -m lock_in_mode_api.cleanup

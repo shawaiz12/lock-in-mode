@@ -202,7 +202,24 @@ async def cancel_deletion(session: AsyncSession, user_id: uuid.UUID) -> bool:
     return cancelled is not None
 
 
-# --- the hourly cleanup, inside the API process ----------------------------------------
+# --- the hourly cleanup: in the API process, or a scheduled job (ADR 0031) -----------
+
+
+async def cleanup_once() -> tuple[int, int]:
+    """Erase due accounts and lost guests, once. Returns (accounts, lost guests).
+
+    The hosted API (Vercel, ADR 0031) only runs while it answers a request, so there an
+    hourly GitHub Actions job calls this through `python -m lock_in_mode_api.cleanup`.
+    Anywhere the API runs all the time, `run_cleanup` below calls it every hour instead.
+    """
+    async with SessionLocal() as session:
+        erased = await purge_due(session)
+        lost = await purge_lost_guests(session)
+    if erased:
+        logger.info("Account cleanup: erased %d account(s)", erased)
+    if lost:
+        logger.info("Account cleanup: erased %d lost guest(s)", lost)
+    return erased, lost
 
 
 async def run_cleanup(
@@ -216,13 +233,7 @@ async def run_cleanup(
     """
     while True:
         try:
-            async with SessionLocal() as session:
-                erased = await purge_due(session)
-                lost = await purge_lost_guests(session)
-            if erased:
-                logger.info("Account cleanup: erased %d account(s)", erased)
-            if lost:
-                logger.info("Account cleanup: erased %d lost guest(s)", lost)
+            await cleanup_once()
         except Exception:
             logger.exception("Account cleanup failed; trying again in %ss", interval_seconds)
         await sleep(interval_seconds)

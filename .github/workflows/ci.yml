@@ -71,6 +71,48 @@ jobs:
       - name: Tests
         run: uv run pytest -v
 
+      # On Vercel the API reaches Supabase through its transaction pooler (ADR 0031): a
+      # database connection is handed to another client after every transaction, and
+      # prepared statements don't survive that. Prove it works that way, through PgBouncer
+      # with 2 connections and no prepared statements: 20 users doing the real journey at
+      # once (the API started from app.py, like Vercel), then many transactions in a row
+      # on one connection (scripts/pooler_check.py).
+      - name: Journey through a transaction pooler (like Vercel to Supabase)
+        env:
+          JWT_SECRET: ci-only-pooler-check-secret-not-used-anywhere-else
+        run: |
+          sudo apt-get install -y -q pgbouncer > /dev/null
+          mkdir -p "$RUNNER_TEMP/pgb"
+          printf '"lockin" "ci-only-password"\n' > "$RUNNER_TEMP/pgb/users.txt"
+          cat > "$RUNNER_TEMP/pgb/pgbouncer.ini" <<EOF
+          [databases]
+          * = host=127.0.0.1 port=5432
+          [pgbouncer]
+          listen_addr = 127.0.0.1
+          listen_port = 6433
+          auth_type = scram-sha-256
+          auth_file = $RUNNER_TEMP/pgb/users.txt
+          pool_mode = transaction
+          max_prepared_statements = 0
+          default_pool_size = 2
+          ignore_startup_parameters = extra_float_digits
+          pidfile = $RUNNER_TEMP/pgb/pgbouncer.pid
+          logfile = $RUNNER_TEMP/pgb/pgbouncer.log
+          EOF
+          pgbouncer -d "$RUNNER_TEMP/pgb/pgbouncer.ini"
+          uv run alembic upgrade head
+          uv run python -m lock_in_mode_api.seed
+          # From here on, the API and the check both go through the pooler.
+          export POSTGRES_HOST=127.0.0.1 POSTGRES_PORT=6433 POSTGRES_TRANSACTION_POOLER=true
+          TRUSTED_PROXY_HOPS=1 ACCOUNT_CLEANUP_INTERVAL_SECONDS=0 \
+            uv run uvicorn app:app --port 8077 > "$RUNNER_TEMP/api.log" 2>&1 &
+          for attempt in $(seq 1 30); do
+            curl --silent --fail http://127.0.0.1:8077/health/live > /dev/null && break
+            sleep 1
+          done
+          uv run python scripts/pooler_check.py http://127.0.0.1:8077 20 \
+            || { cat "$RUNNER_TEMP/api.log"; exit 1; }
+
       - name: Build API Docker image
         working-directory: .
         run: docker build --build-arg APP_VERSION=ci-check --tag lock-in-mode-api:ci backend
@@ -128,41 +170,65 @@ jobs:
             > "$RUNNER_TEMP/openapi.json"
           npm run api:types -- --from "$RUNNER_TEMP/openapi.json" --check
 
-  # Main only, after the tests pass (ADR 0028): ask Northflank to build and deploy this
-  # exact commit, then wait until the live API reports it. Skipped until the repository
-  # variables exist (docs/deploy.md), so forks and the time before hosting stay green.
+  # Main only, after the tests pass (ADR 0031): bring the database up to date, deploy
+  # this exact commit to Vercel, then wait until the live API reports it. Skipped until
+  # the repository variables exist (docs/deploy.md), so forks and the time before
+  # hosting stay green.
   deploy:
     name: Deploy API
     needs: backend
     if: >-
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
-      github.ref == 'refs/heads/main' && vars.NORTHFLANK_SERVICE_ID != ''
+      github.ref == 'refs/heads/main' && vars.VERCEL_PROJECT_ID != ''
     runs-on: ubuntu-latest
     # One deploy at a time, in push order; a newer push waits rather than cancelling.
     concurrency:
       group: deploy-api
       cancel-in-progress: false
     env:
-      PROJECT_ID: ${{ vars.NORTHFLANK_PROJECT_ID }}
-      SERVICE_ID: ${{ vars.NORTHFLANK_SERVICE_ID }}
       API_URL: ${{ vars.API_URL }}
     steps:
-      - name: Start the build of this commit
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      # Before the deploy, so the new code never meets an old schema. Migrations stay
+      # backwards compatible (ADR 0028): the version still live keeps working meanwhile.
+      - name: Update the database and the exercise library
+        working-directory: backend
         env:
-          NORTHFLANK_API_TOKEN: ${{ secrets.NORTHFLANK_API_TOKEN }}
+          POSTGRES_HOST: ${{ vars.POSTGRES_HOST }}
+          POSTGRES_PORT: "5432" # Supabase's session pooler: a migration needs one whole session
+          POSTGRES_USER: ${{ vars.POSTGRES_USER }}
+          POSTGRES_DB: postgres
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_SSLMODE: verify-full
+          POSTGRES_SSL_ROOT_CERT: ${{ vars.POSTGRES_SSL_ROOT_CERT }}
         run: |
-          body=$(jq -n --arg sha "$GITHUB_SHA" --arg branch "main" \
-            '{sha: $sha, branch: $branch, overrides: {buildArguments: {APP_VERSION: $sha}}}')
-          curl --fail-with-body --silent --show-error \
-            --header "Authorization: Bearer $NORTHFLANK_API_TOKEN" \
-            --header "Content-Type: application/json" \
-            --data "$body" \
-            "https://api.northflank.com/v1/projects/$PROJECT_ID/services/$SERVICE_ID/build"
+          # The settings insist on a JWT secret; migrations never sign anything.
+          export JWT_SECRET="$(openssl rand -hex 32)"
+          uv sync --locked --no-dev
+          uv run --no-sync alembic upgrade head
+          uv run --no-sync python -m lock_in_mode_api.seed
+
+      # From the repo root: the Vercel project's Root Directory is backend/, and
+      # .vercelignore keeps everything else (and any .env) out of the upload.
+      - name: Deploy this commit to Vercel
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+        run: >-
+          npx --yes vercel@66 deploy --prod --yes --token "$VERCEL_TOKEN"
+          --env APP_VERSION="$GITHUB_SHA"
 
       - name: Wait until the live API runs this commit
         run: |
-          # Build + start usually takes 3-6 minutes; give up after 15.
-          for attempt in $(seq 1 90); do
+          # The deploy command waits for the build; the new version is usually live at
+          # once. Give it 5 minutes.
+          for attempt in $(seq 1 30); do
             live=$(curl --silent --max-time 10 "$API_URL/health/live" || true)
             if [ "$(echo "$live" | jq -r '.version // empty' 2>/dev/null)" = "$GITHUB_SHA" ]; then
               echo "Live: $live"
@@ -172,5 +238,5 @@ jobs:
             fi
             sleep 10
           done
-          echo "::error::The API at $API_URL never reported version $GITHUB_SHA. Check the Northflank build and deploy logs."
+          echo "::error::The API at $API_URL never reported version $GITHUB_SHA. Check the deployment's logs on Vercel."
           exit 1

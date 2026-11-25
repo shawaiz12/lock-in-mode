@@ -42,11 +42,10 @@ app.include_router(v1.router)
 
 @app.get("/health/live", tags=["infrastructure"])
 async def live() -> dict[str, str]:
-    """Is the process up? For the hosting platform's frequent checks (ADR 0028).
+    """Is the API up, and which commit does it run? Never touches the database.
 
-    It never touches the database on purpose: hosted Postgres (Neon) sleeps after
-    5 quiet minutes and its free plan counts awake hours. A check every few seconds
-    on /health would keep it awake all month and use up the free hours.
+    The deploy job (ADR 0028, 0031) asks this every 10 seconds until the new commit is
+    live: cheap for any host, and it can't fail just because the database is slow.
     """
     return {"status": "ok", "version": settings.app_version}
 

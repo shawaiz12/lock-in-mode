@@ -1,4 +1,5 @@
 import ssl
+import uuid
 from typing import Any, Literal
 
 from pydantic import Field, SecretStr, field_validator, model_validator
@@ -20,18 +21,29 @@ class Settings(BaseSettings):
     postgres_host: str = "localhost"
     postgres_port: int = 5432
     # Encryption to Postgres (ADR 0028). "prefer" (asyncpg's own default) suits local
-    # Docker, which has no TLS. Hosted Postgres (Neon) needs "verify-full": encrypted AND
-    # the server's certificate checked, so nobody in the middle can pretend to be it.
+    # Docker, which has no TLS. Hosted Postgres (Supabase) needs "verify-full": encrypted
+    # AND the server's certificate checked, so nobody in the middle can pretend to be it.
     postgres_sslmode: Literal["disable", "prefer", "require", "verify-full"] = "prefer"
     # The certificate authority to trust instead of the system's (ADR 0030), as PEM text:
     # "-----BEGIN CERTIFICATE----- ...". Supabase signs its database certificates with
     # its own CA ("Supabase Root 2021 CA"), which no system trusts, so verify-full needs
-    # it. Empty: trust the system's certificates (Neon and most hosts). A value pasted
+    # it. Empty: trust the system's certificates (most other hosts). A value pasted
     # on one line with literal \n between lines works too.
     postgres_ssl_root_cert: str | None = None
+    # Connecting through a transaction pooler (ADR 0031): Supabase's port 6543, used by
+    # the API on Vercel. The pooler lends us a real database connection for ONE
+    # transaction, then gives it to someone else. Two consequences:
+    # - prepared statements (asyncpg caches them per connection) don't survive the swap,
+    #   so they're switched off;
+    # - the pooler already pools, so the app opens a fresh connection per request instead
+    #   of keeping its own pool (connections parked in a frozen serverless instance would
+    #   only go stale). See core/db.py.
+    # Migrations, the seed, backups and the cleanup job use the session pooler (5432).
+    postgres_transaction_pooler: bool = False
 
-    # Which commit this server runs (ADR 0028). The deploy job passes the commit id into
-    # the Docker build; /health/live reports it, so CI can see the new version is live.
+    # Which commit this server runs (ADR 0028, 0031). The deploy job passes the commit id
+    # (vercel deploy --env, or a Docker build argument); /health/live reports it, so CI
+    # can see the new version is live.
     app_version: str = "dev"
 
     # Auth (ADR 0005). No default: the app refuses to start without a real secret.
@@ -104,6 +116,9 @@ class Settings(BaseSettings):
 
     @property
     def database_url(self) -> URL:
+        # SQLAlchemy's own cache of prepared statements, on top of asyncpg's: off behind
+        # a transaction pooler, like asyncpg's (database_connect_args).
+        query = {"prepared_statement_cache_size": "0"} if self.postgres_transaction_pooler else {}
         return URL.create(
             drivername="postgresql+asyncpg",
             username=self.postgres_user,
@@ -111,6 +126,7 @@ class Settings(BaseSettings):
             host=self.postgres_host,
             port=self.postgres_port,
             database=self.postgres_db,
+            query=query,
         )
 
     @property
@@ -126,7 +142,18 @@ class Settings(BaseSettings):
             # With POSTGRES_SSL_ROOT_CERT it trusts ONLY that CA (ADR 0030), still
             # checking the host name.
             ssl_option = ssl.create_default_context(cadata=self.postgres_ssl_root_cert)
-        return {"timeout": 5, "ssl": ssl_option}
+        args: dict[str, Any] = {"timeout": 5, "ssl": ssl_option}
+        if self.postgres_transaction_pooler:
+            # No cached prepared statements, and a never-reused name for the few that
+            # SQLAlchemy still prepares, so two clients sharing one database connection
+            # can't collide on "__asyncpg_stmt_1__" (SQLAlchemy's documented setup).
+            args["statement_cache_size"] = 0
+            args["prepared_statement_name_func"] = _unique_statement_name
+        return args
+
+
+def _unique_statement_name() -> str:
+    return f"__asyncpg_{uuid.uuid4()}__"
 
 
 settings = Settings()
