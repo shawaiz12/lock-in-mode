@@ -1,9 +1,14 @@
-"""The hourly account cleanup inside the API (ADR 0024): it keeps running after a failed
-run, and the app starts it (or not) from the setting."""
+"""The hourly account cleanup (ADR 0024, 0031): inside the API it keeps running after a
+failed run, and the app starts it (or not) from the setting; as a command it runs one pass.
+"""
 
 import asyncio
 import logging
+import os
+import subprocess
+import sys
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -11,6 +16,8 @@ import pytest
 import lock_in_mode_api.main as main
 from lock_in_mode_api.core.config import settings
 from lock_in_mode_api.services import account
+
+BACKEND = Path(__file__).resolve().parents[2]
 
 
 class _Stop(Exception):
@@ -89,3 +96,52 @@ async def test_the_app_starts_the_cleanup_unless_switched_off(
 
     assert calls == ([seconds] if started else [])
     assert cancelled.is_set() is started  # stopped cleanly on shutdown
+
+
+# --- one pass, as a command (ADR 0031) -----------------------------------------------
+# On Vercel, GitHub Actions runs `python -m lock_in_mode_api.cleanup` every hour.
+
+
+async def test_one_pass_erases_and_reports_both_kinds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def purge(session: Any) -> int:
+        return 4
+
+    async def purge_lost(session: Any) -> int:
+        return 1
+
+    @asynccontextmanager
+    async def session_local() -> Any:
+        yield object()
+
+    monkeypatch.setattr(account, "purge_due", purge)
+    monkeypatch.setattr(account, "purge_lost_guests", purge_lost)
+    monkeypatch.setattr(account, "SessionLocal", session_local)
+
+    assert await account.cleanup_once() == (4, 1)
+
+
+def _cleanup_command(**env: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, "-m", "lock_in_mode_api.cleanup"],
+        cwd=BACKEND,
+        env={**os.environ, **env},
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+
+def test_the_command_runs_one_pass_against_the_database() -> None:
+    result = _cleanup_command()
+
+    assert result.returncode == 0, result.stderr
+    assert "Account cleanup: erased" in result.stdout
+
+
+def test_the_command_fails_loudly_when_the_database_is_unreachable() -> None:
+    # A red run in GitHub (and its email) is the only way anyone hears about it.
+    result = _cleanup_command(POSTGRES_PORT="1")
+
+    assert result.returncode != 0
