@@ -88,6 +88,98 @@ def test_bad_hosting_settings_stop_the_app_from_starting(bad: dict[str, object])
         Settings(**bad)  # type: ignore[arg-type]
 
 
+# --- A database's own certificate authority (ADR 0030) -----------------------------------
+# Supabase signs its certificates with its own CA. POSTGRES_SSL_ROOT_CERT makes
+# verify-full trust ONLY that CA. TEST_CA is a CA made for these tests: no real server
+# is signed by it, so trusting only it must refuse every server.
+
+TEST_CA = """\
+-----BEGIN CERTIFICATE-----
+MIIDITCCAgmgAwIBAgIUIzSDMz6h+SnlevTrK/Y7/r+U0LUwDQYJKoZIhvcNAQEL
+BQAwHzEdMBsGA1UEAwwUTG9jayBJbiBNb2RlIFRlc3QgQ0EwIBcNMjYxMTI1MDUz
+NjI0WhgPMjEyNjExMDEwNTM2MjRaMB8xHTAbBgNVBAMMFExvY2sgSW4gTW9kZSBU
+ZXN0IENBMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyXHn6762Q3vp
+KU+jNWkGeV2JrrhjCesPGLuIwwMb1yzIxJZmJL4v74/HWa0VZ3qtx26hKB9L9B80
+pIpzbYT3tAtQgtvdUQfJ/kCx0Fy8axLF5owvBbM28hs8SyuMKI/Ovpp0k8Oiwgfp
+VLEpYS/51rEVV9dZ+hbKhWZ7dvHuawcn+PBK4qj3i2a4mpAiG7UVtTYD5V2+Wt0p
+GKXswOxAY3lZdrv2ZMI3J2B4vhRIf3jgvQLYGkQaZdumTLk+Pcoqd3FKRhdU4gTr
+1frKUYRjUjNDaLOwyhtsxvk6uyte+JuYR991lsLg3tIo4kXwDgOEM61R/ZDOkvMH
+X9BtrvAUNwIDAQABo1MwUTAdBgNVHQ4EFgQUss4IbjIQIaBmUIwxP3yqlEBphT8w
+HwYDVR0jBBgwFoAUss4IbjIQIaBmUIwxP3yqlEBphT8wDwYDVR0TAQH/BAUwAwEB
+/zANBgkqhkiG9w0BAQsFAAOCAQEALQzh4dWcPEeGc07GoVfkLrJEgsNdyDVU+JB/
+9jtd1fkkjJO0TD0G5ron7IheKCuS1R4r+iyouM5cNI4acuvb+CL1giociuE/kqI0
+gMdMZSaUTiELcvPwnfl1E9Mzg8U9fBLxcgki+h4yYH9V2ijUbL2wAW5Ia37q9FcS
+zMULb3QTDf4dcKscM9BA9FXraSc+FpEJ/1Jn2NW91GZvBeCw0nhAw2e5naVyBJLb
+3kMrZqerwG/jU+usX5GlTebKjmCvum0X551+IDE64UqVNJoBf8c223ZnUsyKg7rQ
+ETa8Sw1VO/hnK8695eMsZ3/EKizz+mfrQlAsQNrYWpOGZnQGuQ==
+-----END CERTIFICATE-----
+"""
+
+
+def test_a_root_cert_is_the_only_certificate_trusted() -> None:
+    context = Settings(
+        postgres_sslmode="verify-full", postgres_ssl_root_cert=TEST_CA
+    ).database_connect_args["ssl"]
+
+    assert isinstance(context, ssl.SSLContext)
+    subjects = [ca["subject"] for ca in context.get_ca_certs()]
+    assert subjects == [((("commonName", "Lock In Mode Test CA"),),)]
+    assert context.verify_mode == ssl.CERT_REQUIRED
+    assert context.check_hostname is True
+
+
+def test_a_root_cert_pasted_on_one_line_works_too() -> None:
+    # Some dashboards only take one-line values: "-----BEGIN…-----\\nMIIB…\\n-----END…".
+    one_line = TEST_CA.strip().replace("\n", "\\n")
+
+    assert (
+        Settings(
+            postgres_sslmode="verify-full", postgres_ssl_root_cert=one_line
+        ).postgres_ssl_root_cert
+        == TEST_CA.strip()
+    )
+
+
+def test_a_blank_root_cert_means_the_system_certificates() -> None:
+    assert (
+        Settings(postgres_sslmode="verify-full", postgres_ssl_root_cert="  ").postgres_ssl_root_cert
+        is None
+    )
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"postgres_sslmode": "verify-full", "postgres_ssl_root_cert": "not a certificate"},
+        # Any other mode would never check it: refuse instead of a false sense of safety.
+        {"postgres_sslmode": "require", "postgres_ssl_root_cert": TEST_CA},
+        {"postgres_ssl_root_cert": TEST_CA},
+    ],
+    ids=["not-a-certificate", "with-require", "with-the-default-mode"],
+)
+def test_a_root_cert_that_cannot_work_stops_the_app_from_starting(
+    bad: dict[str, object],
+) -> None:
+    with pytest.raises(ValidationError):
+        Settings(**bad)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "args",
+    [["-c", CONNECT_WITH_THE_APP_ENGINE], ["-m", "alembic", "current"]],
+    ids=["app-engine", "migrations"],
+)
+def test_every_connection_trusts_only_the_root_cert(args: list[str]) -> None:
+    # The system's own certificates stay in place here: even a test Postgres that the
+    # system trusts must be refused, because it isn't signed by TEST_CA.
+    env = {**os.environ, "POSTGRES_SSLMODE": "verify-full", "POSTGRES_SSL_ROOT_CERT": TEST_CA}
+    result = subprocess.run(
+        [sys.executable, *args], cwd=BACKEND, env=env, capture_output=True, text=True, timeout=60
+    )
+
+    assert _looks_like_a_tls_failure(result)
+
+
 # --- start-production.sh -------------------------------------------------------------
 # The real tools are swapped for tiny stand-ins that write their name to a log, so the
 # test sees the order of the steps and whether the API starts, without starting it.
