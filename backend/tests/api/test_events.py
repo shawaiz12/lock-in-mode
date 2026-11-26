@@ -472,3 +472,16 @@ async def test_no_health_answers_or_free_text_in_any_event(
         for e in await _events(db_session)
         for v in e.props.values()
     )
+
+
+async def test_signing_the_pact_is_recorded_once(
+    client: AsyncClient, db_session: AsyncSession, library: None
+) -> None:
+    headers = await _guest(client)
+    await _onboard(client, headers)
+
+    for _ in range(2):
+        assert (await client.post(f"{ME}/pact", headers=headers)).status_code == 200
+
+    [signed] = await _events(db_session, EventName.PACT_SIGNED)
+    assert signed.props == {}

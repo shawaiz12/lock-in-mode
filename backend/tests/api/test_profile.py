@@ -7,9 +7,12 @@ from typing import Any, get_args
 
 import pytest
 from httpx import AsyncClient, Response
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from lock_in_mode_api.models.profile import SESSION_MINUTES
 from lock_in_mode_api.schemas.profile import SessionMinutes
+from lock_in_mode_api.seed.loader import load_exercises
+from lock_in_mode_api.seed.schema import load_library
 
 ME = "/api/v1/me"
 PROFILE = "/api/v1/me/profile"
@@ -254,6 +257,74 @@ async def test_saving_the_profile_keeps_the_safety_result(
 
     assert body["needs_low_intensity"] is True
     assert body["safety_screened_at"] == screened["safety_screened_at"]
+
+
+# --- POST /me/pact (ADR 0036) -----------------------------------------------------------
+
+PACT = "/api/v1/me/pact"
+
+
+async def test_the_pact_needs_a_profile_first(client: AsyncClient, guest: dict[str, str]) -> None:
+    response = await client.post(PACT, headers=guest)
+
+    assert response.status_code == 404
+    assert response.json()["code"] == "profile_not_found"
+
+
+async def test_a_new_profile_has_no_pact_yet(client: AsyncClient, guest: dict[str, str]) -> None:
+    assert (await _put(client, guest)).json()["pact_signed_at"] is None
+
+
+async def test_signing_the_pact_keeps_the_first_date(
+    client: AsyncClient, guest: dict[str, str]
+) -> None:
+    await _put(client, guest)
+    await client.post(SAFETY, json=ALL_NO, headers=guest)
+
+    first = await client.post(PACT, headers=guest)
+    again = await client.post(PACT, headers=guest)
+
+    assert first.status_code == 200
+    assert first.json()["pact_signed_at"] is not None
+    assert again.json()["pact_signed_at"] == first.json()["pact_signed_at"]
+    assert (await client.get(PROFILE, headers=guest)).json()["pact_signed_at"] == (
+        first.json()["pact_signed_at"]
+    )
+
+
+async def test_changing_answers_keeps_the_pact(client: AsyncClient, guest: dict[str, str]) -> None:
+    await _put(client, guest)
+    signed = (await client.post(PACT, headers=guest)).json()["pact_signed_at"]
+
+    assert (await _put(client, guest, days_per_week=4)).json()["pact_signed_at"] == signed
+
+
+async def test_the_pact_is_due_only_between_safety_and_the_first_plan(
+    client: AsyncClient, guest: dict[str, str], db_session: AsyncSession
+) -> None:
+    await load_exercises(db_session, load_library())
+    assert (await _put(client, guest)).json()["pact_due"] is False  # safety first
+    assert (await client.post(SAFETY, json=ALL_NO, headers=guest)).json()["pact_due"] is True
+    assert (await client.get(PROFILE, headers=guest)).json()["pact_due"] is True
+
+    assert (await client.post(PACT, headers=guest)).json()["pact_due"] is False
+
+
+async def test_someone_already_training_never_gets_the_pact(
+    client: AsyncClient, guest: dict[str, str], db_session: AsyncSession
+) -> None:
+    """Profiles from before the pact existed: their plan is made, so it's never due."""
+    await load_exercises(db_session, load_library())
+    await _put(client, guest)
+    await client.post(SAFETY, json=ALL_NO, headers=guest)
+    assert (await client.post("/api/v1/plans", headers=guest)).status_code == 201
+
+    profile = (await client.get(PROFILE, headers=guest)).json()
+    assert (profile["pact_signed_at"], profile["pact_due"]) == (None, False)
+
+
+async def test_the_pact_needs_a_token(client: AsyncClient) -> None:
+    assert (await client.post(PACT)).status_code == 401
 
 
 async def test_every_safety_question_must_be_answered(
