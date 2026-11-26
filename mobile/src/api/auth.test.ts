@@ -57,11 +57,11 @@ function setup(store: ReturnType<typeof memoryStore>, handler: Parameters<typeof
 }
 
 describe('ensureSignedIn', () => {
-  it('starts as a guest when nothing is saved, and saves the sign-in', async () => {
+  it('starts as a guest when nothing is saved, saves the sign-in, says it is new', async () => {
     const store = memoryStore();
     const { auth, requests } = setup(store, () => json(201, pair(1)));
 
-    await auth.ensureSignedIn();
+    expect(await auth.ensureSignedIn()).toBe(true);
 
     expect(requests.map(path)).toEqual(['/api/v1/auth/guest']);
     expect(store.saved()).toEqual({
@@ -74,7 +74,7 @@ describe('ensureSignedIn', () => {
   it('keeps the saved sign-in (no new guest on every launch)', async () => {
     const { auth, requests } = setup(memoryStore(tokens(1)), () => json(500, {}));
 
-    await auth.ensureSignedIn();
+    expect(await auth.ensureSignedIn()).toBe(false);
 
     expect(requests).toHaveLength(0);
   });
@@ -194,24 +194,36 @@ describe('authedFetch', () => {
     expect(refreshes).toBe(1);
   });
 
-  it('forgets the sign-in when the refresh token is refused', async () => {
+  it('forgets the sign-in when the refresh token is refused, and says so', async () => {
     const store = memoryStore(tokens(1, 0));
     const { auth } = setup(store, () => json(401, { code: 'invalid_refresh_token' }));
+    const heard = jest.fn();
+    const stop = auth.onSignedOut(heard);
 
     await expect(auth.authedFetch(new Request(`${BASE}/api/v1/me`))).rejects.toBeInstanceOf(
       SignedOutError,
     );
     expect(store.saved()).toBeNull();
+    expect(heard).toHaveBeenCalledTimes(1);
+
+    stop();
+    await expect(auth.authedFetch(new Request(`${BASE}/api/v1/me`))).rejects.toBeInstanceOf(
+      SignedOutError,
+    );
+    expect(heard).toHaveBeenCalledTimes(1); // unsubscribed (and no sign-in left to end)
   });
 
   it('keeps the sign-in when the refresh fails for another reason (offline, 5xx)', async () => {
     const store = memoryStore(tokens(1, 0));
     const { auth } = setup(store, () => json(503, { code: 'internal_error' }));
+    const heard = jest.fn();
+    auth.onSignedOut(heard);
 
     await expect(auth.authedFetch(new Request(`${BASE}/api/v1/me`))).rejects.toBeInstanceOf(
       ApiError,
     );
     expect(store.saved()?.refreshToken).toBe('refresh-1');
+    expect(heard).not.toHaveBeenCalled();
   });
 
   it('refuses to call the API with no sign-in at all', async () => {

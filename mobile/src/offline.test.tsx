@@ -24,7 +24,11 @@ import { default as storage, resetStorage, storedItem } from '@/test/kv-store';
 import { setConnected } from '@/test/network';
 
 jest.mock('@/api/client', () => ({
-  auth: { ensureSignedIn: jest.fn(async () => {}), forget: jest.fn(async () => {}) },
+  auth: {
+    ensureSignedIn: jest.fn(async () => false),
+    forget: jest.fn(async () => {}),
+    onSignedOut: jest.fn(() => () => {}),
+  },
   api: {},
 }));
 

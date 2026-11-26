@@ -4,16 +4,25 @@
  * a workout preview. It checks the one thing unit tests can't: that unlocking a group
  * of screens (src/app/_layout.tsx) really moves the person to it.
  */
-import { notifyManager, onlineManager } from '@tanstack/react-query';
+import { dehydrate, notifyManager, onlineManager, QueryClient } from '@tanstack/react-query';
 import { act, fireEvent, renderRouter, screen } from 'expo-router/testing-library';
 
+import { auth } from '@/api/client';
 import type { Plan, Profile, ProfileWrite, WorkoutDetail } from '@/api/endpoints';
 import * as endpoints from '@/api/endpoints';
-import { resetStorage } from '@/test/kv-store';
+import { begin } from '@/features/offline/journal';
+import { JOURNAL_KEY } from '@/state/journal';
+import { CACHE_KEY, CACHE_VERSION, shouldKeep } from '@/state/persist';
+import { keys } from '@/state/startup';
+import { default as storage, resetStorage, storedItem } from '@/test/kv-store';
 import { setConnected } from '@/test/network';
 
 jest.mock('@/api/client', () => ({
-  auth: { ensureSignedIn: jest.fn(async () => {}), forget: jest.fn(async () => {}) },
+  auth: {
+    ensureSignedIn: jest.fn(async () => false),
+    forget: jest.fn(async () => {}),
+    onSignedOut: jest.fn(() => () => {}),
+  },
   api: {},
 }));
 
@@ -118,6 +127,8 @@ const WORKOUT = {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  // clearAllMocks keeps what a test set a mock to return: back to "the saved sign-in".
+  jest.mocked(auth.ensureSignedIn).mockResolvedValue(false);
 });
 
 /** Tap the element showing `text` (events are async in this testing library). */
@@ -240,5 +251,92 @@ it('shows what went wrong and tries again', async () => {
 
   await tap('Try again');
 
+  expect(await find("You're the main character.")).toBeOnTheScreen();
+});
+
+/** What the phone saved for an account that has finished everything: its profile and plan
+ * in the cache, and a workout half done in the journal. Written the way the app writes it
+ * (src/state/persist.ts, src/state/journal.tsx). */
+function savedForAnOldAccount() {
+  const client = new QueryClient();
+  client.setQueryData(keys.profile, profile({ safety_screened_at: '2026-11-24T10:05:00Z' }));
+  client.setQueryData(keys.plan, { plan: PLAN, justCreated: false });
+  const saved = {
+    timestamp: Date.now(),
+    buster: CACHE_VERSION,
+    clientState: dehydrate(client, { shouldDehydrateQuery: shouldKeep }),
+  };
+  storage.setItemSync(CACHE_KEY, JSON.stringify(saved));
+  storage.setItemSync(JOURNAL_KEY, JSON.stringify(begin('w1', 1, '2026-11-25T10:00:00Z')));
+}
+
+it('a brand-new guest never sees what the phone saved for the old account', async () => {
+  // The old account was erased (its sign-in gone), so this launch starts a new guest,
+  // who hasn't done onboarding. The old copy says "all done": it must not count.
+  savedForAnOldAccount();
+  jest.mocked(auth.ensureSignedIn).mockResolvedValue(true);
+  api.getProfileOrNull.mockResolvedValue(null);
+  api.getOrCreatePlan.mockResolvedValue({ plan: PLAN, justCreated: false });
+
+  const router = await renderRouter('./src/app');
+
+  expect(await find("You're the main character.")).toBeOnTheScreen();
+  expect(router.getPathname()).toBe('/onboarding');
+  expect(api.getProfileOrNull).toHaveBeenCalled(); // asked the server, not the old copy
+  expect(api.getOrCreatePlan).not.toHaveBeenCalled();
+  expect(storedItem(JOURNAL_KEY)).toBeNull(); // the old account's workout is gone too
+  expect(storedItem(CACHE_KEY) ?? '').not.toContain('full_body');
+});
+
+it('the same account on the next launch keeps what it saved', async () => {
+  savedForAnOldAccount();
+  api.getOrCreatePlan.mockResolvedValue({ plan: PLAN, justCreated: false });
+
+  await renderRouter('./src/app');
+
+  expect(await find('Full body A')).toBeOnTheScreen();
+  expect(api.getProfileOrNull).not.toHaveBeenCalled(); // the saved profile is used as is
+  expect(storedItem(JOURNAL_KEY)).not.toBeNull();
+});
+
+it('a sign-in that ends mid-use goes to "Start again", then to a fresh setup', async () => {
+  api.getProfileOrNull.mockResolvedValue(profile({ safety_screened_at: '2026-11-24T10:05:00Z' }));
+  api.getOrCreatePlan.mockResolvedValue({ plan: PLAN, justCreated: false });
+  await renderRouter('./src/app');
+  expect(await find('Full body A')).toBeOnTheScreen();
+
+  // Some call (any screen, the journal) found the refresh token refused.
+  const ended = jest.mocked(auth.onSignedOut).mock.calls[0]?.[0];
+  expect(ended).toBeDefined();
+  await act(async () => ended?.());
+
+  expect(await find(/Your sign-in has ended/)).toBeOnTheScreen();
+  expect(screen.queryByText('Full body A')).toBeNull();
+
+  jest.mocked(auth.ensureSignedIn).mockResolvedValue(true); // the new guest
+  api.getProfileOrNull.mockResolvedValue(null);
+  await tap('Start again');
+
+  expect(await find("You're the main character.")).toBeOnTheScreen();
+  expect(auth.forget).toHaveBeenCalled();
+});
+
+it('"Start again" with no connection says so, then starts fresh once it can', async () => {
+  api.getProfileOrNull.mockResolvedValue(profile({ safety_screened_at: '2026-11-24T10:05:00Z' }));
+  api.getOrCreatePlan.mockResolvedValue({ plan: PLAN, justCreated: false });
+  await renderRouter('./src/app');
+  expect(await find('Full body A')).toBeOnTheScreen();
+  await act(async () => jest.mocked(auth.onSignedOut).mock.calls[0]?.[0]());
+  expect(await find(/Your sign-in has ended/)).toBeOnTheScreen();
+
+  // Making the new guest needs the server, and the phone just lost its signal.
+  jest.mocked(auth.ensureSignedIn).mockRejectedValue(new TypeError('Network request failed'));
+  await tap('Start again');
+  // Two automatic retries first (1 s, then 2 s apart), then the message.
+  expect(await find(/Can't reach Lock In Mode/, 5_000)).toBeOnTheScreen();
+
+  jest.mocked(auth.ensureSignedIn).mockResolvedValue(true);
+  api.getProfileOrNull.mockResolvedValue(null);
+  await tap('Try again');
   expect(await find("You're the main character.")).toBeOnTheScreen();
 });

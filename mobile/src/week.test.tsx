@@ -24,7 +24,11 @@ import { setConnected } from '@/test/network';
 import { asked, resetNotifications, scheduled } from '@/test/notifications';
 
 jest.mock('@/api/client', () => ({
-  auth: { ensureSignedIn: jest.fn(async () => {}), forget: jest.fn(async () => {}) },
+  auth: {
+    ensureSignedIn: jest.fn(async () => false),
+    forget: jest.fn(async () => {}),
+    onSignedOut: jest.fn(() => () => {}),
+  },
   api: {},
 }));
 
