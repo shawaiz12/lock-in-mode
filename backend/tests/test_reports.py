@@ -1,6 +1,8 @@
-"""The funnel report (ADR 0025) on a small, hand-made history with known answers."""
+"""The funnel report (ADR 0025, 0034) on a small, hand-made history with known answers."""
 
-from datetime import datetime, timedelta
+import uuid
+from collections import Counter
+from datetime import date, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -53,6 +55,7 @@ async def report(db_session: AsyncSession) -> reports.Report:
     await a.add(21, E.PLAN_STARTED, block=2, level="beginner", reason="next_block")
     await a.add(22, E.WORKOUT_FINISHED, number=4)
     await a.add(5, E.ACCOUNT_LINKED, provider="google")
+    await a.add(1.1, E.REMINDER_SET, days=3, hour=18)
     b = await _user(db_session, now, 30)  # one workout, in week 1
     await b.add(0.1, E.ONBOARDING_DONE)
     await b.add(2, E.WORKOUT_FINISHED, number=1)
@@ -86,6 +89,7 @@ def test_the_funnel(report: reports.Report) -> None:
         ("Signed up", 5),
         ("Onboarding done", 4),
         ("Workout 1 finished", 2),
+        ("Workout 2 finished", 1),
         ("Workout 3 finished", 1),
         ("Block 1 complete", 1),
         ("Block 2 started", 1),
@@ -97,15 +101,16 @@ def test_the_funnel(report: reports.Report) -> None:
         0.5,
         1.0,
         1.0,
+        1.0,
     ]
 
 
 def test_weekly_retention(report: reports.Report) -> None:
     thirty_days, two_days = report.retention
     assert thirty_days.users == 4
-    assert thirty_days.trained == {1: 0.5, 2: 0.25, 4: 0.25}
+    assert thirty_days.trained == {1: 0.5, 2: 0.25, 4: 0.25, 8: None}  # week 8: not yet
     assert two_days.users == 1
-    assert two_days.trained == {1: None, 2: None, 4: None}  # not over yet
+    assert two_days.trained == {1: None, 2: None, 4: None, 8: None}  # not over yet
     assert thirty_days.week_of.weekday() == 0  # Mondays
 
 
@@ -117,6 +122,8 @@ def test_other_counts_and_reasons(report: reports.Report) -> None:
         "Comebacks after a break": 0,
         "Deletions asked (Google/Apple)": 1,
         "Deletions cancelled": 0,  # the one cancel was 200 days ago
+        "Reminders set or changed": 1,
+        "Reminders turned off": 0,
     }
     assert report.reasons == {"privacy": 2, "no_time": 1}
 
@@ -132,8 +139,10 @@ def test_the_printed_report(report: reports.Report) -> None:
     assert "Lock In Mode funnel: people who signed up in the last 90 days" in lines
     assert "Onboarding done 4 80%" in lines
     assert "Workout 1 finished 2 50%" in lines
-    assert any(line.endswith(" 4 50% 25% 25%") for line in lines)
-    assert any(line.endswith(" 1 … … …") for line in lines)
+    assert any(line.endswith(" 4 50% 25% 25% …") for line in lines)
+    assert any(line.endswith(" 1 … … … …") for line in lines)
+    assert "Weekly lifecycle: who finished a workout each week (Monday, UTC)" in lines
+    assert "* this week, so far" in lines
     assert "privacy 2" in lines
 
 
@@ -194,3 +203,40 @@ async def test_no_offers_yet(db_session: AsyncSession) -> None:
 
     assert all((o.offered, o.linked, o.rate) == (0, 0, None) for o in report.offers)
     assert "After workout 10 0 0 –" in _lines(reports.render(report))
+
+
+# --- the weekly lifecycle (ADR 0034) -----------------------------------------------------
+
+W = [date(2026, 11, 2) + timedelta(weeks=n) for n in range(8)]  # eight Mondays
+
+
+def _active(**weeks: int) -> Counter[date]:
+    """_active(w0=1, w3=2): 1 workout in week 0, 2 in week 3."""
+    return Counter({W[int(key[1:])]: n for key, n in weeks.items()})
+
+
+def test_every_kind_of_week() -> None:
+    people = {
+        uuid.uuid4(): _active(w5=1),  # new in week 5
+        uuid.uuid4(): _active(w4=2, w5=2),  # current in week 5, kept it
+        uuid.uuid4(): _active(w2=1, w5=1),  # back after 2 weeks away
+        uuid.uuid4(): _active(w1=1, w5=3),  # back after 3 weeks away (still "1-3")
+        uuid.uuid4(): _active(w0=1, w5=1),  # back after 4 weeks away
+        uuid.uuid4(): _active(w4=1),  # went quiet in week 5
+    }
+
+    [week5] = reports.lifecycle(people, [W[5]])
+
+    assert week5 == reports.WeekLife(
+        week_of=W[5], trained=5, new=1, current=1, back_short=2, back_long=1, quiet=1, kept=2
+    )
+
+
+def test_the_lifecycle_covers_eight_weeks_up_to_this_one(report: reports.Report) -> None:
+    weeks = [life.week_of for life in report.weeks]
+    assert len(weeks) == 8
+    assert all(w.weekday() == 0 for w in weeks)
+    assert weeks == sorted(weeks)
+    assert weeks[-1] == report.now.date() - timedelta(days=report.now.weekday())
+    # User a trained 8 days after 30 days ago and again on day 22: someone trained.
+    assert sum(life.trained for life in report.weeks) >= 2
