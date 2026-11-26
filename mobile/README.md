@@ -105,6 +105,7 @@ Commit it with the backend change. CI fails if they don't match.
 | `PersistQueryClientProvider` | Saves the query cache on the phone, reads it back at launch | An offline cache of `HttpClient` responses on disk |
 | `onlineManager` + `expo-network` | One app-wide "online?" flag that queries obey | `NetworkChange.NetworkAvailabilityChanged` |
 | `useSyncExternalStore` | Redraw when something outside React changes | Subscribing to a C# `event` in `OnEnable` |
+| `expo-notifications` (local) | A reminder the phone shows by itself, weekly | Windows `ScheduledToastNotification` / a local notification in Unity Mobile Notifications |
 
 ```
 src/
@@ -120,18 +121,22 @@ src/
 ├── api/                 client, auth, tokens, errors, every call (endpoints.ts)
 ├── features/            pure + tested: onboarding flow, plan labels, safety answers,
 │   ├── player/          steps (screens and sets), entry (pre-fill), clock, words, result
-│   └── offline/         journal (the workout on the phone) and sync (sending it)
+│   ├── offline/         journal (the workout on the phone) and sync (sending it)
+│   └── week/            words for the ring, streak, new bests and the reminder
 ├── state/
 │   ├── startup.ts       "where should this person be?" → drives the navigator
 │   ├── player.ts        the player's state and actions (usePlayer)
 │   ├── journal.tsx      the journal store: saved at once, sent with retries
 │   ├── online.ts        online or not (expo-network → TanStack's onlineManager)
 │   ├── persist.ts       what's kept on the phone between launches, for 14 days
-│   └── ready.ts         keeps the next workout downloaded
-├── test/                fixtures, fakes of expo-sqlite's store and expo-network
+│   ├── ready.ts         keeps the next workout downloaded
+│   └── reminders.ts     the training reminder (local notifications) and time zone
+├── test/                fixtures; fakes of expo-sqlite's store, expo-network,
+│                        expo-notifications and expo-audio
 └── ui/
     ├── kit.tsx          Screen, Title, Choice, LockInButton, Sheet, Stepper…
     ├── player.tsx       the player's screens (draws what usePlayer returns)
+    ├── week.tsx         the weekly ring, reminder offer/settings, sound check
     └── alerts.ts        beep + buzz at the end of a rest or a timed move
 assets/sounds/           tick.wav (3-2-1) and done.wav (made for this app)
 ```
