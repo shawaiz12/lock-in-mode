@@ -40,6 +40,8 @@ jest.mock('@/api/endpoints', () => ({
   deleteSet: jest.fn(),
   finishSession: jest.fn(),
   swapExercise: jest.fn(),
+  getMe: jest.fn(),
+  getWeek: jest.fn(),
 }));
 
 const mockAlerts = { countIn: jest.fn(), done: jest.fn(), ticked: jest.fn() };
@@ -143,7 +145,31 @@ function setUp() {
     })),
   );
   api.finishSession.mockImplementation(online(() => result()));
+  api.getMe.mockImplementation(online(() => ME));
+  api.getWeek.mockImplementation(online(() => WEEK));
 }
+
+const ME = {
+  id: 'u1',
+  is_guest: true,
+  display_name: null,
+  created_at: '2026-11-24T10:00:00Z',
+  share_usage_data: true,
+  time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  reminder: null,
+  progress_summary: null,
+};
+const WEEK = {
+  week_start: '2026-11-23',
+  done: 0,
+  planned: 3,
+  keep_at: 2,
+  kept: false,
+  streak: 0,
+  best_streak: 0,
+  freezes: 0,
+  last_week: null,
+};
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -191,6 +217,8 @@ function savedOnPhone(daysAgo = 0) {
   client.setQueryData(keys.openSession, null, { updatedAt });
   client.setQueryData(keys.workout('w1'), PUSH_UPS, { updatedAt });
   client.setQueryData(keys.exercise('x-a'), detail('x-a'), { updatedAt });
+  client.setQueryData(keys.week, WEEK, { updatedAt });
+  client.setQueryData(keys.me, ME, { updatedAt });
   const saved = { timestamp: Date.now(), buster: CACHE_VERSION, clientState: dehydrate(client, { shouldDehydrateQuery: shouldKeep }) };
   storage.setItemSync(CACHE_KEY, JSON.stringify(saved));
 }
@@ -228,6 +256,7 @@ it('a whole workout offline: saved on the phone, sent once online, results on th
   await tap('Lock In: done');
   expect(await find('Workout 1 · saved on this phone')).toBeOnTheScreen();
   expect(screen.getByText('Connect to get your next workout')).toBeOnTheScreen();
+  expect(screen.getByText('1 of 3 workouts')).toBeOnTheScreen(); // counted while it waits
 
   // Back online: sent in order with the phone's times, then what changed shows.
   api.getOrCreatePlan.mockImplementation(online(() => ({ plan: plan('w2'), justCreated: false })));
