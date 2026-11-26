@@ -16,6 +16,8 @@ It reads the database the settings point at (your .env), and only reads.
   who kept the week (2+ workouts, the streak rule).
 - Protect your progress (ADR 0026): per milestone, how many guests were offered sign-in
   and how many linked within 7 days of it. A link counts for the latest offer before it.
+- Lock In levels (ADR 0035): the highest level each person reached, in bands, and how
+  often the Locked-in bonus came with a workout (it should be about 1 in 8).
 - Other counts in the same days: linked accounts, level-ups, deletions, leaving reasons.
 
 Users who switched "Share usage data" off have no events, so they aren't in it.
@@ -32,11 +34,12 @@ from datetime import date, datetime, timedelta
 from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from lock_in_mode_api.models import AccountDeletionReason, Event
-from lock_in_mode_api.models.enums import EventName
+from lock_in_mode_api.models import AccountDeletionReason, Event, User, XpEvent
+from lock_in_mode_api.models.enums import EventName, XpSource
 
 RETENTION_WEEKS = (1, 2, 4, 8)
 LIFECYCLE_WEEKS = 8
+LEVEL_BANDS = ((2, 4), (5, 9), (10, 19), (20, None))
 KEEP_AT = 2  # workouts that keep a week (training/week.py)
 LINK_WINDOW = timedelta(days=7)
 OFFER_MILESTONES = (
@@ -120,6 +123,8 @@ class Report:
     funnel: list[Step]
     retention: list[Cohort]
     weeks: list[WeekLife]
+    levels: dict[str, int]  # band label → people whose highest level is in it
+    bonus_rate: float | None  # Locked-in bonuses per XP-earning workout
     offers: list[Offers]
     counts: dict[str, int]
     reasons: dict[str, int]
@@ -231,6 +236,42 @@ async def _weeks(session: AsyncSession, now: datetime) -> list[WeekLife]:
     return lifecycle(per_user, weeks)
 
 
+def level_bands(highest: Sequence[int]) -> dict[str, int]:
+    """Pure: each person's highest Lock In level → how many in each band."""
+    bands: dict[str, int] = {}
+    for low, high in LEVEL_BANDS:
+        label = f"Level {low}+" if high is None else f"Level {low}-{high}"
+        bands[label] = sum(
+            1 for level in highest if level >= low and (high is None or level <= high)
+        )
+    return bands
+
+
+async def _levels(session: AsyncSession) -> dict[str, int]:
+    rows = await session.scalars(
+        select(func.max(Event.props["level"].as_integer()))
+        .where(Event.name == EventName.LEVEL_UP)
+        .group_by(Event.user_id)
+    )
+    return level_bands([level for level in rows if level is not None])
+
+
+async def _bonus_rate(session: AsyncSession, since: datetime) -> float | None:
+    """Only people sharing usage data, like everything else in this report."""
+
+    async def count(source: XpSource) -> int:
+        query = (
+            select(func.count())
+            .select_from(XpEvent)
+            .join(User, User.id == XpEvent.user_id)
+            .where(XpEvent.source == source, XpEvent.created_at >= since, User.share_usage_data)
+        )
+        return await session.scalar(query) or 0
+
+    workouts = await count(XpSource.WORKOUT)
+    return await count(XpSource.BONUS) / workouts if workouts else None
+
+
 async def _offers(session: AsyncSession, cohort: Sequence[uuid.UUID]) -> list[Offers]:
     """Offered → linked within 7 days, per milestone. A link is credited to the latest
     offer before it, so one link never counts twice; a link with no offer in the 7 days
@@ -279,6 +320,7 @@ async def _counts(session: AsyncSession, since: datetime) -> dict[str, int]:
         "Deletions cancelled": await count(EventName.DELETION_CANCELLED),
         "Reminders set or changed": await count(EventName.REMINDER_SET),
         "Reminders turned off": await count(EventName.REMINDER_OFF),
+        "Lock In level-ups": await count(EventName.LEVEL_UP),
     }
 
 
@@ -300,6 +342,8 @@ async def build_report(session: AsyncSession, days: int) -> Report:
         funnel=await _funnel(session, list(signups)),
         retention=await _retention(session, signups, now),
         weeks=await _weeks(session, now),
+        levels=await _levels(session),
+        bonus_rate=await _bonus_rate(session, since),
         offers=await _offers(session, list(signups)),
         counts=await _counts(session, since),
         reasons=await _reasons(session, since),
@@ -337,6 +381,11 @@ def render(report: Report) -> str:
         week_label = f"{life.week_of:%d %b %Y}{mark}"
         lines.append(f"{week_label:<13}" + "".join(f"  {c:>9}" for c in counts))
     lines.append("* this week, so far")
+
+    lines += ["", "Lock In levels: highest level reached, per person"]
+    lines += [f"{band:<13}  {n:>6}" for band, n in report.levels.items()]
+    rate = "–" if report.bonus_rate is None else _pct(report.bonus_rate)
+    lines.append(f"Locked-in bonus: {rate} of XP-earning workouts (aim: about 1 in 8)")
 
     lines += ["", "Protect your progress: guests offered sign-in, linked within 7 days"]
     width = max(len(row.label) for row in report.offers)

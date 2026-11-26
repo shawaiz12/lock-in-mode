@@ -163,6 +163,7 @@ class EventName(StrEnum):
     SIGN_IN_OFFERED = "sign_in_offered"  # ADR 0026
     REMINDER_SET = "reminder_set"  # ADR 0034
     REMINDER_OFF = "reminder_off"  # ADR 0034
+    LEVEL_UP = "level_up"  # ADR 0035
 
 
 class LeavingReason(StrEnum):
@@ -389,3 +390,13 @@ class Impact(StrEnum):
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
+
+
+class XpSource(StrEnum):
+    """What an XP award was for (ADR 0035)."""
+
+    WORKOUT = "workout"  # a trained workout: 100 × the share of its sets done
+    WEEK = "week"  # the week was kept (2 trained workouts)
+    BEST = "best"  # new personal bests in a workout, 25 each, at most 3
+    COMEBACK = "comeback"  # the first trained workout after a break
+    BONUS = "bonus"  # the Locked-in bonus: the workout's XP once more

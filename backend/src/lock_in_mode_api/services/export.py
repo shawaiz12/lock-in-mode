@@ -33,6 +33,7 @@ from lock_in_mode_api.models import (
     SwappedOutExercise,
     User,
     WorkoutSession,
+    XpEvent,
 )
 
 FORMAT = "lock-in-mode-export"
@@ -108,6 +109,7 @@ async def build_export(session: AsyncSession, user_id: uuid.UUID) -> dict[str, A
     )
     comebacks = await _rows(session, Comeback, mine(Comeback), Comeback.started_at)
     events = await _rows(session, Event, mine(Event), Event.at, Event.id)
+    xp = await _rows(session, XpEvent, mine(XpEvent), XpEvent.created_at, XpEvent.id)
 
     used = {r["exercise_id"] for r in [*planned, *targets, *swapped]}
     names: dict[uuid.UUID, str] = {
@@ -156,4 +158,5 @@ async def build_export(session: AsyncSession, user_id: uuid.UUID) -> dict[str, A
         "swapped_out_exercises": [_named(_drop(s, "user_id"), names) for s in swapped],
         "comebacks": [_drop(c, "user_id") for c in comebacks],
         "usage_events": [_drop(e, "user_id") for e in events],
+        "xp": [_drop(x, "user_id") for x in xp],
     }

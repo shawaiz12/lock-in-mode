@@ -15,6 +15,7 @@ from lock_in_mode_api.models.enums import Feedback, MovementSlot, ProgressChange
 from lock_in_mode_api.schemas.exercise import ExerciseRef
 from lock_in_mode_api.schemas.user import SignInOffer
 from lock_in_mode_api.schemas.week import WeekRead
+from lock_in_mode_api.schemas.xp import XpGained
 
 
 class SessionStart(BaseModel):
@@ -151,6 +152,11 @@ class SessionResult(SessionRead):
     )
     week: WeekRead | None = Field(
         default=None, description="This week after this workout: the ring and the streak."
+    )
+    xp: XpGained | None = Field(
+        default=None,
+        description="What this workout earned (ADR 0035), to reveal after the new bests "
+        "and the week. null: nothing was ticked.",
     )
     offer_reminder: bool = Field(
         default=False,

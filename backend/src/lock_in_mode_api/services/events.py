@@ -179,3 +179,8 @@ async def reminder_set(session: AsyncSession, user_id: uuid.UUID, days: int, hou
 
 async def reminder_off(session: AsyncSession, user_id: uuid.UUID) -> None:
     await _record(session, user_id, EventName.REMINDER_OFF, {})
+
+
+async def level_up(session: AsyncSession, user_id: uuid.UUID, level: int) -> None:
+    """A new Lock In level was reached (ADR 0035)."""
+    await _record(session, user_id, EventName.LEVEL_UP, {"level": level})

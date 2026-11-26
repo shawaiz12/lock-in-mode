@@ -17,12 +17,14 @@ from lock_in_mode_api.models.enums import LeavingReason
 from lock_in_mode_api.schemas.profile import ProfileRead, ProfileWrite, SafetyScreen
 from lock_in_mode_api.schemas.user import AccountDeletion, UserRead, UserUpdate
 from lock_in_mode_api.schemas.week import WeekRead
+from lock_in_mode_api.schemas.xp import XpLevel
 from lock_in_mode_api.services import account as account_service
 from lock_in_mode_api.services import auth as auth_service
 from lock_in_mode_api.services import export as export_service
 from lock_in_mode_api.services import profile as profile_service
 from lock_in_mode_api.services import sign_in_offer
 from lock_in_mode_api.services import week as week_service
+from lock_in_mode_api.services import xp as xp_service
 from lock_in_mode_api.services.auth import Provider
 
 router = APIRouter(prefix="/me", tags=["me"])
@@ -51,6 +53,12 @@ async def read_me(user: CurrentUser, session: DbSession) -> UserRead:
 async def read_week(user: CurrentUser, session: DbSession) -> WeekRead:
     """This week's ring ("2 of 3") and the weekly streak with its freezes (ADR 0034)."""
     return await week_service.read_week(session, user.id)
+
+
+@router.get("/xp")
+async def read_xp(user: CurrentUser, session: DbSession) -> XpLevel:
+    """The Lock In level and XP (ADR 0035): "Lock In level 7 · 320 / 1,000 XP"."""
+    return await xp_service.read_xp(session, user.id)
 
 
 @router.patch("")

@@ -10,6 +10,7 @@ from lock_in_mode_api.models.refresh_token import RefreshToken
 from lock_in_mode_api.models.session import MovementRung, SetLog, WorkoutSession
 from lock_in_mode_api.models.swap import SwappedOutExercise
 from lock_in_mode_api.models.user import User
+from lock_in_mode_api.models.xp import XpEvent
 
 __all__ = [
     "AccountDeletionReason",
@@ -28,6 +29,7 @@ __all__ = [
     "SetLog",
     "SwappedOutExercise",
     "User",
+    "XpEvent",
     "WorkoutSession",
     "exercise_alternatives",
 ]
