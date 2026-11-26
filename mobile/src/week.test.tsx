@@ -74,6 +74,8 @@ const PROFILE = {
   obstacles: [],
   needs_low_intensity: false,
   safety_screened_at: '2026-11-24T10:05:00Z',
+  pact_signed_at: '2026-11-24T10:06:00Z',
+  pact_due: false,
   created_at: '2026-11-24T10:00:00Z',
   updated_at: '2026-11-24T10:00:00Z',
   bro_split_available: false,
@@ -195,6 +197,22 @@ async function find(text: string | RegExp, withinMs = 1500) {
   return screen.getByText(text);
 }
 
+/** Like `find`, by accessibility label (the HUD's level, the gear). */
+async function findLabel(label: string | RegExp, withinMs = 1500) {
+  for (let waited = 0; waited < withinMs; waited += 50) {
+    const [element] = screen.queryAllByLabelText(label);
+    if (element) return element;
+    await wait(50);
+  }
+  return screen.getByLabelText(label);
+}
+
+/** Home's gear → Settings (ADR 0036: the reminder and the sound check live there). */
+async function openSettings() {
+  await fireEvent.press(await findLabel('Settings'));
+  expect(await find('Sound and feel')).toBeOnTheScreen();
+}
+
 /** Open the app, do workout 1 (one set), tap "Just right". */
 async function finishWorkoutOne() {
   await renderRouter('./src/app');
@@ -266,10 +284,11 @@ it('"Not now" just closes the offer', async () => {
   expect(asked.count).toBe(0);
 });
 
-it('Home: change the reminder’s time, then turn it off', async () => {
+it('Settings: change the reminder’s time, then turn it off', async () => {
   resetNotifications({ granted: true });
   setUp(me({ reminder: { at: '07:00:00', days: [1, 3] } }));
   await renderRouter('./src/app');
+  await openSettings();
 
   expect(await find('Tue, Thu at 07:00')).toBeOnTheScreen();
   await tap('Change the reminder');
@@ -294,10 +313,12 @@ it('a saved reminder is set up again on a new phone', async () => {
   resetNotifications({ granted: true });
   setUp(me({ reminder: { at: '18:00:00', days: [0, 2, 4] } }));
   await renderRouter('./src/app');
-  await find('Mon, Wed, Fri at 18:00');
+  await find('This week'); // Home sets it up, without opening Settings
   await wait(100);
 
   expect(scheduled.map((s) => s.trigger.weekday)).toEqual([2, 4, 6]);
+  await openSettings();
+  expect(await find('Mon, Wed, Fri at 18:00')).toBeOnTheScreen();
   expect(asked.count).toBe(0); // never asks by itself
 });
 
@@ -312,6 +333,7 @@ it('sends the phone’s time zone to the account when it differs', async () => {
 
 it('the sound check plays the beep and explains the media volume', async () => {
   await renderRouter('./src/app');
+  await openSettings();
   await tap(await find('Sound check'));
 
   expect(await find('Sound ready.')).toBeOnTheScreen();
@@ -324,7 +346,7 @@ it('a saved reminder without permission on this phone: never asks by itself', as
   resetNotifications({ granted: false });
   setUp(me({ reminder: { at: '18:00:00', days: [0, 2, 4] } }));
   await renderRouter('./src/app');
-  await find('Mon, Wed, Fri at 18:00');
+  await find('This week');
   await wait(100);
 
   expect(asked.count).toBe(0);
@@ -351,9 +373,12 @@ const LEVEL = (level: number, into: number, needed: number) => ({
   xp_needed: needed,
 });
 
-it('Home shows the Lock In level under the week', async () => {
+it('Home’s HUD shows the Lock In level and the streak', async () => {
   await renderRouter('./src/app');
-  expect(await find('Lock In level 7 · 320 / 1,000 XP')).toBeOnTheScreen();
+  expect(await findLabel('Lock In level 7 · 320 / 1,000 XP')).toBeOnTheScreen();
+  expect(screen.getByText('Lock In level 7')).toBeOnTheScreen();
+  expect(screen.getByText('320 / 1,000 XP')).toBeOnTheScreen();
+  expect(screen.getByLabelText('2-week streak')).toBeOnTheScreen();
 });
 
 it('the finish screen reveals XP after the real progress: count-up, items, level-up', async () => {

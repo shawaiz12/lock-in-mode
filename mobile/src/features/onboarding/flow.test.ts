@@ -1,13 +1,20 @@
 import {
   type Answers,
   chooseLocation,
-  displayName,
+  cleanName,
+  DAY_HINTS,
+  DAYS,
   echoFor,
   EMPTY_ANSWERS,
+  FLOW_LENGTH,
   GOALS,
   IncompleteAnswersError,
   isAnswered,
-  stepsFor,
+  needsButton,
+  PACT_STEP,
+  QUESTIONS,
+  SAFETY_STEP,
+  STEPS,
   toggle,
   toProfileWrite,
 } from './flow';
@@ -21,26 +28,35 @@ const complete: Answers = {
   minutes: 45,
 };
 
-describe('stepsFor', () => {
-  it('asks about equipment at home only', () => {
-    expect(stepsFor({ ...EMPTY_ANSWERS, location: 'home' })).toContain('equipment');
-    expect(stepsFor({ ...EMPTY_ANSWERS, location: 'gym' })).not.toContain('equipment');
-    expect(stepsFor(EMPTY_ANSWERS)).not.toContain('equipment');
+describe('the steps (ADR 0036)', () => {
+  it('asks six questions, in the playbook order', () => {
+    expect(STEPS).toEqual(['goal', 'history', 'where', 'days', 'time', 'limits']);
   });
 
-  it('follows the playbook order', () => {
-    expect(stepsFor({ ...EMPTY_ANSWERS, location: 'home' })).toEqual([
-      'welcome',
-      'goal',
-      'echo',
-      'history',
-      'where',
-      'equipment',
-      'days',
-      'time',
-      'limits',
-      'obstacles',
-    ]);
+  it('counts the safety list and the pact in the progress bar: 8 steps in all', () => {
+    expect(FLOW_LENGTH).toBe(8);
+    expect([SAFETY_STEP, PACT_STEP]).toEqual([7, 8]);
+  });
+
+  it('says why it asks, on every question', () => {
+    for (const step of STEPS) {
+      expect(QUESTIONS[step].title).not.toBe('');
+      expect(QUESTIONS[step].why).not.toBe('');
+    }
+  });
+
+  it('needs a button only where one tap can’t be the answer', () => {
+    expect(needsButton('where', { ...EMPTY_ANSWERS, location: 'home' })).toBe(true);
+    expect(needsButton('where', { ...EMPTY_ANSWERS, location: 'gym' })).toBe(false);
+    expect(needsButton('limits', { ...EMPTY_ANSWERS, limits: ['knees'] })).toBe(true);
+    expect(needsButton('limits', EMPTY_ANSWERS)).toBe(false); // "None" moves on
+    for (const step of ['goal', 'history', 'days', 'time'] as const) {
+      expect(needsButton(step, EMPTY_ANSWERS)).toBe(false);
+    }
+  });
+
+  it('never promises a split from the number of days', () => {
+    for (const days of DAYS) expect(DAY_HINTS[days]).not.toMatch(/split|push|pull|legs|upper|lower|full body/i);
   });
 });
 
@@ -56,10 +72,8 @@ describe('isAnswered', () => {
     expect(isAnswered('time', { ...complete, minutes: null })).toBe(true);
   });
 
-  it('lets optional screens through empty', () => {
-    for (const step of ['welcome', 'echo', 'equipment', 'limits', 'obstacles'] as const) {
-      expect(isAnswered(step, EMPTY_ANSWERS)).toBe(true);
-    }
+  it('lets "no limits" through empty', () => {
+    expect(isAnswered('limits', EMPTY_ANSWERS)).toBe(true);
   });
 });
 
@@ -72,7 +86,6 @@ describe('toProfileWrite', () => {
       equipment: ['dumbbells', 'pull_up_bar'],
       quiet: true,
       limits: ['knees'],
-      obstacles: ['no_time', 'get_bored'],
     };
 
     expect(toProfileWrite(answers)).toEqual({
@@ -84,7 +97,7 @@ describe('toProfileWrite', () => {
       days_per_week: 3,
       minutes_per_session: 45,
       limits: ['knees'],
-      obstacles: ['no_time', 'get_bored'],
+      obstacles: [], // not asked any more (ADR 0036)
     });
   });
 
@@ -132,10 +145,10 @@ describe('small helpers', () => {
     expect(toggle(['knees', 'back'], 'knees')).toEqual(['back']);
   });
 
-  it('tidies the optional name', () => {
-    expect(displayName({ ...EMPTY_ANSWERS, name: '  Shawaiz ' })).toBe('Shawaiz');
-    expect(displayName({ ...EMPTY_ANSWERS, name: '   ' })).toBeNull();
-    expect(displayName({ ...EMPTY_ANSWERS, name: 'x'.repeat(80) })).toHaveLength(50);
+  it('tidies the optional name (Settings)', () => {
+    expect(cleanName('  Shawaiz ')).toBe('Shawaiz');
+    expect(cleanName('   ')).toBeNull();
+    expect(cleanName('x'.repeat(80))).toHaveLength(50);
   });
 
   it('has an echo for every goal, with the honest fat-loss note', () => {

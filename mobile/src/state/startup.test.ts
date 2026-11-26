@@ -9,8 +9,8 @@ const ok = <T>(data: T) => ({ status: 'success' as const, data });
 const pending = { status: 'pending' as const };
 const failed = { status: 'error' as const };
 
-const profile = (safetyScreenedAt: string | null) =>
-  ({ safety_screened_at: safetyScreenedAt }) as Profile;
+const profile = (safetyScreenedAt: string | null, pactDue?: boolean) =>
+  ({ safety_screened_at: safetyScreenedAt, pact_due: pactDue }) as Profile;
 
 describe('stageFor', () => {
   it('waits while signing in or loading the profile', () => {
@@ -37,6 +37,13 @@ describe('stageFor', () => {
   it('an ended sign-in always stops at the error screen, saved profile or not', () => {
     const ended = { status: 'error' as const, data: profile('2026-11-24T10:00:00Z'), error: new SignedOutError() };
     expect(stageFor(ok(true), ended)).toBe('error');
+  });
+
+  it('the pact comes after the safety check, only when the server says it is due', () => {
+    expect(stageFor(ok(true), ok(profile('2026-11-24T10:00:00Z', true)))).toBe('pact');
+    expect(stageFor(ok(true), ok(profile('2026-11-24T10:00:00Z', false)))).toBe('plan');
+    // A copy saved by the app before the pact existed has no pact_due: never the pact.
+    expect(stageFor(ok(true), ok(profile('2026-11-24T10:00:00Z')), false)).toBe('plan');
   });
 
   it('sends new people to onboarding, then the safety check, then the plan', () => {

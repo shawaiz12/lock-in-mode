@@ -2,6 +2,9 @@ import { act, renderHook } from '@testing-library/react-native';
 import { setAudioModeAsync, useAudioPlayer } from 'expo-audio';
 import { Vibration } from 'react-native';
 
+import { forgetFeel, setFeel } from '@/state/feel';
+import { resetStorage } from '@/test/kv-store';
+
 import { useAlerts, useSoundCheck } from './alerts';
 
 type FakePlayer = { currentTime: number; seekTo: jest.Mock; play: jest.Mock };
@@ -19,6 +22,8 @@ jest.mock('expo-audio', () => ({
 jest.mock('expo-haptics', () => ({ impactAsync: jest.fn(async () => {}), ImpactFeedbackStyle: { Light: 'light' } }));
 
 beforeEach(() => {
+  resetStorage();
+  forgetFeel();
   mockPlayers.length = 0;
   jest.spyOn(Vibration, 'vibrate').mockImplementation(() => {});
 });
@@ -66,4 +71,34 @@ it('the sound check plays the beep and says whether it loaded', async () => {
   expect(result.current.loaded).toBe(true);
   await act(async () => result.current.play());
   expect(mockPlayers[0]?.play).toHaveBeenCalled();
+});
+
+it('Settings can switch the beep off: the buzz still comes (ADR 0036)', async () => {
+  const { result } = await renderHook(() => useAlerts());
+  const [tick, done] = mockPlayers;
+  setFeel({ beep: false });
+  jest.mocked(Vibration.vibrate).mockClear();
+
+  await act(async () => result.current.countIn());
+  await act(async () => result.current.done());
+
+  expect(tick?.play).not.toHaveBeenCalled();
+  expect(done?.play).not.toHaveBeenCalled();
+  expect(Vibration.vibrate).toHaveBeenCalled();
+});
+
+it('Settings can switch vibration off: the beep still plays, no buzz, no tap', async () => {
+  const { impactAsync } = jest.requireMock<{ impactAsync: jest.Mock }>('expo-haptics');
+  const { result } = await renderHook(() => useAlerts());
+  const done = mockPlayers[1];
+  setFeel({ vibration: false });
+  jest.mocked(Vibration.vibrate).mockClear(); // calls from earlier tests
+  impactAsync.mockClear();
+
+  await act(async () => result.current.done());
+  await act(async () => result.current.ticked());
+
+  expect(done?.play).toHaveBeenCalled();
+  expect(Vibration.vibrate).not.toHaveBeenCalled();
+  expect(impactAsync).not.toHaveBeenCalled();
 });

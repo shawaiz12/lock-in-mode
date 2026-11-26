@@ -1,4 +1,5 @@
 import {
+  bubbleLine,
   formatTime,
   freezeLine,
   keptNowLine,
@@ -70,4 +71,12 @@ it('reminder days, and the phone’s weekday numbers (1 = Sunday)', () => {
   expect(reminderSummary({ at: '18:30:00', days: [0, 2, 4] })).toBe('Mon, Wed, Fri at 18:30');
   expect(reminderSummary({ at: '07:00:00', days: [0, 1, 2, 3, 4, 5, 6] })).toBe('Every day at 07:00');
   expect([0, 1, 2, 3, 4, 5, 6].map(toPhoneWeekday)).toEqual([2, 3, 4, 5, 6, 7, 1]);
+});
+
+it('the character says what’s next, never what’s lost (ADR 0036)', () => {
+  expect(bubbleLine({ done: 0, keep_at: 2, kept: false })).toBe('Ready when you are.');
+  expect(bubbleLine({ done: 1, keep_at: 2, kept: false })).toBe('1 more this week?');
+  expect(bubbleLine({ done: 2, keep_at: 2, kept: true })).toBe('This week counts!');
+  expect(bubbleLine({ done: 0, keep_at: 3, kept: false })).toBe('Ready when you are.');
+  expect(bubbleLine({ done: 1, keep_at: 3, kept: false })).toBe('2 more this week?');
 });

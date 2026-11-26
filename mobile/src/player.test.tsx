@@ -74,6 +74,8 @@ const PROFILE = {
   obstacles: [],
   needs_low_intensity: false,
   safety_screened_at: '2026-11-24T10:05:00Z',
+  pact_signed_at: '2026-11-24T10:06:00Z',
+  pact_due: false,
   created_at: '2026-11-24T10:00:00Z',
   updated_at: '2026-11-24T10:00:00Z',
   bro_split_available: false,
@@ -245,7 +247,9 @@ it('changes a set before ticking it: − / + by a real weight step', async () =>
   setUp(workout({ main: [row('a', 'Dumbbell bench press', { sets: 1, weight_kg: 40 })] }));
   await openPlayer();
 
-  await tap(await find('change'));
+  await find('Tap a number to change it');
+  const [number] = screen.getAllByLabelText('Change the numbers');
+  await tap(number!);
   await fireEvent.press(screen.getByLabelText('More reps'));
   await fireEvent.press(screen.getByLabelText('More reps'));
   await fireEvent.press(screen.getByLabelText('More weight'));
@@ -383,7 +387,7 @@ it('starts the next block once this one is complete, after "Ready for more?"', a
   expect(screen.getByText('A little more volume each week.')).toBeOnTheScreen();
   await tap('Yes, move up');
 
-  expect(await find('Block 2 · 5 weeks')).toBeOnTheScreen();
+  expect(await find('Your plan · block 2 · 5 weeks')).toBeOnTheScreen();
   expect(api.startNextBlock).toHaveBeenCalledWith(true);
 });
 
@@ -395,6 +399,6 @@ it('without an offer, the button starts the next block', async () => {
   await renderRouter('./src/app');
   await tap(await find('Lock In: start block 2'));
 
-  expect(await find('Block 2 · 5 weeks')).toBeOnTheScreen();
+  expect(await find('Your plan · block 2 · 5 weeks')).toBeOnTheScreen();
   expect(api.startNextBlock).toHaveBeenCalledWith(false);
 });

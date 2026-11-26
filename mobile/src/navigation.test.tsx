@@ -1,11 +1,13 @@
 /**
  * The whole first-run journey through the REAL screens and navigator (src/app), with the
- * API faked: start -> onboarding -> safety check -> "Building your plan" -> the plan ->
- * a workout preview. It checks the one thing unit tests can't: that unlocking a group
+ * API faked: start -> onboarding -> safety check -> the pact -> "Building your plan" ->
+ * the plan -> a workout preview. It checks the one thing unit tests can't: that unlocking a group
  * of screens (src/app/_layout.tsx) really moves the person to it.
  */
 import { dehydrate, notifyManager, onlineManager, QueryClient } from '@tanstack/react-query';
 import { act, fireEvent, renderRouter, screen } from 'expo-router/testing-library';
+
+import { STAMP_MS } from '@/app/pact';
 
 import { auth } from '@/api/client';
 import type { Plan, Profile, ProfileWrite, WorkoutDetail } from '@/api/endpoints';
@@ -30,8 +32,8 @@ jest.mock('@/api/endpoints', () => ({
   ...jest.requireActual('@/api/endpoints'),
   getProfileOrNull: jest.fn(),
   saveProfile: jest.fn(),
-  saveDisplayName: jest.fn(async () => {}),
   submitSafetyScreen: jest.fn(),
+  signPact: jest.fn(),
   getOrCreatePlan: jest.fn(),
   getWorkout: jest.fn(),
 }));
@@ -68,6 +70,8 @@ function profile(overrides: Partial<Profile> = {}): Profile {
     obstacles: [],
     needs_low_intensity: false,
     safety_screened_at: null,
+    pact_signed_at: null,
+    pact_due: false,
     created_at: '2026-11-24T10:00:00Z',
     updated_at: '2026-11-24T10:00:00Z',
     bro_split_available: false,
@@ -132,7 +136,8 @@ beforeEach(() => {
 });
 
 /** Tap the element showing `text` (events are async in this testing library). */
-const tap = (text: string | RegExp) => fireEvent.press(screen.getByText(text));
+const tap = (target: string | RegExp | ReturnType<typeof screen.getByText>) =>
+  fireEvent.press(typeof target === 'string' || target instanceof RegExp ? screen.getByText(target) : target);
 
 /** Let fake time move on, 50 ms at a time (up to `withinMs`), until `text` is on screen.
  * Small steps let React draw between timers, like on a phone. */
@@ -148,30 +153,32 @@ async function find(text: string | RegExp, withinMs = 1000) {
 }
 
 it('takes a new person from the first launch to their plan', async () => {
+  const screened = '2026-11-24T10:05:00Z';
   api.getProfileOrNull.mockResolvedValue(null);
   api.saveProfile.mockImplementation(async (body: ProfileWrite) => profile({ ...body }));
-  api.submitSafetyScreen.mockResolvedValue(profile({ safety_screened_at: '2026-11-24T10:05:00Z' }));
+  api.submitSafetyScreen.mockResolvedValue(profile({ safety_screened_at: screened, pact_due: true }));
+  api.signPact.mockResolvedValue(profile({ safety_screened_at: screened, pact_signed_at: screened }));
   api.getOrCreatePlan.mockResolvedValue({ plan: PLAN, justCreated: true });
   api.getWorkout.mockResolvedValue(WORKOUT);
 
   const router = await renderRouter('./src/app');
 
-  // Onboarding, one question per screen.
-  expect(await find("You're the main character.")).toBeOnTheScreen();
-  await fireEvent.changeText(screen.getByLabelText('Your name, optional'), 'Shawaiz');
-  await tap('Lock In');
+  // Onboarding (ADR 0036): six questions, one per screen, each saying why it asks.
+  expect(await find('What’s your goal?')).toBeOnTheScreen();
+  expect(screen.getByText('1 / 8')).toBeOnTheScreen();
   await tap('Build muscle'); // single choices move on by themselves
+  // The goal's echo shows on the next screen, not a screen of its own.
   expect(await find(/every part of each muscle/)).toBeOnTheScreen();
-  await tap('Lock In');
+  expect(screen.getByText('How long have you trained steadily?')).toBeOnTheScreen();
   await tap('Never, on and off, or under 6 months');
   await tap('Gym'); // no equipment question at the gym
   await tap('3 days');
   await tap('45 min');
   await tap('Knees');
+  expect(screen.getByText('6 / 8')).toBeOnTheScreen();
   await tap('Lock In');
-  await tap('Skip'); // "What's made it hard before?" is optional
 
-  // Saved in one PUT, then the name; the app moves to the safety check by itself.
+  // Saved in one PUT; the app moves to the safety check by itself.
   expect(await find('Quick safety check')).toBeOnTheScreen();
   expect(router.getPathname()).toBe('/safety');
   expect(api.saveProfile).toHaveBeenCalledWith({
@@ -185,26 +192,111 @@ it('takes a new person from the first launch to their plan', async () => {
     limits: ['knees'],
     obstacles: [],
   });
-  expect(api.saveDisplayName).toHaveBeenCalledWith('Shawaiz');
 
-  // Safety check: all four must be answered.
-  for (const no of screen.getAllByText('No')) await fireEvent.press(no);
-  await tap('Lock In');
+  // Safety: one list; "None of these" is one tap and sends four noes.
+  expect(screen.getByText('7 / 8')).toBeOnTheScreen();
+  await tap('None of these');
+  expect(api.submitSafetyScreen.mock.calls[0]?.[0]).toEqual({
+    heart_condition: false,
+    chest_pain_when_active: false,
+    pregnant: false,
+    recent_surgery_or_injury: false,
+  });
+
+  // The pact, written from their answers, signed, stamped, then the plan.
+  expect(await find('Sign your pact')).toBeOnTheScreen();
+  expect(router.getPathname()).toBe('/pact');
+  expect(screen.getByText('I train 3 days a week. Any week with 2 workouts counts.')).toBeOnTheScreen();
+  expect(screen.getByText('If I miss a week, I come back.')).toBeOnTheScreen();
+  expect(screen.getByRole('button', { name: 'I’m locked in' })).toBeDisabled(); // sign first
+  await fireEvent(screen.getByLabelText('Sign here'), 'accessibilityAction', {
+    nativeEvent: { actionName: 'activate' },
+  });
+  await tap('I’m locked in');
+  expect(await find('LOCKED IN')).toBeOnTheScreen();
+  expect(screen.getByText('Locked in!')).toBeOnTheScreen();
+  await tap('Locked in!'); // tapping again while the stamp lands sends nothing more
+  expect(api.signPact).toHaveBeenCalledTimes(1);
 
   // The plan is built and its real reasons appear one by one.
-  expect(await find('Building your plan')).toBeOnTheScreen();
+  expect(await find('Building your plan', STAMP_MS + 500)).toBeOnTheScreen();
   expect(router.getPathname()).toBe('/plan');
   expect(screen.queryByText('Knees: no jumping.')).toBeNull(); // not all at once
   expect(await find('Knees: no jumping.', 700 * PLAN.reasons.length + 500)).toBeOnTheScreen();
   await tap('Lock In: see my plan');
 
-  // The week, and one big button for the next workout.
+  // Home, and one big button for the next workout.
   expect(await find('Full body')).toBeOnTheScreen();
   expect(screen.getByText('Full body B')).toBeOnTheScreen();
+  expect(screen.getByText('Full body A · about 45 min')).toBeOnTheScreen();
   await tap('Lock In: workout 1');
   expect(await find('Push-up')).toBeOnTheScreen();
   expect(screen.getByText(/as many good reps as you can/)).toBeOnTheScreen();
   expect(router.getPathname()).toBe('/workout/w1');
+});
+
+it('a home user picks their kit on the same screen, and can go back', async () => {
+  api.getProfileOrNull.mockResolvedValue(null);
+  api.saveProfile.mockImplementation(async (body: ProfileWrite) => profile({ ...body }));
+
+  await renderRouter('./src/app');
+  await tap(await find('Lose fat / get fit'));
+  expect(await find(/eating less than you burn/)).toBeOnTheScreen(); // the honest note
+  await tap('2+ years');
+  await tap('Home'); // stays: home asks what's there first
+  expect(await find('What do you have at home?')).toBeOnTheScreen();
+  await tap('Dumbbells');
+  await tap('Lock In');
+  expect(await find('How many days a week can you train?')).toBeOnTheScreen();
+
+  await fireEvent.press(screen.getByLabelText('Back'));
+  expect(await find('What do you have at home?')).toBeOnTheScreen(); // answers kept
+  await tap('Lock In');
+  await tap(await find('2 days'));
+  await tap('No limit');
+  await tap('None'); // no sore spots: saves at once
+
+  expect(await find('Quick safety check')).toBeOnTheScreen();
+  expect(api.saveProfile).toHaveBeenCalledWith(
+    expect.objectContaining({
+      goal: 'lose_fat',
+      level: 'experienced',
+      location: 'home',
+      equipment: ['dumbbells'],
+      days_per_week: 2,
+      minutes_per_session: null,
+      limits: [],
+    }),
+  );
+});
+
+it('a "yes" on the safety list shows the doctor note before sending', async () => {
+  api.getProfileOrNull.mockResolvedValue(profile());
+  api.submitSafetyScreen.mockResolvedValue(profile({ safety_screened_at: '2026-11-24T10:05:00Z' }));
+
+  await renderRouter('./src/app');
+  await tap(await find('I’m pregnant'));
+
+  expect(screen.getByText('Please check with a doctor first. We’ll keep things gentle.')).toBeOnTheScreen();
+  expect(screen.queryByText('None of these')).toBeNull();
+  await tap('Lock In');
+  expect(api.submitSafetyScreen.mock.calls[0]?.[0]).toEqual({
+    heart_condition: false,
+    chest_pain_when_active: false,
+    pregnant: true,
+    recent_surgery_or_injury: false,
+  });
+});
+
+it('someone who already trains never gets the pact', async () => {
+  // pact_due is false for them (the server knows a plan exists): straight to Home.
+  api.getProfileOrNull.mockResolvedValue(profile({ safety_screened_at: '2026-11-24T10:05:00Z' }));
+  api.getOrCreatePlan.mockResolvedValue({ plan: PLAN, justCreated: false });
+
+  const router = await renderRouter('./src/app', { initialUrl: '/pact' });
+
+  expect(await find('Full body A')).toBeOnTheScreen();
+  expect(router.getPathname()).toBe('/plan');
 });
 
 it('opens straight on the safety check when onboarding was done but not the check', async () => {
@@ -231,7 +323,7 @@ it('keeps people out of screens they are not ready for', async () => {
 
   const router = await renderRouter('./src/app', { initialUrl: '/plan' });
 
-  expect(await find("You're the main character.")).toBeOnTheScreen();
+  expect(await find('What’s your goal?')).toBeOnTheScreen();
   expect(router.getPathname()).toBe('/onboarding');
 });
 
@@ -251,7 +343,7 @@ it('shows what went wrong and tries again', async () => {
 
   await tap('Try again');
 
-  expect(await find("You're the main character.")).toBeOnTheScreen();
+  expect(await find('What’s your goal?')).toBeOnTheScreen();
 });
 
 /** What the phone saved for an account that has finished everything: its profile and plan
@@ -280,7 +372,7 @@ it('a brand-new guest never sees what the phone saved for the old account', asyn
 
   const router = await renderRouter('./src/app');
 
-  expect(await find("You're the main character.")).toBeOnTheScreen();
+  expect(await find('What’s your goal?')).toBeOnTheScreen();
   expect(router.getPathname()).toBe('/onboarding');
   expect(api.getProfileOrNull).toHaveBeenCalled(); // asked the server, not the old copy
   expect(api.getOrCreatePlan).not.toHaveBeenCalled();
@@ -317,7 +409,7 @@ it('a sign-in that ends mid-use goes to "Start again", then to a fresh setup', a
   api.getProfileOrNull.mockResolvedValue(null);
   await tap('Start again');
 
-  expect(await find("You're the main character.")).toBeOnTheScreen();
+  expect(await find('What’s your goal?')).toBeOnTheScreen();
   expect(auth.forget).toHaveBeenCalled();
 });
 
@@ -338,5 +430,5 @@ it('"Start again" with no connection says so, then starts fresh once it can', as
   jest.mocked(auth.ensureSignedIn).mockResolvedValue(true);
   api.getProfileOrNull.mockResolvedValue(null);
   await tap('Try again');
-  expect(await find("You're the main character.")).toBeOnTheScreen();
+  expect(await find('What’s your goal?')).toBeOnTheScreen();
 });

@@ -1,6 +1,10 @@
 import { api } from './client';
 import {
+  deleteAccount,
   deleteSet,
+  getBestsTotal,
+  getMuscles,
+  signPact,
   finishSession,
   getOpenSessionOrNull,
   getOrCreatePlan,
@@ -193,5 +197,40 @@ describe('the workout player', () => {
 
     expect(await startNextBlock(true)).toEqual({ id: 'p2' });
     expect(client.POST).toHaveBeenCalledWith('/api/v1/plans', { body: { level_up: true } });
+  });
+});
+
+describe('the redesign’s calls (ADR 0036)', () => {
+  it('reads the muscle map and the bests count', async () => {
+    client.GET.mockResolvedValueOnce(ok({ groups: [] }) as never);
+    client.GET.mockResolvedValueOnce(ok({ total: 9 }) as never);
+
+    expect(await getMuscles()).toEqual({ groups: [] });
+    expect(await getBestsTotal()).toBe(9);
+    expect(client.GET).toHaveBeenNthCalledWith(1, '/api/v1/me/muscles');
+    expect(client.GET).toHaveBeenNthCalledWith(2, '/api/v1/me/bests');
+  });
+
+  it('signs the pact', async () => {
+    client.POST.mockResolvedValueOnce(ok({ pact_signed_at: '2026-11-26T10:00:00Z' }) as never);
+
+    expect(await signPact()).toEqual({ pact_signed_at: '2026-11-26T10:00:00Z' });
+    expect(client.POST).toHaveBeenCalledWith('/api/v1/me/pact');
+  });
+
+  it('deletes the account, with the optional reason only when there is one', async () => {
+    client.DELETE.mockResolvedValue({ response: new Response(null, { status: 204 }) } as never);
+
+    await deleteAccount('no_time');
+    await deleteAccount(null);
+
+    expect(client.DELETE).toHaveBeenNthCalledWith(1, '/api/v1/me', { params: { query: { reason: 'no_time' } } });
+    expect(client.DELETE).toHaveBeenNthCalledWith(2, '/api/v1/me', { params: { query: {} } });
+  });
+
+  it('a refused delete is an error, not a fresh start', async () => {
+    client.DELETE.mockResolvedValueOnce(problem(500, 'internal_error') as never);
+
+    await expect(deleteAccount(null)).rejects.toBeInstanceOf(ApiError);
   });
 });

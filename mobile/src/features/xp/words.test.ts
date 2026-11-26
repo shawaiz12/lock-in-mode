@@ -1,4 +1,4 @@
-import { levelLine, levelShare, thousands, xpItemLine } from './words';
+import { bestsWord, levelLine, levelParts, levelShare, thousands, xpItemLine } from './words';
 
 it('thousands, the same on every phone', () => {
   expect([0, 999, 1000, 14500, 1234567].map(thousands)).toEqual(['0', '999', '1,000', '14,500', '1,234,567']);
@@ -17,4 +17,16 @@ it('each XP item says what it was for', () => {
   expect(xpItemLine({ source: 'best', amount: 50 })).toBe('New bests +50');
   expect(xpItemLine({ source: 'comeback', amount: 100 })).toBe('Welcome back +100');
   expect(xpItemLine({ source: 'bonus', amount: 1000 })).toBe('Locked-in bonus +1,000');
+});
+
+describe('the HUD and the bests tile (ADR 0036)', () => {
+  it('splits the level line in two, the same numbers', () => {
+    const level = { total: 1320, level: 7, xp_into: 320, xp_needed: 1000 };
+    expect(levelParts(level)).toEqual(['Lock In level 7', '320 / 1,000 XP']);
+    expect(levelParts(level).join(' · ')).toBe(levelLine(level));
+  });
+
+  it('says best or bests', () => {
+    expect([bestsWord(0), bestsWord(1), bestsWord(9)]).toEqual(['new bests', 'new best', 'new bests']);
+  });
 });

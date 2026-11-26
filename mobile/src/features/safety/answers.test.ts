@@ -1,30 +1,28 @@
-import { anyYes, completeAnswers, QUESTIONS } from './answers';
+import { QUESTIONS, screenFrom } from './answers';
 
-const allNo = {
-  heart_condition: false,
-  chest_pain_when_active: false,
-  pregnant: false,
-  recent_surgery_or_injury: false,
-};
-
-describe('completeAnswers', () => {
-  it('needs every question answered', () => {
-    expect(completeAnswers({})).toBeNull();
-    expect(completeAnswers({ ...allNo, pregnant: undefined })).toBeNull();
+describe('the safety list', () => {
+  it('asks all four questions the server needs', () => {
+    expect(QUESTIONS.map((q) => q.key).sort()).toEqual(
+      ['chest_pain_when_active', 'heart_condition', 'pregnant', 'recent_surgery_or_injury'].sort(),
+    );
   });
 
-  it('sends each answer to its own field', () => {
-    for (const question of QUESTIONS) {
-      const answers = { ...allNo, [question.key]: true };
-
-      expect(completeAnswers(answers)).toEqual(answers);
-    }
+  it('"None of these" sends four noes', () => {
+    expect(screenFrom([])).toEqual({
+      heart_condition: false,
+      chest_pain_when_active: false,
+      pregnant: false,
+      recent_surgery_or_injury: false,
+    });
   });
-});
 
-describe('anyYes', () => {
-  it('spots a single yes', () => {
-    expect(anyYes(allNo)).toBe(false);
-    expect(anyYes({ ...allNo, chest_pain_when_active: true })).toBe(true);
+  it('a ticked item is a yes, the rest stay no', () => {
+    expect(screenFrom(['pregnant'])).toEqual({
+      heart_condition: false,
+      chest_pain_when_active: false,
+      pregnant: true,
+      recent_surgery_or_injury: false,
+    });
+    expect(Object.values(screenFrom(QUESTIONS.map((q) => q.key)))).toEqual([true, true, true, true]);
   });
 });

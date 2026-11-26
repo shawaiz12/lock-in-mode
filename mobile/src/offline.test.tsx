@@ -76,6 +76,8 @@ const PROFILE = {
   obstacles: [],
   needs_low_intensity: false,
   safety_screened_at: '2026-11-24T10:05:00Z',
+  pact_signed_at: '2026-11-24T10:06:00Z',
+  pact_due: false,
   created_at: '2026-11-24T10:00:00Z',
   updated_at: '2026-11-24T10:00:00Z',
   bro_split_available: false,
@@ -249,7 +251,7 @@ it('a whole workout offline: saved on the phone, sent once online, results on th
   // Opens with no connection, from what the phone saved.
   await renderRouter('./src/app');
   expect(await find('Workout 1 is on this phone, ready to go.')).toBeOnTheScreen();
-  expect(screen.getByText('Lock In level 1 · 0 / 100 XP')).toBeOnTheScreen(); // saved on the phone
+  expect(screen.getByLabelText('Lock In level 1 · 0 / 100 XP')).toBeOnTheScreen(); // saved on the phone
   expect(api.getOrCreatePlan).not.toHaveBeenCalled();
 
   await tap('Lock In: workout 1');
@@ -283,7 +285,9 @@ it('a whole workout offline: saved on the phone, sent once online, results on th
 
   await tap('Lock In: done');
   expect(await find('Lock In: workout 2')).toBeOnTheScreen();
-  expect(await find('Lock In level 2 · 0 / 200 XP')).toBeOnTheScreen(); // XP landed with the sync
+  expect(screen.getByText('Lock In: workout 2')).toBeOnTheScreen();
+  await wait(100);
+  expect(screen.getByLabelText('Lock In level 2 · 0 / 200 XP')).toBeOnTheScreen(); // XP landed with the sync
 });
 
 it('closing the app mid-workout keeps every tick: it continues where it was', async () => {
