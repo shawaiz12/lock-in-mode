@@ -6,11 +6,12 @@ Functions here own the transaction: they commit on success. Routes stay thin.
 import uuid
 from datetime import UTC, datetime
 
+from sqlalchemy import exists, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from lock_in_mode_api.models import Profile, User
-from lock_in_mode_api.schemas.profile import ProfileWrite, SafetyScreen
+from lock_in_mode_api.models import Plan, Profile, User
+from lock_in_mode_api.schemas.profile import ProfileRead, ProfileWrite, SafetyScreen
 from lock_in_mode_api.schemas.user import UserUpdate
 from lock_in_mode_api.services import events
 from lock_in_mode_api.services import plans as plan_service
@@ -88,6 +89,29 @@ async def record_safety_screen(
     await _refresh_plan(session, profile)
     await session.commit()
     await session.refresh(profile)
+    return profile
+
+
+async def profile_read(session: AsyncSession, profile: Profile) -> ProfileRead:
+    """The profile as the app reads it, with `pact_due` (ADR 0036): the pact is the last
+    onboarding step, so it's due only before the first plan. Someone who already trains
+    (maybe offline, mid-workout) never gets sent to it."""
+    read = ProfileRead.model_validate(profile)
+    if profile.safety_screened_at is None or profile.pact_signed_at is not None:
+        return read
+    has_plan = await session.scalar(select(exists().where(Plan.user_id == profile.user_id)))
+    return read.model_copy(update={"pact_due": not has_plan})
+
+
+async def sign_pact(session: AsyncSession, user_id: uuid.UUID) -> Profile:
+    """The Lock In pact (ADR 0036). Signing again keeps the first date: it's a promise
+    made once, and the funnel event is recorded once."""
+    profile = await get_profile(session, user_id)
+    if profile.pact_signed_at is None:
+        profile.pact_signed_at = datetime.now(UTC)
+        await events.pact_signed(session, user_id)
+        await session.commit()
+        await session.refresh(profile)
     return profile
 
 

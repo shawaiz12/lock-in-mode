@@ -164,6 +164,7 @@ class EventName(StrEnum):
     REMINDER_SET = "reminder_set"  # ADR 0034
     REMINDER_OFF = "reminder_off"  # ADR 0034
     LEVEL_UP = "level_up"  # ADR 0035
+    PACT_SIGNED = "pact_signed"  # ADR 0036
 
 
 class LeavingReason(StrEnum):

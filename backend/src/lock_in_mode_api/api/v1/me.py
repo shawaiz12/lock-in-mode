@@ -14,6 +14,7 @@ from lock_in_mode_api.api.errors import (
 from lock_in_mode_api.api.rate_limit import export_rate_limit
 from lock_in_mode_api.models import User
 from lock_in_mode_api.models.enums import LeavingReason
+from lock_in_mode_api.schemas.muscles import BestsRead, MusclesRead
 from lock_in_mode_api.schemas.profile import ProfileRead, ProfileWrite, SafetyScreen
 from lock_in_mode_api.schemas.user import AccountDeletion, UserRead, UserUpdate
 from lock_in_mode_api.schemas.week import WeekRead
@@ -21,6 +22,7 @@ from lock_in_mode_api.schemas.xp import XpLevel
 from lock_in_mode_api.services import account as account_service
 from lock_in_mode_api.services import auth as auth_service
 from lock_in_mode_api.services import export as export_service
+from lock_in_mode_api.services import muscles as muscle_service
 from lock_in_mode_api.services import profile as profile_service
 from lock_in_mode_api.services import sign_in_offer
 from lock_in_mode_api.services import week as week_service
@@ -59,6 +61,19 @@ async def read_week(user: CurrentUser, session: DbSession) -> WeekRead:
 async def read_xp(user: CurrentUser, session: DbSession) -> XpLevel:
     """The Lock In level and XP (ADR 0035): "Lock In level 7 · 320 / 1,000 XP"."""
     return await xp_service.read_xp(session, user.id)
+
+
+@router.get("/muscles")
+async def read_muscles(user: CurrentUser, session: DbSession) -> MusclesRead:
+    """The muscle map on Home (ADR 0036): every muscle group and head with the sets
+    ticked for it this week, and what the next workout trains ("Next up")."""
+    return await muscle_service.read_muscles(session, user.id)
+
+
+@router.get("/bests")
+async def read_bests(user: CurrentUser, session: DbSession) -> BestsRead:
+    """The "new bests" tile on Home (ADR 0036): every new best so far."""
+    return await muscle_service.read_bests(session, user.id)
 
 
 @router.patch("")
@@ -142,7 +157,7 @@ async def read_profile(user: CurrentUser, session: DbSession) -> ProfileRead:
         profile = await profile_service.get_profile(session, user.id)
     except profile_service.ProfileNotFoundError as exc:
         raise ProfileNotFound("Finish onboarding first") from exc
-    return ProfileRead.model_validate(profile)
+    return await profile_service.profile_read(session, profile)
 
 
 @router.put(
@@ -158,7 +173,7 @@ async def save_profile(
     """
     profile, created = await profile_service.save_profile(session, user.id, body)
     response.status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
-    return ProfileRead.model_validate(profile)
+    return await profile_service.profile_read(session, profile)
 
 
 @router.post("/safety-screen")
@@ -172,7 +187,18 @@ async def take_safety_screen(
         profile = await profile_service.record_safety_screen(session, user.id, body)
     except profile_service.ProfileNotFoundError as exc:
         raise ProfileNotFound("Save the profile before the safety screen") from exc
-    return ProfileRead.model_validate(profile)
+    return await profile_service.profile_read(session, profile)
+
+
+@router.post("/pact")
+async def sign_pact(user: CurrentUser, session: DbSession) -> ProfileRead:
+    """The Lock In pact (ADR 0036), the last onboarding step: sets `pact_signed_at`.
+    Signing again keeps the first date. The drawn signature is never sent or stored."""
+    try:
+        profile = await profile_service.sign_pact(session, user.id)
+    except profile_service.ProfileNotFoundError as exc:
+        raise ProfileNotFound("Save the profile before the pact") from exc
+    return await profile_service.profile_read(session, profile)
 
 
 # --- linking a guest to Google / Apple (ADR 0006) ------------------------------------

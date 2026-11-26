@@ -51,6 +51,8 @@ class Profile(Base):
     # Set only by POST /me/safety-screen. The raw answers are never stored.
     needs_low_intensity: Mapped[bool] = mapped_column(default=False, server_default=false())
     safety_screened_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Set once by POST /me/pact (ADR 0036): the Lock In pact, the last onboarding step.
+    pact_signed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

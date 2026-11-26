@@ -184,3 +184,8 @@ async def reminder_off(session: AsyncSession, user_id: uuid.UUID) -> None:
 async def level_up(session: AsyncSession, user_id: uuid.UUID, level: int) -> None:
     """A new Lock In level was reached (ADR 0035)."""
     await _record(session, user_id, EventName.LEVEL_UP, {"level": level})
+
+
+async def pact_signed(session: AsyncSession, user_id: uuid.UUID) -> None:
+    """The Lock In pact was signed (ADR 0036), the last onboarding step."""
+    await _record(session, user_id, EventName.PACT_SIGNED, {})

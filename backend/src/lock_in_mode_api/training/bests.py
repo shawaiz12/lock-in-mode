@@ -56,3 +56,36 @@ def new_best(now: Best, before: Best) -> tuple[BestKind, float, float] | None:
         if value is not None and previous is not None and value > previous:
             return kind, value, previous
     return None
+
+
+def count_bests(workouts: Iterable[Iterable[dict[str, list[SetValues]]]]) -> int:
+    """How many new bests all these workouts made, the same way each finish screen counts
+    them (ADR 0036, the "new bests" tile on Home).
+
+    `workouts`: batches in the order they were finished; each batch holds the workouts
+    finished at the same moment (they don't count against each other, as in
+    `services.bests.new_bests`), each as {exercise key: its sets}. At most one best per
+    exercise per workout.
+    """
+    before: dict[str, Best] = {}
+    total = 0
+    for batch in workouts:
+        found: list[dict[str, Best]] = []
+        for workout in batch:
+            bests = {key: best_of(sets) for key, sets in workout.items()}
+            total += sum(
+                new_best(best, before.get(key, Best())) is not None for key, best in bests.items()
+            )
+            found.append(bests)
+        for bests in found:
+            for key, best in bests.items():
+                before[key] = _merge(before.get(key, Best()), best)
+    return total
+
+
+def _merge(a: Best, b: Best) -> Best:
+    return Best(
+        weight_kg=_top((a.weight_kg, b.weight_kg)),
+        reps=_top((a.reps, b.reps)),
+        seconds=_top((a.seconds, b.seconds)),
+    )

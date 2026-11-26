@@ -107,6 +107,15 @@ class ProfileRead(BaseModel):
     safety_screened_at: datetime | None = Field(
         description="null until the safety screen is done; required before workout 1."
     )
+    pact_signed_at: datetime | None = Field(
+        description="null until the Lock In pact is signed (`POST /me/pact`), the last "
+        "onboarding step. Changing answers later keeps it."
+    )
+    pact_due: bool = Field(
+        default=False,
+        description="Show the pact now: the safety screen is done, the pact isn't signed and "
+        "no plan was ever made. People who already train never get it in the way.",
+    )
     created_at: datetime
     updated_at: datetime
 
