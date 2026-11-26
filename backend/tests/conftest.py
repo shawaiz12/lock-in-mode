@@ -30,6 +30,7 @@ from lock_in_mode_api.core.config import settings  # noqa: E402
 from lock_in_mode_api.core.db import engine, get_db_session  # noqa: E402
 from lock_in_mode_api.core.redis import redis_client  # noqa: E402
 from lock_in_mode_api.main import app  # noqa: E402
+from lock_in_mode_api.training import xp as xp_rules  # noqa: E402
 
 ALEMBIC_INI = Path(__file__).resolve().parents[1] / "alembic.ini"
 
@@ -56,6 +57,14 @@ def _test_database() -> None:
     )
     asyncio.run(_recreate_test_database())
     command.upgrade(Config(str(ALEMBIC_INI)), "head")
+
+
+@pytest.fixture(autouse=True)
+def _no_lucky_bonus(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The Locked-in bonus (ADR 0035) rolls on the workout's random id, about 1 in 8:
+    switched off in every test, so XP totals are exact. Tests about the bonus turn it on
+    (`lucky` below), and the tests of the roll itself replace this fixture."""
+    monkeypatch.setattr(xp_rules, "lucky", lambda _session_id: False)
 
 
 @pytest.fixture(autouse=True)

@@ -143,6 +143,7 @@ def test_the_user_tables_are_the_ones_we_expect() -> None:
         "swapped_out_exercises",
         "comebacks",
         "events",
+        "xp_events",
     }
 
 

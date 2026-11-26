@@ -56,6 +56,7 @@ async def report(db_session: AsyncSession) -> reports.Report:
     await a.add(22, E.WORKOUT_FINISHED, number=4)
     await a.add(5, E.ACCOUNT_LINKED, provider="google")
     await a.add(1.1, E.REMINDER_SET, days=3, hour=18)
+    await a.add(1.2, E.LEVEL_UP, level=2)
     b = await _user(db_session, now, 30)  # one workout, in week 1
     await b.add(0.1, E.ONBOARDING_DONE)
     await b.add(2, E.WORKOUT_FINISHED, number=1)
@@ -124,6 +125,7 @@ def test_other_counts_and_reasons(report: reports.Report) -> None:
         "Deletions cancelled": 0,  # the one cancel was 200 days ago
         "Reminders set or changed": 1,
         "Reminders turned off": 0,
+        "Lock In level-ups": 1,
     }
     assert report.reasons == {"privacy": 2, "no_time": 1}
 
@@ -143,6 +145,8 @@ def test_the_printed_report(report: reports.Report) -> None:
     assert any(line.endswith(" 1 … … … …") for line in lines)
     assert "Weekly lifecycle: who finished a workout each week (Monday, UTC)" in lines
     assert "* this week, so far" in lines
+    assert "Level 2-4 1" in lines
+    assert "Locked-in bonus: – of XP-earning workouts (aim: about 1 in 8)" in lines
     assert "privacy 2" in lines
 
 
@@ -240,3 +244,12 @@ def test_the_lifecycle_covers_eight_weeks_up_to_this_one(report: reports.Report)
     assert weeks[-1] == report.now.date() - timedelta(days=report.now.weekday())
     # User a trained 8 days after 30 days ago and again on day 22: someone trained.
     assert sum(life.trained for life in report.weeks) >= 2
+
+
+def test_level_bands_count_each_persons_highest_level() -> None:
+    assert reports.level_bands([2, 4, 5, 9, 10, 19, 20, 33]) == {
+        "Level 2-4": 2,
+        "Level 5-9": 2,
+        "Level 10-19": 2,
+        "Level 20+": 2,
+    }

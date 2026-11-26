@@ -68,6 +68,7 @@ ROWS_IN_FILE: dict[str, Callable[[Json], int]] = {
     "swapped_out_exercises": lambda f: len(f["swapped_out_exercises"]),
     "comebacks": lambda f: len(f["comebacks"]),
     "events": lambda f: len(f["usage_events"]),
+    "xp_events": lambda f: len(f["xp"]),
 }
 
 

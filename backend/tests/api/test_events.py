@@ -413,8 +413,15 @@ async def test_switching_off_erases_the_past_and_records_nothing_new(
     # Back on: recorded again from now.
     await client.patch(ME, json={"share_usage_data": True}, headers=headers)
     await _do(client, headers)
-    assert await _names(db_session) == ["signed_up", "workout_started", "workout_finished"]
+    # Its XP (ADR 0035) reached Lock In level 2: recorded too, now that sharing is on.
+    assert await _names(db_session) == [
+        "signed_up",
+        "workout_started",
+        "workout_finished",
+        "level_up",
+    ]
     assert (await _events(db_session, EventName.WORKOUT_FINISHED))[0].props["number"] == 2
+    assert (await _events(db_session, EventName.LEVEL_UP))[0].props == {"level": 2}
 
 
 async def test_patch_me_changes_only_what_is_sent(
