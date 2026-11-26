@@ -196,7 +196,7 @@ jobs:
 
       # Before the deploy, so the new code never meets an old schema. Migrations stay
       # backwards compatible (ADR 0028): the version still live keeps working meanwhile.
-      - name: Update the database and the exercise library
+      - name: Update the database, the exercise library and XP
         working-directory: backend
         env:
           POSTGRES_HOST: ${{ vars.POSTGRES_HOST }}
@@ -212,6 +212,8 @@ jobs:
           uv sync --locked --no-dev
           uv run --no-sync alembic upgrade head
           uv run --no-sync python -m lock_in_mode_api.seed
+          # XP for workouts trained before XP existed (ADR 0035); adds nothing once done.
+          uv run --no-sync python -m lock_in_mode_api.xp_backfill
 
       # From the repo root: the Vercel project's Root Directory is backend/, and
       # .vercelignore keeps everything else (and any .env) out of the upload.
