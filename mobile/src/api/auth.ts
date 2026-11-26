@@ -10,6 +10,12 @@
  *   with the same token would look like theft and sign the user out. So only ONE
  *   refresh runs at a time; everyone else waits for it (`refreshing`).
  *
+ * - A brand-new guest is a new, empty account: `ensureSignedIn` says so (returns true),
+ *   so the app throws away anything it saved for the previous one.
+ * - When a sign-in ends for good (the refresh token is refused: the account was erased,
+ *   or the token was reused), `onSignedOut` listeners hear it at once, wherever the call
+ *   came from (a screen, the workout journal).
+ *
  * Everything it needs is passed in (`AuthDeps`), so tests can fake the network, the
  * storage and the clock. .NET: a DelegatingHandler on HttpClient with constructor
  * injection, plus a SemaphoreSlim around the refresh.
@@ -35,6 +41,7 @@ export function createAuth(deps: AuthDeps) {
   // undefined: not read from storage yet. null: read, nothing there.
   let cached: StoredTokens | null | undefined;
   let refreshing: Promise<StoredTokens> | null = null;
+  const signedOutListeners = new Set<() => void>();
 
   async function current(): Promise<StoredTokens | null> {
     if (cached === undefined) cached = await deps.store.load();
@@ -63,12 +70,14 @@ export function createAuth(deps: AuthDeps) {
     );
   }
 
-  /** Make sure there is a sign-in: the saved one, or a brand-new guest. */
-  async function ensureSignedIn(): Promise<void> {
-    if (await current()) return;
+  /** Make sure there is a sign-in: the saved one, or a brand-new guest.
+   * Returns true when it's a brand-new guest (a new, empty account). */
+  async function ensureSignedIn(): Promise<boolean> {
+    if (await current()) return false;
     const response = await post('/api/v1/auth/guest');
     if (!response.ok) throw await problemFrom(response);
     await save((await response.json()) as TokenPair);
+    return true;
   }
 
   function refresh(): Promise<StoredTokens> {
@@ -83,6 +92,7 @@ export function createAuth(deps: AuthDeps) {
           // invalid_refresh_token: this sign-in is over for good. Forget it.
           await deps.store.clear();
           cached = null;
+          for (const listener of [...signedOutListeners]) listener();
           throw new SignedOutError();
         }
         // Anything else (no connection, 5xx, 429): keep the tokens and let the caller
@@ -127,7 +137,15 @@ export function createAuth(deps: AuthDeps) {
     cached = null;
   }
 
-  return { ensureSignedIn, authedFetch, forget };
+  /** Hear about a sign-in that just ended for good. Returns the unsubscribe. */
+  function onSignedOut(listener: () => void): () => void {
+    signedOutListeners.add(listener);
+    return () => {
+      signedOutListeners.delete(listener);
+    };
+  }
+
+  return { ensureSignedIn, authedFetch, forget, onSignedOut };
 }
 
 export type Auth = ReturnType<typeof createAuth>;
