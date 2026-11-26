@@ -1,6 +1,8 @@
 # Onboarding playbook
 
-The decisions behind this are in [ADR 0012](decisions/0012-onboarding-and-profile-v2.md).
+The decisions behind this are in [ADR 0012](decisions/0012-onboarding-and-profile-v2.md);
+[ADR 0036](decisions/0036-ui-redesign.md) cut the first run from 12 screens to 8 and added
+the Lock In pact.
 This page is the flow the mobile app builds: every screen, why it's there, and what it
 sends to the API.
 
@@ -14,34 +16,32 @@ Rules for every screen:
   optional name).
 - **Every question changes the plan or how we talk to the user.** If it doesn't, it
   goes.
-- **Echo the answer back.** After a big answer, a short screen shows we listened ("Build
-  muscle: we'll train every part of each muscle, 3–5 days a week"). This is what makes
-  long quiz flows feel personal instead of tiring.
+- **Say why.** Every question has one line saying why it's asked, and a progress bar shows
+  how far along they are ("4 / 8").
+- **Echo the answer back.** The goal's echo ("Build muscle: every part of each muscle gets
+  trained…") shows at the top of the next question: proof we listened, no extra tap.
 - **No sign-in, no paywall, no permission pop-ups before the workout.**
 - **No invented numbers.** Show promises the app keeps, not fake user stats.
 - **Lock In language.** The main button says "Lock In", not "Next".
-- Target: about 10 taps, 60–90 seconds.
+- Target: 8 screens, about 9 taps, under a minute.
 
 ## The flow
 
 | # | Screen | Asks / shows | Stored as | Why it's here |
 |---|---|---|---|---|
 | 0 | (silent) | App calls `POST /auth/guest` on first launch | guest user | They can start straight away. No account wall |
-| 1 | Welcome | "You're the main character. Let's build your plan." Optional name | `PATCH /me` display_name (follow-up) | Sets the tone. A plan with their name on it feels like theirs |
-| 2 | Goal | Build muscle · Build strength · Lose fat / get fit · Improve stamina · Stay active | `goal` | The "why" they downloaded the app. It shapes everything |
-| 3 | Echo | One line on what their plan will do for that goal. Lose fat adds the honest note: "Fat loss comes mostly from eating less than you burn. Training shapes what you keep." | none | Shows we listened. Honest from screen one |
-| 4 | Training history | Never / on and off / under 6 months · 6 months–2 years · 2+ years | `level` | Self-rating is unreliable. History isn't |
-| 5 | Where | Home · Gym | `location` | Decides which exercises exist for them |
-| 6 | Equipment (home only) | Dumbbells · Bands · Pull-up bar (any mix, or none). Toggle: quiet, small-space workouts | `equipment`, `women_home_track` | No equipment is a full plan, not a lesser one. Say so on the screen |
-| 7 | Days | 2 3 4 5 6 | `days_per_week` | Picks the routine |
-| 8 | Time | 10 · 20 · 30 · 45 · 60 · 75 · 90 · No limit | `minutes_per_session` (null = no limit) | Short sessions are a full plan too: "10 minutes counts." |
-| 9 | Body limits | Knees · Back · Shoulders · None | `limits` | Safety. We train around a sore area, we don't treat it |
-| 10 | What's made it hard before? (skippable) | No time · Don't know what to do · Lose motivation · Get bored | `obstacles` | Changes tips, reminders and quests (below) |
-| — | Save | `PUT /me/profile` | | One call with every answer |
-| 11 | Quick safety check | 4 yes/no: heart condition, chest pain when active, pregnant, recent surgery or injury | `POST /me/safety-screen` → `needs_low_intensity` only | Required before workout 1. Any yes: "Please check with a doctor first. We'll keep things gentle." |
-| 12 | Building your plan | 2–3 s. Shows the **real** reasons, one by one: "3 days → full body", "Knees → no jumping", "No equipment → push-up ladder" | `POST /plans` → `reasons` | People trust work they can see. Ours is real, so show it |
-| 13 | Your week | The plan. Push pull legs → "Shoulders with push day or leg day?" If `bro_split_available` → "Push pull legs (recommended) or bro split?" | `shoulder_day`, `prefers_bro_split` (`PUT /me/profile` rebuilds the untouched plan, still block 1) | Choices asked here only matter to some users, so they cost everyone else nothing |
-| 14 | Start | Big: **"Lock In: start workout 1"**. Small: "Remind me later" (time picker, then the notification permission prompt) | reminder time | Asking for notifications only when they pick a time gets more "yes" than a cold pop-up |
+| 1 / 8 | Goal | "Let's build your plan." Build muscle · Build strength · Lose fat / get fit · Improve stamina · Stay active, each with a short line | `goal` | The "why" they downloaded the app. It shapes everything |
+| 2 / 8 | Training history | The goal's echo on top (lose fat adds the honest note: "Fat loss comes mostly from eating less than you burn. Training shapes what you keep."). Never / on and off / under 6 months · 6 months–2 years · 2+ years | `level` | Self-rating is unreliable. History isn't |
+| 3 / 8 | Where | Gym (moves on) · Home (then, on the same screen: Dumbbells · Bands · Pull-up bar, any mix or none, and "Quiet, small-space workouts", with a Lock In button) | `location`, `equipment`, `women_home_track` | Decides which exercises exist for them. No equipment is a full plan, not a lesser one |
+| 4 / 8 | Days | 2 3 4 5 6, each with a line ("Most people start here"), never a promised split | `days_per_week` | Picks the routine (with goal and level) |
+| 5 / 8 | Time | 10 · 20 · 30 · 45 · 60 · 75 · 90 · No limit | `minutes_per_session` (null = no limit) | Short sessions are a full plan too: "10 minutes counts." |
+| 6 / 8 | Sore spots | Knees · Back · Shoulders (then Lock In) · None (moves on) | `limits` | Safety. We train around a sore area, we don't treat it |
+| — | Save | `PUT /me/profile` | | One call with every answer (`obstacles` empty: not asked since ADR 0036) |
+| 7 / 8 | Quick safety check | One list: a doctor said I have a heart condition · chest pain when active · pregnant · surgery or injury recently. "None of these" sends four noes in one tap; ticking any shows "Please check with a doctor first. We'll keep things gentle." | `POST /me/safety-screen` → `needs_low_intensity` only | Required before workout 1 |
+| 8 / 8 | Lock In pact | "I train N days a week. Any week with 2 workouts counts. If I miss a week, I come back." + goal, where, minutes. Sign with a finger → LOCKED IN stamp, confetti, one buzz | `POST /me/pact` → `pact_signed_at` (the drawing is never sent) | A promise in their own hand, small enough to keep, with the comeback built in. Only before the first plan (`pact_due`) |
+| — | Building your plan | 2–3 s. Shows the **real** reasons, one by one: "3 days → full body", "Knees → no jumping", "No equipment → push-up ladder" | `POST /plans` → `reasons` | People trust work they can see. Ours is real, so show it |
+| — | Home | The HUD, the world card, this week, new bests, the muscle map, then the plan. Push pull legs → "Shoulders with push day or leg day?" If `bro_split_available` → "Push pull legs (recommended) or bro split?" | `shoulder_day`, `prefers_bro_split` (`PUT /me/profile` rebuilds the untouched plan, still block 1) | Choices asked here only matter to some users, so they cost everyone else nothing |
+| — | Start | Big: **"Lock In: workout 1"** with "Full body A · about 45 min" under it. The reminder is offered on workout 1's finish screen (ADR 0034) | | One big button, always in reach of a thumb |
 
 ### Workout 1 is the test
 Targets are open: "As many as you can with good form. Stop when you have 2 left." The
@@ -62,7 +62,10 @@ set: "Stop if you feel sharp pain, dizziness or chest pain."
 - At most once a week. Never in the middle of a workout. Never blocks anything except
   squads.
 
-## What `obstacles` changes
+## What `obstacles` would change (not asked since ADR 0036)
+
+The question was cut because nothing used it yet. If one of these gets built, the
+question can come back (as a skippable step after workout 1, not in the first run).
 
 | Obstacle | What the app does differently |
 |---|---|
