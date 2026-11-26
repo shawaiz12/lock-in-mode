@@ -12,12 +12,14 @@
  */
 import { notifyManager, onlineManager } from '@tanstack/react-query';
 import { act, fireEvent, renderRouter, screen } from 'expo-router/testing-library';
+import { AccessibilityInfo } from 'react-native';
 
 import type { Me, Plan, Profile, Session, SessionResult, Week } from '@/api/endpoints';
 import * as endpoints from '@/api/endpoints';
 import { deviceTimeZone } from '@/state/reminders';
 import { detail, row, workout } from '@/test/fixtures';
 import { resetStorage } from '@/test/kv-store';
+import { notificationAsync } from '@/test/haptics';
 import { setConnected } from '@/test/network';
 import { asked, resetNotifications, scheduled } from '@/test/notifications';
 
@@ -40,6 +42,7 @@ jest.mock('@/api/endpoints', () => ({
   getMe: jest.fn(),
   updateMe: jest.fn(),
   getWeek: jest.fn(),
+  getXp: jest.fn(),
 }));
 
 const mockAlerts = { countIn: jest.fn(), done: jest.fn(), ticked: jest.fn() };
@@ -156,6 +159,7 @@ function setUp(account: Me = me()) {
   api.getMe.mockResolvedValue(account);
   api.updateMe.mockImplementation(async (changes) => ({ ...account, ...changes }) as Me);
   api.getWeek.mockResolvedValue(WEEK);
+  api.getXp.mockResolvedValue({ total: 1320, level: 7, xp_into: 320, xp_needed: 1000 });
 }
 
 beforeEach(() => {
@@ -217,7 +221,7 @@ it('the finish screen leads with a new best and says the week counts', async () 
 
   expect(await find('Real progress')).toBeOnTheScreen();
   expect(screen.getByText('New best: 14 reps of Push-up')).toBeOnTheScreen();
-  expect(screen.getByText('This week counts: 3-week streak.')).toBeOnTheScreen();
+  expect(await find('This week counts: 3-week streak.')).toBeOnTheScreen(); // a beat later
   expect(screen.queryByText('Make it a habit')).toBeNull(); // not offered this time
 });
 
@@ -331,4 +335,101 @@ it('after a hard "don’t ask again", it doesn’t ask: it says where to turn th
 
   expect(await find(/Notifications are off for Lock In Mode/)).toBeOnTheScreen();
   expect(asked.count).toBe(0);
+});
+
+
+// --- XP and the Lock In level (ADR 0035) ---------------------------------------------------
+
+const LEVEL = (level: number, into: number, needed: number) => ({
+  total: into,
+  level,
+  xp_into: into,
+  xp_needed: needed,
+});
+
+it('Home shows the Lock In level under the week', async () => {
+  await renderRouter('./src/app');
+  expect(await find('Lock In level 7 · 320 / 1,000 XP')).toBeOnTheScreen();
+});
+
+it('the finish screen reveals XP after the real progress: count-up, items, level-up', async () => {
+  api.finishSession.mockResolvedValue(
+    result({
+      new_bests: [{ exercise: { id: 'x-a', slug: 'push-up', name: 'Push-up', difficulty: 2 }, kind: 'reps', value: 14, previous: 12 }],
+      xp: {
+        items: [
+          { source: 'workout', amount: 100 },
+          { source: 'best', amount: 25 },
+          { source: 'week', amount: 150 },
+        ],
+        gained: 275,
+        bonus: false,
+        capped: false,
+        before: LEVEL(2, 150, 200),
+        after: LEVEL(3, 125, 300),
+      },
+    }),
+  );
+  await finishWorkoutOne();
+
+  expect(await find('Real progress')).toBeOnTheScreen();
+  expect(screen.queryByText('Workout +100')).toBeNull(); // not yet: real progress first
+  expect(await find('+275 XP', 3000)).toBeOnTheScreen(); // counted up
+  expect(screen.getByText('Workout +100')).toBeOnTheScreen();
+  expect(screen.getByText('New bests +25')).toBeOnTheScreen();
+  expect(screen.getByText('Week kept +150')).toBeOnTheScreen();
+  expect(await find('Lock In level 3!', 3000)).toBeOnTheScreen();
+  expect(screen.getByText('Lock In level 3 · 125 / 300 XP')).toBeOnTheScreen();
+  expect(notificationAsync).toHaveBeenCalledTimes(1); // the level-up buzz
+});
+
+it('XP without a level-up: the bar moves, no celebration', async () => {
+  api.finishSession.mockResolvedValue(
+    result({
+      xp: { items: [{ source: 'workout', amount: 100 }], gained: 100, bonus: false, capped: false, before: LEVEL(3, 0, 300), after: LEVEL(3, 100, 300) },
+    }),
+  );
+  await finishWorkoutOne();
+
+  expect(await find('Lock In level 3 · 100 / 300 XP', 3000)).toBeOnTheScreen();
+  expect(screen.queryByText(/!$/)).toBeNull();
+  expect(notificationAsync).not.toHaveBeenCalled();
+});
+
+it('past the week’s XP limit: a calm line instead of XP', async () => {
+  api.finishSession.mockResolvedValue(
+    result({
+      xp: { items: [], gained: 0, bonus: false, capped: true, before: LEVEL(4, 10, 400), after: LEVEL(4, 10, 400) },
+    }),
+  );
+  await finishWorkoutOne();
+
+  expect(await find('Rest counts too: you’ve done your week.', 3000)).toBeOnTheScreen();
+  expect(screen.queryByText(/XP$/)).toBeNull();
+});
+
+it('with "reduce motion" on, everything shows at once', async () => {
+  jest.spyOn(AccessibilityInfo, 'isReduceMotionEnabled').mockResolvedValue(true);
+  api.finishSession.mockResolvedValue(
+    result({
+      xp: { items: [{ source: 'workout', amount: 100 }], gained: 100, bonus: false, capped: false, before: LEVEL(1, 0, 100), after: LEVEL(2, 0, 200) },
+    }),
+  );
+  await finishWorkoutOne();
+
+  expect(await find('Locked in.')).toBeOnTheScreen();
+  await wait(50);
+  expect(screen.getByText('+100 XP')).toBeOnTheScreen();
+  expect(screen.getByText('Lock In level 2!')).toBeOnTheScreen();
+});
+
+it('a finish that adds no XP (already counted) shows no XP card', async () => {
+  api.finishSession.mockResolvedValue(
+    result({ xp: { items: [], gained: 0, bonus: false, capped: false, before: LEVEL(3, 50, 300), after: LEVEL(3, 50, 300) } }),
+  );
+  await finishWorkoutOne();
+  await find('Locked in.');
+  await wait(1500);
+
+  expect(screen.queryByText(/XP$/)).toBeNull();
 });

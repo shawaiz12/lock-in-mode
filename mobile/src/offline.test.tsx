@@ -42,6 +42,7 @@ jest.mock('@/api/endpoints', () => ({
   swapExercise: jest.fn(),
   getMe: jest.fn(),
   getWeek: jest.fn(),
+  getXp: jest.fn(),
 }));
 
 const mockAlerts = { countIn: jest.fn(), done: jest.fn(), ticked: jest.fn() };
@@ -147,6 +148,7 @@ function setUp() {
   api.finishSession.mockImplementation(online(() => result()));
   api.getMe.mockImplementation(online(() => ME));
   api.getWeek.mockImplementation(online(() => WEEK));
+  api.getXp.mockImplementation(online(() => ({ total: 0, level: 1, xp_into: 0, xp_needed: 100 })));
 }
 
 const ME = {
@@ -219,6 +221,7 @@ function savedOnPhone(daysAgo = 0) {
   client.setQueryData(keys.exercise('x-a'), detail('x-a'), { updatedAt });
   client.setQueryData(keys.week, WEEK, { updatedAt });
   client.setQueryData(keys.me, ME, { updatedAt });
+  client.setQueryData(keys.xp, { total: 0, level: 1, xp_into: 0, xp_needed: 100 }, { updatedAt });
   const saved = { timestamp: Date.now(), buster: CACHE_VERSION, clientState: dehydrate(client, { shouldDehydrateQuery: shouldKeep }) };
   storage.setItemSync(CACHE_KEY, JSON.stringify(saved));
 }
@@ -242,6 +245,7 @@ it('a whole workout offline: saved on the phone, sent once online, results on th
   // Opens with no connection, from what the phone saved.
   await renderRouter('./src/app');
   expect(await find('Workout 1 is on this phone, ready to go.')).toBeOnTheScreen();
+  expect(screen.getByText('Lock In level 1 · 0 / 100 XP')).toBeOnTheScreen(); // saved on the phone
   expect(api.getOrCreatePlan).not.toHaveBeenCalled();
 
   await tap('Lock In: workout 1');
@@ -260,6 +264,7 @@ it('a whole workout offline: saved on the phone, sent once online, results on th
 
   // Back online: sent in order with the phone's times, then what changed shows.
   api.getOrCreatePlan.mockImplementation(online(() => ({ plan: plan('w2'), justCreated: false })));
+  api.getXp.mockImplementation(online(() => ({ total: 100, level: 2, xp_into: 0, xp_needed: 200 })));
   await goOnline();
   expect(await find('Done offline, synced just now.')).toBeOnTheScreen();
   expect(screen.getByText('Push-up: aim for 2 more reps next time')).toBeOnTheScreen();
@@ -274,6 +279,7 @@ it('a whole workout offline: saved on the phone, sent once online, results on th
 
   await tap('Lock In: done');
   expect(await find('Lock In: workout 2')).toBeOnTheScreen();
+  expect(await find('Lock In level 2 · 0 / 200 XP')).toBeOnTheScreen(); // XP landed with the sync
 });
 
 it('closing the app mid-workout keeps every tick: it continues where it was', async () => {
