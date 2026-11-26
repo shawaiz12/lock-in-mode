@@ -96,6 +96,11 @@ Commit it with the backend change. CI fails if they don't match.
 | `src/api/tokens.ts` | Keychain/Keystore storage for the sign-in | DPAPI / `ProtectedData` |
 | `src/features/` | Plain TypeScript rules (onboarding steps, labels) | Domain/service classes, unit-tested |
 | `src/ui/kit.tsx` | The few shared building blocks | A UI prefab library |
+| `src/ui/theme.ts` (`usePalette`, `makeStyles`) | Colours by role for light and dark, Rubik, sizes; styles made once per mode | A ScriptableObject theme / a XAML `ResourceDictionary` swapped at runtime |
+| `useColorScheme` | The phone's light or dark setting | `ApplicationTheme` / `RequestedTheme` |
+| `react-native-svg` | Drawing shapes: rings, the body map, the signature, icons | `System.Drawing` paths / a Unity `LineRenderer` |
+| View responder props (`onResponderMove`) | Raw finger tracking on a view (the pact's signature) | `IDragHandler.OnDrag` |
+| `expo-file-system` + `expo-sharing` | Write a file, then open the phone's share sheet | `File.WriteAllText` + `ShareSheet` / `NativeShare` |
 | `src/state/player.ts` (`usePlayer`) | The workout player's state: next set, timers, sending ticks | A MonoBehaviour that owns the game state |
 | `src/features/player/clock.ts` | Timers that store when they end | A `DateTime` deadline instead of `timer -= Time.deltaTime` |
 | `useRef` | A value that survives redraws but doesn't trigger one | A private field that isn't serialized |
@@ -115,14 +120,18 @@ src/
 ├── app/                 screens (routes)
 │   ├── _layout.tsx      providers + which screens are open right now
 │   ├── index.tsx        "/": loading or "Hold on" with Try again
-│   ├── onboarding.tsx   the quiz, one question per screen
-│   ├── safety.tsx       four yes/no questions
-│   ├── plan.tsx         reveal, the week, choices, Lock In button
+│   ├── onboarding.tsx   six questions, one per screen (steps 1-6 of 8)
+│   ├── safety.tsx       the safety list (step 7)
+│   ├── pact.tsx         the Lock In pact, signed with a finger (step 8, new people only)
+│   ├── plan.tsx         Home: HUD, world card, tiles, muscle map, then the plan
+│   ├── settings.tsx     name, reminder, sound and feel, your data (download, delete)
 │   └── workout/[id]/
 │       ├── index.tsx    a workout's exercises, Start / Continue / Skip
 │       └── play.tsx     the player → "How did that feel?" → what changed
 ├── api/                 client, auth, tokens, errors, every call (endpoints.ts)
 ├── features/            pure + tested: onboarding flow, plan labels, safety answers,
+│   ├── muscles/         names for every muscle and head, the map's lines
+│   ├── pact/            the pact's promise, facts, date and signature paths
 │   ├── player/          steps (screens and sets), entry (pre-fill), clock, words, result
 │   ├── offline/         journal (the workout on the phone) and sync (sending it)
 │   ├── week/            words for the ring, streak, new bests and the reminder
@@ -134,20 +143,25 @@ src/
 │   ├── online.ts        online or not (expo-network → TanStack's onlineManager)
 │   ├── persist.ts       what's kept on the phone between launches, for 14 days
 │   ├── ready.ts         keeps the next workout downloaded
-│   └── reminders.ts     the training reminder (local notifications) and time zone
+│   ├── reminders.ts     the training reminder (local notifications) and time zone
+│   ├── feel.ts          rest beep and vibration switches (this phone's own settings)
+│   └── account.ts       Download my data (file + share sheet), Delete account
 ├── test/                fixtures; fakes of expo-sqlite's store, expo-network,
-│                        expo-notifications, expo-audio and expo-haptics
+│                        expo-notifications, expo-audio, expo-haptics, the Rubik
+│                        fonts, expo-file-system and expo-sharing
 └── ui/
-    ├── kit.tsx          Screen, Title, Choice, LockInButton, Sheet, Stepper…
+    ├── theme.ts         the palette (light/dark), Rubik, type sizes, makeStyles
+    ├── kit.tsx          Screen, Title, Choice, LockInButton, Sheet, Stepper, Row…
     ├── player.tsx       the player's screens (draws what usePlayer returns)
-    ├── week.tsx         the weekly ring, level card, reminder offer/settings, sound check
+    ├── week.tsx         HUD, world card, week and bests tiles, reminder, sound check
+    ├── muscles.tsx      the muscle map (front + back) and its sheet of every head
     ├── reveal.tsx       the finish screen's reveal: steps, count-up, bar, confetti, buzz
     └── alerts.ts        beep + buzz at the end of a rest or a timed move
 assets/sounds/           tick.wav (3-2-1) and done.wav (made for this app)
 ```
 
 **One rule drives navigation:** `src/state/startup.ts` works out a stage (loading, error,
-offline, onboarding, safety, plan) from the sign-in and the profile. `_layout.tsx` opens only that
+offline, onboarding, safety, pact, plan) from the sign-in and the profile. `_layout.tsx` opens only that
 stage's screens (`Stack.Protected`). Saving onboarding updates the cached profile, the stage
 becomes "safety", and Expo Router moves the person there. No screen navigates by hand
 after a save.

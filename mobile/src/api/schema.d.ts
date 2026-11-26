@@ -177,6 +177,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/muscles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Muscles
+         * @description The muscle map on Home (ADR 0036): every muscle group and head with the sets
+         *     ticked for it this week, and what the next workout trains ("Next up").
+         */
+        get: operations["read_muscles_api_v1_me_muscles_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/bests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Bests
+         * @description The "new bests" tile on Home (ADR 0036): every new best so far.
+         */
+        get: operations["read_bests_api_v1_me_bests_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/export": {
         parameters: {
             query?: never;
@@ -243,6 +284,27 @@ export interface paths {
          *     "please check with a doctor first" and the plan stays gentle. Answers aren't stored.
          */
         post: operations["take_safety_screen_api_v1_me_safety_screen_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/pact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sign Pact
+         * @description The Lock In pact (ADR 0036), the last onboarding step: sets `pact_signed_at`.
+         *     Signing again keeps the first date. The drawn signature is never sent or stored.
+         */
+        post: operations["sign_pact_api_v1_me_pact_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -707,6 +769,15 @@ export interface components {
             nonce: string;
         };
         /**
+         * BestsRead
+         * @description The "new bests" tile: every new best ever made, counted the way each finish screen
+         *     counts them. Never goes down.
+         */
+        BestsRead: {
+            /** Total */
+            total: number;
+        };
+        /**
          * BodyArea
          * @description Where a swapped-out exercise hurt (optional, ADR 0020). The first three match
          *     BodyLimit, so the app can offer to add that limit to the profile.
@@ -1044,6 +1115,25 @@ export interface components {
          * @enum {string}
          */
         MuscleGroup: "chest" | "back" | "shoulders" | "traps" | "biceps" | "triceps" | "forearms" | "quads" | "hamstrings" | "glutes" | "adductors" | "calves" | "core";
+        /** MuscleGroupRead */
+        MuscleGroupRead: {
+            group: components["schemas"]["MuscleGroup"];
+            /**
+             * Sets
+             * @description Ticked sets this week that targeted any head of this group (a set counts once per group). 0 = not trained yet this week.
+             */
+            sets: number;
+            /**
+             * Next Up
+             * @description The next workout trains this group.
+             */
+            next_up: boolean;
+            /**
+             * Heads
+             * @description Every head of the group, 0 sets included.
+             */
+            heads: components["schemas"]["MuscleHeadRead"][];
+        };
         /**
          * MuscleHead
          * @description The part of a muscle an exercise emphasises (knowledge base, section 5).
@@ -1052,6 +1142,41 @@ export interface components {
          * @enum {string}
          */
         MuscleHead: "chest_upper" | "chest_mid" | "chest_lower" | "delt_front" | "delt_side" | "delt_rear" | "biceps_long" | "biceps_short" | "brachialis" | "triceps_long" | "triceps_lateral" | "triceps_medial" | "lats" | "mid_back" | "spinal_erectors" | "upper_traps" | "lower_traps" | "quads_vastus" | "rectus_femoris" | "hamstrings_hip" | "hamstrings_knee" | "glute_max" | "glute_med" | "gastrocnemius" | "soleus" | "upper_abs" | "lower_abs" | "obliques" | "deep_core" | "forearm_flexors" | "forearm_extensors" | "brachioradialis" | "adductors";
+        /** MuscleHeadRead */
+        MuscleHeadRead: {
+            head: components["schemas"]["MuscleHead"];
+            /**
+             * Sets
+             * @description Ticked sets this week that targeted this head.
+             */
+            sets: number;
+            /**
+             * Next Up
+             * @description The next workout targets this head.
+             */
+            next_up: boolean;
+        };
+        /**
+         * MusclesRead
+         * @description "Muscles this week": every muscle group, always all of them, in a fixed order.
+         *     Only the main part and finishers count (not warm-ups or cool-downs), from workouts
+         *     finished this week (Monday to Sunday on the phone's calendar, like `GET /me/week`).
+         */
+        MusclesRead: {
+            /**
+             * Week Start
+             * Format: date
+             * @description Monday of this week, on the user's calendar.
+             */
+            week_start: string;
+            /** Groups */
+            groups: components["schemas"]["MuscleGroupRead"][];
+            /**
+             * Next Workout
+             * @description The next workout's title ("Pull"), or null: no plan, or the block is complete.
+             */
+            next_workout: string | null;
+        };
         /**
          * NewBest
          * @description A personal best set in this workout (ADR 0034): "New best: 14 push-ups".
@@ -1270,6 +1395,17 @@ export interface components {
              * @description null until the safety screen is done; required before workout 1.
              */
             safety_screened_at: string | null;
+            /**
+             * Pact Signed At
+             * @description null until the Lock In pact is signed (`POST /me/pact`), the last onboarding step. Changing answers later keeps it.
+             */
+            pact_signed_at: string | null;
+            /**
+             * Pact Due
+             * @description Show the pact now: the safety screen is done, the pact isn't signed and no plan was ever made. People who already train never get it in the way.
+             * @default false
+             */
+            pact_due?: boolean;
             /**
              * Created At
              * Format: date-time
@@ -2428,6 +2564,86 @@ export interface operations {
             };
         };
     };
+    read_muscles_api_v1_me_muscles_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MusclesRead"];
+                };
+            };
+            /** @description Request body or parameters are invalid */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                    "application/json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error. Branch on `code`; see docs/errors.md */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    read_bests_api_v1_me_bests_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BestsRead"];
+                };
+            };
+            /** @description Request body or parameters are invalid */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                    "application/json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error. Branch on `code`; see docs/errors.md */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     export_my_data_api_v1_me_export_get: {
         parameters: {
             query?: never;
@@ -2580,6 +2796,46 @@ export interface operations {
                 "application/json": components["schemas"]["SafetyScreen"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileRead"];
+                };
+            };
+            /** @description Request body or parameters are invalid */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                    "application/json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error. Branch on `code`; see docs/errors.md */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    sign_pact_api_v1_me_pact_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

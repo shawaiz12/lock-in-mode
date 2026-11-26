@@ -10,6 +10,8 @@
  * - The buzz is the phone's vibration motor (React Native's Vibration), stronger than a
  *   haptic tap, so it's felt with the phone on the floor or in a pocket.
  * - A tick of a set gets a light haptic tap: the button really did something.
+ * - Settings → Sound and feel (ADR 0036) can switch the beep or the vibration off; the
+ *   tap on a tick goes with vibration. Read at the moment, so a change counts at once.
  *
  * Any of these can fail (low power mode, no motor, audio busy): never let that break
  * the workout, so every call is fire-and-forget. While developing, a failure is written
@@ -26,6 +28,8 @@ import { type AudioPlayer, setAudioModeAsync, useAudioPlayer, useAudioPlayerStat
 import * as Haptics from 'expo-haptics';
 import { useEffect } from 'react';
 import { Vibration } from 'react-native';
+
+import { getFeel } from '@/state/feel';
 
 const TICK = require('../../assets/sounds/tick.wav');
 const DONE = require('../../assets/sounds/done.wav');
@@ -77,12 +81,17 @@ export function useAlerts(): Alerts {
   }, []);
 
   return {
-    countIn: () => play(tick),
-    done: () => {
-      play(done);
-      quietly(() => Vibration.vibrate([0, 400, 150, 400]));
+    countIn: () => {
+      if (getFeel().beep) play(tick);
     },
-    ticked: () => quietly(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)),
+    done: () => {
+      const feel = getFeel();
+      if (feel.beep) play(done);
+      if (feel.vibration) quietly(() => Vibration.vibrate([0, 400, 150, 400]));
+    },
+    ticked: () => {
+      if (getFeel().vibration) quietly(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light));
+    },
   };
 }
 

@@ -7,7 +7,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 
 import {
   getOpenSessionOrNull,
@@ -24,7 +24,6 @@ import { offlineReady } from '@/state/persist';
 import { keys } from '@/state/startup';
 import {
   Body,
-  colors,
   ErrorView,
   Label,
   Loading,
@@ -34,8 +33,10 @@ import {
   TextButton,
   Title,
 } from '@/ui/kit';
+import { chunky, font, makeStyles } from '@/ui/theme';
 
 export default function WorkoutPreview() {
+  const styles = useStyles();
   const { id } = useLocalSearchParams<{ id: string }>();
   const workout = useQuery({ queryKey: keys.workout(id), queryFn: () => getWorkout(id) });
   const plan = useQuery({ queryKey: keys.plan, queryFn: getOrCreatePlan });
@@ -113,6 +114,7 @@ export default function WorkoutPreview() {
 /** "Skip this workout" asks once more before it moves the plan on (ADR 0017: skipped
  * workouts never pile up, and a started one can't be skipped: finish it instead). */
 function SkipWorkout({ workoutId }: { workoutId: string }) {
+  const styles = useStyles();
   const queryClient = useQueryClient();
   const [asking, setAsking] = useState(false);
   const skip = useMutation({
@@ -138,6 +140,7 @@ function SkipWorkout({ workoutId }: { workoutId: string }) {
 }
 
 function ExerciseRow({ exercise }: { exercise: PlannedExercise }) {
+  const styles = useStyles();
   const details = formatDetails(exercise);
   return (
     <View style={[styles.row, exercise.swapped_out && styles.swapped]}>
@@ -148,18 +151,18 @@ function ExerciseRow({ exercise }: { exercise: PlannedExercise }) {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((p) => ({
   section: { gap: space.s },
   row: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: 14,
-    padding: space.m,
+    ...chunky,
+    backgroundColor: p.card,
+    borderColor: p.edge,
+    borderRadius: 18,
+    padding: 14,
     gap: 2,
   },
   swapped: { opacity: 0.4 },
-  name: { color: colors.text, fontSize: 16, fontWeight: '700' },
-  target: { color: colors.text, fontSize: 15 },
-  details: { color: colors.muted, fontSize: 13 },
-});
+  name: { fontFamily: font.bold, color: p.text, fontSize: 16 },
+  target: { fontFamily: font.regular, color: p.text, fontSize: 15 },
+  details: { fontFamily: font.regular, color: p.muted, fontSize: 13 },
+}));

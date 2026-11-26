@@ -6,7 +6,7 @@
  * - It's also saved on the account (PATCH /me), so a new phone, or a reinstall, can set
  *   it up again by itself (`useAccountSync`).
  * - One notification per planned day, never more ("protect the channel": a reminder
- *   people learn to ignore is worse than none). Easy to change or turn off on Home.
+ *   people learn to ignore is worse than none). Easy to change or turn off in Settings.
  * - Asking for permission happens when they tap "Remind me", right after a win (workout
  *   1's finish screen), never on first launch.
  * - The time zone goes to the account too, so the week runs Monday to Sunday on their

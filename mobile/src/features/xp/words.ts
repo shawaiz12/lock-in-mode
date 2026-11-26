@@ -35,3 +35,13 @@ export function levelShare(level: XpLevel): number {
 }
 
 export const CAPPED_LINE = 'Rest counts too: you’ve done your week.';
+
+/** The HUD's two parts of `levelLine`: "Lock In level 7" and "320 / 1,000 XP". */
+export function levelParts(level: XpLevel): [string, string] {
+  return [`Lock In level ${level.level}`, `${thousands(level.xp_into)} / ${thousands(level.xp_needed)} XP`];
+}
+
+/** "1 new best" / "9 new bests", for the tile's small line. */
+export function bestsWord(total: number): string {
+  return total === 1 ? 'new best' : 'new bests';
+}

@@ -1,29 +1,26 @@
-/** The four safety questions (ADR 0012) and when they're all answered. */
+/**
+ * The four safety questions (ADR 0012), asked as ONE list since ADR 0036: tick any that
+ * apply, or "None of these" (one tap for most people). The server still gets all four
+ * yes/no answers, and keeps only the result.
+ */
 import type { SafetyScreen } from '@/api/endpoints';
 
-export const QUESTIONS: { key: keyof SafetyScreen; text: string }[] = [
-  { key: 'heart_condition', text: 'Has a doctor ever said you have a heart condition?' },
-  { key: 'chest_pain_when_active', text: 'Do you get chest pain when you are active?' },
-  { key: 'pregnant', text: 'Are you pregnant?' },
-  { key: 'recent_surgery_or_injury', text: 'Have you had surgery or an injury recently?' },
+export type SafetyKey = keyof SafetyScreen;
+
+export const QUESTIONS: { key: SafetyKey; item: string }[] = [
+  { key: 'heart_condition', item: 'A doctor has said I have a heart condition' },
+  { key: 'chest_pain_when_active', item: 'I get chest pain when I’m active' },
+  { key: 'pregnant', item: 'I’m pregnant' },
+  { key: 'recent_surgery_or_injury', item: 'I’ve had surgery or an injury recently' },
 ];
 
-export type SafetyAnswers = Partial<Record<keyof SafetyScreen, boolean>>;
-
-/** All four answered: the request body. Otherwise null (the button stays off). */
-export function completeAnswers(answers: SafetyAnswers): SafetyScreen | null {
-  const [heart, chest, pregnant, surgery] = QUESTIONS.map((q) => answers[q.key]);
-  if (heart === undefined || chest === undefined || pregnant === undefined || surgery === undefined) {
-    return null;
-  }
+/** The request body: the ticked ones are "yes", every other one "no". */
+export function screenFrom(ticked: readonly SafetyKey[]): SafetyScreen {
+  const yes = (key: SafetyKey) => ticked.includes(key);
   return {
-    heart_condition: heart,
-    chest_pain_when_active: chest,
-    pregnant,
-    recent_surgery_or_injury: surgery,
+    heart_condition: yes('heart_condition'),
+    chest_pain_when_active: yes('chest_pain_when_active'),
+    pregnant: yes('pregnant'),
+    recent_surgery_or_injury: yes('recent_surgery_or_injury'),
   };
-}
-
-export function anyYes(answers: SafetyAnswers): boolean {
-  return Object.values(answers).some((value) => value === true);
 }

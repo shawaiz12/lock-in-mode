@@ -33,6 +33,10 @@ export type Week = Schemas['WeekRead'];
 export type NewBest = Schemas['NewBest'];
 export type XpLevel = Schemas['XpLevel'];
 export type XpGained = Schemas['XpGained'];
+export type Muscles = Schemas['MusclesRead'];
+export type MuscleGroup = Schemas['MuscleGroup'];
+export type MuscleHead = Schemas['MuscleHead'];
+export type LeavingReason = Schemas['LeavingReason'];
 
 /** openapi-fetch returns { data } or { error }; this turns the error into an ApiError. */
 function unwrap<T>(result: { data?: T; error?: unknown; response: Response }): T {
@@ -82,9 +86,37 @@ export async function getXp(): Promise<XpLevel> {
   return unwrap(await api.GET('/api/v1/me/xp'));
 }
 
-/** The optional name from the welcome screen. */
-export async function saveDisplayName(name: string): Promise<void> {
+/** The optional name (Settings; null clears it). */
+export async function saveDisplayName(name: string | null): Promise<void> {
   unwrap(await api.PATCH('/api/v1/me', { body: { display_name: name } }));
+}
+
+/** The muscle map (ADR 0036): every group and head, this week's sets, the next workout. */
+export async function getMuscles(): Promise<Muscles> {
+  return unwrap(await api.GET('/api/v1/me/muscles'));
+}
+
+/** Every new best so far, for the "new bests" tile (ADR 0036). */
+export async function getBestsTotal(): Promise<number> {
+  return unwrap(await api.GET('/api/v1/me/bests')).total;
+}
+
+/** The Lock In pact (ADR 0036): the last onboarding step. The drawing stays on the phone. */
+export async function signPact(): Promise<Profile> {
+  return unwrap(await api.POST('/api/v1/me/pact'));
+}
+
+/** "Download my data" (ADR 0027): everything stored about the account, as one object.
+ * 429 rate_limited after 3 in an hour. */
+export async function exportMyData(): Promise<unknown> {
+  return unwrap(await api.GET('/api/v1/me/export'));
+}
+
+/** Delete the account (ADR 0024). A guest is erased at once (204). */
+export async function deleteAccount(reason: LeavingReason | null): Promise<void> {
+  unwrapEmpty(
+    await api.DELETE('/api/v1/me', { params: { query: reason ? { reason } : {} } }),
+  );
 }
 
 /** Only the result is stored on the server, never the four answers (ADR 0012). */

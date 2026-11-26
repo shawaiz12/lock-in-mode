@@ -6,7 +6,7 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "lockinmode",
-    "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "automatic",
     "backgroundColor": "#000000",
     "ios": {
       "supportsTablet": false
@@ -37,7 +37,9 @@
           "recordAudioAndroid": false,
           "enableBackgroundPlayback": false
         }
-      ]
+      ],
+      "expo-font",
+      "expo-sharing"
     ],
     "experiments": {
       "typedRoutes": true

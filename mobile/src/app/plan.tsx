@@ -1,5 +1,7 @@
 /**
- * Your plan (docs/onboarding.md screens 12-13).
+ * Home: your plan (docs/onboarding.md screens 12-13), in the game look (ADR 0036): the
+ * HUD (level, XP, streak, Settings), the world card where the character lives, this
+ * week's ring and every new best, the muscle map, then the plan itself.
  *
  * First visit: the plan doesn't exist yet, so it's built (POST /plans) and its REAL
  * reasons appear one by one ("3 days -> full body", "Knees -> no jumping"): people trust
@@ -18,7 +20,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { router, useIsFocused } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 
 import {
   getOpenSessionOrNull,
@@ -43,7 +45,6 @@ import {
   Body,
   Card,
   Choice,
-  colors,
   ErrorView,
   Gap,
   Label,
@@ -51,12 +52,13 @@ import {
   LockInButton,
   OutlineButton,
   Screen,
-  space,
   TextButton,
   Title,
 } from '@/ui/kit';
+import { MuscleMapCard } from '@/ui/muscles';
 import { ResultView } from '@/ui/player';
-import { LevelCard, SettingsCard, WeekCard } from '@/ui/week';
+import { chunky, font, makeStyles, space } from '@/ui/theme';
+import { Hud, Tiles, WorldCard } from '@/ui/week';
 
 const REVEAL_STEP_MS = 700;
 
@@ -128,6 +130,7 @@ function Reveal({ reasons, onDone }: { reasons: string[]; onDone: () => void }) 
 }
 
 function Week({ plan }: { plan: Plan }) {
+  const styles = useStyles();
   const next = plan.workouts.find((w) => w.id === plan.next_workout_id);
   const comeback = plan.comeback && !plan.comeback.started ? plan.comeback : null;
   const open = useQuery({ queryKey: keys.openSession, queryFn: getOpenSessionOrNull });
@@ -173,6 +176,7 @@ function Week({ plan }: { plan: Plan }) {
     footer = (
       <LockInButton
         title={`Lock In: workout ${next.position}`}
+        detail={`${next.title} · about ${next.total_minutes} min`}
         onPress={() => router.push(`/workout/${next.id}`)}
       />
     );
@@ -187,15 +191,19 @@ function Week({ plan }: { plan: Plan }) {
     );
   }
 
+  const waiting = sending ? 1 : 0;
   return (
     <Screen footer={footer}>
+      <Hud />
       {!online ? <OfflineCard nextPosition={next?.position ?? null} ready={ready === 'ready'} journal={journal} /> : null}
       <JournalCard journal={journal} online={online} syncing={syncing} />
-      <WeekCard waiting={sending ? 1 : 0} />
-      <LevelCard />
+      <WorldCard waiting={waiting} />
+      <Tiles waiting={waiting} />
+      <MuscleMapCard />
 
+      <Gap size="s" />
       <Label>
-        Block {plan.block_number} · {plan.weeks} weeks
+        Your plan · block {plan.block_number} · {plan.weeks} weeks
       </Label>
       <Title>{routineLabel(plan.routine_kind)}</Title>
 
@@ -219,7 +227,6 @@ function Week({ plan }: { plan: Plan }) {
       ) : null}
 
       {online ? <Choices plan={plan} /> : null}
-      <SettingsCard />
 
       {groupByWeek(plan.workouts).map((group) => (
         <View key={group.week} style={styles.week}>
@@ -307,6 +314,7 @@ function JournalCard({ journal, online, syncing }: { journal: Journal | null; on
 }
 
 function WorkoutRow({ workout, isNext }: { workout: WorkoutSummary; isNext: boolean }) {
+  const styles = useStyles();
   const status = statusLabel(workout.status);
   return (
     <Pressable
@@ -380,6 +388,7 @@ function ReadyForMore({
 /** Choices that only matter to some people (playbook screen 13). Changing one saves the
  * profile; the server rebuilds the untouched plan, still block 1 (ADR 0017). */
 function Choices({ plan }: { plan: Plan }) {
+  const styles = useStyles();
   const queryClient = useQueryClient();
   const profile = useQuery({ queryKey: keys.profile, queryFn: getProfileOrNull, staleTime: Infinity });
   const change = useMutation({
@@ -390,6 +399,7 @@ function Choices({ plan }: { plan: Plan }) {
     onSuccess: async (saved) => {
       queryClient.setQueryData(keys.profile, saved);
       await queryClient.invalidateQueries({ queryKey: keys.plan });
+      void queryClient.invalidateQueries({ queryKey: keys.muscles }); // "next up" changed
     },
   });
   const data = profile.data;
@@ -445,25 +455,25 @@ function Choices({ plan }: { plan: Plan }) {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((p) => ({
   week: { gap: space.s },
   row: {
+    ...chunky,
     flexDirection: 'row',
     alignItems: 'center',
     gap: space.m,
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: 14,
-    padding: space.m,
+    backgroundColor: p.card,
+    borderColor: p.edge,
+    borderRadius: 18,
+    padding: 14,
   },
-  rowNext: { borderColor: colors.primary },
-  pressed: { opacity: 0.7 },
-  position: { color: colors.muted, fontSize: 16, fontWeight: '800', width: 24, textAlign: 'center' },
+  rowNext: { borderColor: p.brand },
+  pressed: { borderBottomWidth: 2, marginTop: 3 },
+  position: { fontFamily: font.heavy, color: p.muted, fontSize: 17, width: 24, textAlign: 'center' },
   rowText: { flex: 1, gap: 2 },
-  rowTitle: { color: colors.text, fontSize: 16, fontWeight: '700' },
-  rowMeta: { color: colors.muted, fontSize: 14 },
-  status: { color: colors.muted, fontSize: 13, fontWeight: '700' },
+  rowTitle: { fontFamily: font.bold, color: p.text, fontSize: 16 },
+  rowMeta: { fontFamily: font.regular, color: p.muted, fontSize: 14 },
+  status: { fontFamily: font.bold, color: p.muted, fontSize: 13 },
   pair: { flexDirection: 'row', gap: space.s },
   half: { flex: 1 },
-});
+}));

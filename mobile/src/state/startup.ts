@@ -8,6 +8,7 @@
  *   offline, nothing saved   -> "offline"     (connect once to set up)
  *   no profile (404)         -> "onboarding"
  *   profile, no safety check -> "safety"
+ *   pact due (new people)    -> "pact"        (ADR 0036: the last onboarding step)
  *   all done                 -> "plan"
  *
  * Offline (ADR 0033): the profile saved on the phone is enough to carry on, even when
@@ -45,12 +46,16 @@ export const keys = {
   xp: ['me', 'xp'] as const,
   /** This week's ring and the streak (GET /me/week). */
   week: ['me', 'week'] as const,
+  /** The muscle map (GET /me/muscles). */
+  muscles: ['me', 'muscles'] as const,
+  /** The "new bests" count (GET /me/bests). */
+  bests: ['me', 'bests'] as const,
   /** The workout in progress on the server, if any (GET /sessions/current). */
   openSession: ['workout-session', 'open'] as const,
   exercise: (id: string) => ['exercise', id] as const,
 };
 
-export type Stage = 'loading' | 'error' | 'offline' | 'onboarding' | 'safety' | 'plan';
+export type Stage = 'loading' | 'error' | 'offline' | 'onboarding' | 'safety' | 'pact' | 'plan';
 
 type QueryState<T> = { status: 'pending' | 'error' | 'success'; data?: T; error?: unknown };
 
@@ -68,6 +73,10 @@ export function stageFor(
   if (profile.data !== undefined) {
     if (profile.data === null) return 'onboarding';
     if (profile.data.safety_screened_at === null) return 'safety';
+    // Only before the first plan (the server decides): someone already training, maybe
+    // offline mid-workout, is never sent here. A copy saved by an older app has no
+    // `pact_due`: that's "no".
+    if (profile.data.pact_due === true) return 'pact';
     return 'plan';
   }
   if (profile.status === 'error') return 'error';
@@ -101,6 +110,21 @@ export function startFresh(queryClient: QueryClient, journal: { clear(): void })
   // read the old copy back at the next launch.
   Storage.removeItemSync(CACHE_KEY);
   journal.clear();
+}
+
+/** Start again as a brand-new guest: forget this phone's sign-in and everything saved
+ * for it, then sign in afresh (onboarding follows by itself). Used by "Start again" after
+ * an ended sign-in and after deleting the account (ADR 0024, 0036). */
+export function useStartOver(): () => Promise<void> {
+  const queryClient = useQueryClient();
+  const journal = useJournalStore();
+  return async () => {
+    await auth.forget();
+    startFresh(queryClient, journal);
+    // Not awaited: the screen follows the sign-in check by itself (spinner, then
+    // onboarding or "Can't reach"), and retries can take a few seconds.
+    void queryClient.resetQueries({ queryKey: keys.session });
+  };
 }
 
 const SIGNED_OUT = new SignedOutError();
@@ -139,16 +163,13 @@ export function useStartup() {
   });
   const stage = stageFor(session, profile, online, signedOut);
   const error = signedOut ? SIGNED_OUT : (session.error ?? profile.error);
+  const startOver = useStartOver();
 
   async function retry() {
     if (error instanceof SignedOutError) {
       // The old sign-in can't come back: start again as a new guest, with nothing of the
       // old account's left. Signing in again happens from scratch (ensureSignedIn).
-      await auth.forget();
-      startFresh(queryClient, journal);
-      // Not awaited: the screen follows the sign-in check by itself (spinner, then
-      // onboarding or "Can't reach"), and retries can take a few seconds.
-      void queryClient.resetQueries({ queryKey: keys.session });
+      await startOver();
       return;
     }
     await (session.isError ? session.refetch() : profile.refetch());

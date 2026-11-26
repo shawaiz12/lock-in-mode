@@ -1,62 +1,62 @@
 /**
- * Onboarding (docs/onboarding.md, screens 1-10): one question per screen. Single
- * choices move on by themselves; multi choices and info screens have a "Lock In" button.
- * The answers live in this screen's state until the end, then go to the API in one
- * PUT /me/profile (plus the optional name). Which questions exist and what they become
- * is in src/features/onboarding/flow.ts.
+ * Onboarding (docs/onboarding.md, ADR 0036): six questions, one per screen, steps 1-6 of
+ * the 8-step first run (then the safety list and the pact). Single choices move on by
+ * themselves; home kit and sore spots have a "Lock In" button. Every screen says why it
+ * asks. The answers live in this screen's state until the end, then go to the API in one
+ * PUT /me/profile. Which questions exist and what they become is in
+ * src/features/onboarding/flow.ts.
  *
  * React: `useState` is a value that survives redraws (like a field on a MonoBehaviour);
  * setting it redraws the screen. `useMutation` runs a save and tracks busy/error.
  */
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { StyleSheet, Text, TextInput, View } from 'react-native';
+import { View } from 'react-native';
 
-import { saveDisplayName, saveProfile } from '@/api/endpoints';
+import { saveProfile } from '@/api/endpoints';
 import { describeError } from '@/api/problem';
 import {
   type Answers,
   chooseLocation,
+  DAY_HINTS,
   DAYS,
-  displayName,
-  echoFor,
   EMPTY_ANSWERS,
   EQUIPMENT,
+  echoFor,
+  FLOW_LENGTH,
   GOALS,
   HISTORY,
   isAnswered,
   LIMITS,
   LOCATIONS,
   MINUTES,
-  OBSTACLES,
-  stepsFor,
+  needsButton,
+  QUESTIONS,
+  STEPS,
   toggle,
   toProfileWrite,
 } from '@/features/onboarding/flow';
 import { keys } from '@/state/startup';
-import { Body, Choice, colors, Label, LockInButton, Screen, space, TextButton, Title } from '@/ui/kit';
+import { Body, Card, Choice, Label, LockInButton, Screen, StepHeader, Tick, Title } from '@/ui/kit';
+import { makeStyles, space } from '@/ui/theme';
 
 export default function Onboarding() {
+  const styles = useStyles();
   const [answers, setAnswers] = useState<Answers>(EMPTY_ANSWERS);
   const [index, setIndex] = useState(0);
   const queryClient = useQueryClient();
 
   const save = useMutation({
-    mutationFn: async (final: Answers) => {
-      const profile = await saveProfile(toProfileWrite(final));
-      const name = displayName(final);
-      if (name) await saveDisplayName(name);
-      return profile;
-    },
+    mutationFn: (final: Answers) => saveProfile(toProfileWrite(final)),
     // The new profile moves the app to the safety check (see src/app/_layout.tsx).
     onSuccess: (profile) => queryClient.setQueryData(keys.profile, profile),
   });
 
-  const steps = stepsFor(answers);
-  const step = steps[index] ?? 'welcome';
+  const step = STEPS[index] ?? 'goal';
+  const question = QUESTIONS[step];
 
   function next(updated: Answers = answers) {
-    if (index >= stepsFor(updated).length - 1) save.mutate(updated);
+    if (index >= STEPS.length - 1) save.mutate(updated);
     else setIndex(index + 1);
   }
 
@@ -66,150 +66,125 @@ export default function Onboarding() {
     next(updated);
   }
 
-  const lockIn = (title = 'Lock In') => (
+  const footer = needsButton(step, answers) ? (
     <LockInButton
-      title={save.isError ? 'Try again' : title}
+      title={save.isError ? 'Try again' : 'Lock In'}
       onPress={() => next()}
       disabled={!isAnswered(step, answers)}
       busy={save.isPending}
     />
-  );
+  ) : undefined;
 
   return (
     <Screen
-      footer={['welcome', 'echo', 'equipment', 'limits', 'obstacles'].includes(step) ? lockIn() : undefined}
+      header={
+        <StepHeader
+          step={index + 1}
+          of={FLOW_LENGTH}
+          onBack={index > 0 && !save.isPending ? () => setIndex(index - 1) : undefined}
+        />
+      }
+      footer={footer}
     >
-      <View style={styles.topBar}>
-        {index > 0 ? <TextButton title="‹ Back" onPress={() => setIndex(index - 1)} /> : <View />}
-        <Text style={styles.progress}>
-          {index + 1} / {steps.length}
-        </Text>
-      </View>
+      {step === 'goal' ? <Label>Let’s build your plan</Label> : null}
+      {step === 'history' && answers.goal ? (
+        // The goal's echo: proof we listened, without a screen of its own.
+        <Card style={styles.echo}>
+          <Tick size={22} />
+          <View style={styles.grow}>
+            <Body>{echoFor(answers.goal)}</Body>
+          </View>
+        </Card>
+      ) : null}
+      <Title>{question.title}</Title>
+      <Body muted>{question.why}</Body>
 
-      {step === 'welcome' && (
-        <>
-          <Title>You&apos;re the main character.</Title>
-          <Body>Let&apos;s build your plan. About a minute, then your first workout.</Body>
-          <TextInput
-            style={styles.input}
-            placeholder="Your name (optional)"
-            placeholderTextColor={colors.muted}
-            value={answers.name}
-            onChangeText={(name) => setAnswers({ ...answers, name })}
-            maxLength={50}
-            autoCapitalize="words"
-            returnKeyType="done"
-            accessibilityLabel="Your name, optional"
+      {step === 'goal' &&
+        GOALS.map((g) => (
+          <Choice
+            key={g.value}
+            label={g.label}
+            hint={g.hint}
+            selected={answers.goal === g.value}
+            onPress={() => pick({ ...answers, goal: g.value })}
           />
-        </>
-      )}
+        ))}
 
-      {step === 'goal' && (
-        <>
-          <Title>What&apos;s your goal?</Title>
-          {GOALS.map((g) => (
-            <Choice
-              key={g.value}
-              label={g.label}
-              selected={answers.goal === g.value}
-              onPress={() => pick({ ...answers, goal: g.value })}
-            />
-          ))}
-        </>
-      )}
-
-      {step === 'echo' && (
-        <>
-          <Label>Your plan</Label>
-          <Title>{GOALS.find((g) => g.value === answers.goal)?.label}</Title>
-          <Body>{echoFor(answers.goal)}</Body>
-        </>
-      )}
-
-      {step === 'history' && (
-        <>
-          <Title>How long have you trained steadily?</Title>
-          {HISTORY.map((h) => (
-            <Choice
-              key={h.value}
-              label={h.label}
-              selected={answers.history === h.value}
-              onPress={() => pick({ ...answers, history: h.value })}
-            />
-          ))}
-        </>
-      )}
+      {step === 'history' &&
+        HISTORY.map((h) => (
+          <Choice
+            key={h.value}
+            label={h.label}
+            hint={h.hint}
+            selected={answers.history === h.value}
+            onPress={() => pick({ ...answers, history: h.value })}
+          />
+        ))}
 
       {step === 'where' && (
         <>
-          <Title>Where will you train?</Title>
           {LOCATIONS.map((l) => (
             <Choice
               key={l.value}
               label={l.label}
+              hint={l.hint}
               selected={answers.location === l.value}
-              onPress={() => pick(chooseLocation(answers, l.value))}
+              onPress={() => {
+                const updated = chooseLocation(answers, l.value);
+                // The gym has everything: move on. Home asks what's there first.
+                if (l.value === 'gym') pick(updated);
+                else setAnswers(updated);
+              }}
             />
           ))}
+          {answers.location === 'home' ? (
+            <>
+              <Label>What do you have at home?</Label>
+              <Body muted>Pick any, or none. No equipment is a full plan, not a lesser one.</Body>
+              {EQUIPMENT.map((e) => (
+                <Choice
+                  key={e.value}
+                  multi
+                  label={e.label}
+                  selected={answers.equipment.includes(e.value)}
+                  onPress={() => setAnswers({ ...answers, equipment: toggle(answers.equipment, e.value) })}
+                />
+              ))}
+              <Choice
+                multi
+                label="Quiet, small-space workouts"
+                selected={answers.quiet}
+                onPress={() => setAnswers({ ...answers, quiet: !answers.quiet })}
+              />
+            </>
+          ) : null}
         </>
       )}
 
-      {step === 'equipment' && (
-        <>
-          <Title>What do you have at home?</Title>
-          <Body muted>Pick any, or none. No equipment is a full plan, not a lesser one.</Body>
-          {EQUIPMENT.map((e) => (
-            <Choice
-              key={e.value}
-              multi
-              label={e.label}
-              selected={answers.equipment.includes(e.value)}
-              onPress={() => setAnswers({ ...answers, equipment: toggle(answers.equipment, e.value) })}
-            />
-          ))}
-          <Label>Also</Label>
+      {step === 'days' &&
+        DAYS.map((d) => (
           <Choice
-            multi
-            label="Quiet, small-space workouts"
-            selected={answers.quiet}
-            onPress={() => setAnswers({ ...answers, quiet: !answers.quiet })}
+            key={d}
+            badge={String(d)}
+            label={`${d} days`}
+            hint={DAY_HINTS[d]}
+            selected={answers.days === d}
+            onPress={() => pick({ ...answers, days: d })}
           />
-        </>
-      )}
+        ))}
 
-      {step === 'days' && (
-        <>
-          <Title>How many days a week?</Title>
-          {DAYS.map((d) => (
-            <Choice
-              key={d}
-              label={`${d} days`}
-              selected={answers.days === d}
-              onPress={() => pick({ ...answers, days: d })}
-            />
-          ))}
-        </>
-      )}
-
-      {step === 'time' && (
-        <>
-          <Title>How long per workout?</Title>
-          <Body muted>10 minutes counts.</Body>
-          {MINUTES.map((m) => (
-            <Choice
-              key={m.label}
-              label={m.label}
-              selected={answers.minutes === m.value}
-              onPress={() => pick({ ...answers, minutes: m.value })}
-            />
-          ))}
-        </>
-      )}
+      {step === 'time' &&
+        MINUTES.map((m) => (
+          <Choice
+            key={m.label}
+            label={m.label}
+            selected={answers.minutes === m.value}
+            onPress={() => pick({ ...answers, minutes: m.value })}
+          />
+        ))}
 
       {step === 'limits' && (
         <>
-          <Title>Anything to train around?</Title>
-          <Body muted>We train around a sore area. We don&apos;t treat it.</Body>
           {LIMITS.map((l) => (
             <Choice
               key={l.value}
@@ -221,54 +196,19 @@ export default function Onboarding() {
           ))}
           <Choice
             label="None"
-            selected={answers.limits.length === 0}
-            onPress={() => setAnswers({ ...answers, limits: [] })}
+            selected={false}
+            onPress={() => (save.isPending ? undefined : pick({ ...answers, limits: [] }))}
           />
         </>
       )}
 
-      {step === 'obstacles' && (
-        <>
-          <Title>What&apos;s made it hard before?</Title>
-          <Body muted>Optional. It changes your tips and reminders, not your plan.</Body>
-          {OBSTACLES.map((o) => (
-            <Choice
-              key={o.value}
-              multi
-              label={o.label}
-              selected={answers.obstacles.includes(o.value)}
-              onPress={() =>
-                setAnswers({ ...answers, obstacles: toggle(answers.obstacles, o.value) })
-              }
-            />
-          ))}
-          {answers.obstacles.length === 0 && !save.isPending ? (
-            <TextButton title="Skip" onPress={() => next()} />
-          ) : null}
-        </>
-      )}
-
+      {save.isPending && !footer ? <Body muted>Saving your answers…</Body> : null}
       {save.isError ? <Body>{describeError(save.error)}</Body> : null}
     </Screen>
   );
 }
 
-const styles = StyleSheet.create({
-  topBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    minHeight: 40,
-  },
-  progress: { color: colors.muted, fontSize: 14, fontWeight: '600' },
-  input: {
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    borderRadius: 14,
-    color: colors.text,
-    fontSize: 17,
-    paddingVertical: 16,
-    paddingHorizontal: space.m,
-  },
-});
+const useStyles = makeStyles(() => ({
+  echo: { flexDirection: 'row', alignItems: 'flex-start', gap: space.s + 4 },
+  grow: { flex: 1 },
+}));

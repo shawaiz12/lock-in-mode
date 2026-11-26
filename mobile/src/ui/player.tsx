@@ -10,7 +10,8 @@
  *   SavedView     finished offline: saved on the phone, results once it's sent (ADR 0033)
  */
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
+import Svg, { Path } from 'react-native-svg';
 
 import type { BodyArea, BodyLimit, PlannedExercise, SessionResult } from '@/api/endpoints';
 import { formatClock, reading } from '@/features/player/clock';
@@ -33,18 +34,19 @@ import {
   Body,
   Card,
   Choice,
-  colors,
   Label,
   LockInButton,
   OutlineButton,
   ProgressBar,
   Screen,
   Sheet,
-  space,
+  SmallKey,
   Stepper,
   TextButton,
+  Tick,
   Title,
 } from '@/ui/kit';
+import { font, makeStyles, space, usePalette } from '@/ui/theme';
 import { celebrate, Confetti, CountUp, FadeIn, FillBar, useSteps } from '@/ui/reveal';
 import { ReminderOffer } from '@/ui/week';
 
@@ -59,6 +61,7 @@ export function PlayerView({
   onLeave: () => void;
   onFinishNow: () => void;
 }) {
+  const styles = useStyles();
   const { current: station, currentItem: item, phase, totals } = player;
   const [editing, setEditing] = useState<Item | null>(null);
   const [more, setMore] = useState(false);
@@ -83,11 +86,11 @@ export function PlayerView({
       }
     >
       <View style={styles.topBar}>
-        <TextButton title="‹ Leave" onPress={onLeave} />
+        <SmallKey title="‹ Leave" onPress={onLeave} />
         <Text style={styles.count}>
           {totals.done} of {totals.total} sets
         </Text>
-        <TextButton title="More" onPress={() => setMore(true)} />
+        <SmallKey title="More" onPress={() => setMore(true)} />
       </View>
       <ProgressBar value={totals.total === 0 ? 0 : totals.done / totals.total} />
 
@@ -128,15 +131,7 @@ export function PlayerView({
           {working ? (
             <WorkClock player={player} />
           ) : item.kind !== 'practice' ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Change the numbers"
-              onPress={() => setEditing(item)}
-              style={styles.entry}
-            >
-              <Text style={styles.entryText}>{entryText(entry) || 'Tap to fill in'}</Text>
-              <Text style={styles.entryHint}>change</Text>
-            </Pressable>
+            <EntryBoxes entry={entry} onEdit={() => setEditing(item)} />
           ) : null}
         </Card>
       ) : null}
@@ -165,6 +160,46 @@ export function PlayerView({
   );
 }
 
+/** The set's numbers, big enough to read mid-set. Tapping any of them changes them. */
+function EntryBoxes({ entry, onEdit }: { entry: Entry; onEdit: () => void }) {
+  const styles = useStyles();
+  const boxes: [string, string][] = [];
+  if (entry.weight_kg !== null) boxes.push([String(entry.weight_kg), 'kg']);
+  if (entry.reps !== null) boxes.push([String(entry.reps), entry.reps === 1 ? 'rep' : 'reps']);
+  if (entry.seconds !== null) boxes.push([String(entry.seconds), 'seconds']);
+  return (
+    <View style={styles.entryArea}>
+      <Text style={styles.entryHint}>Tap a number to change it</Text>
+      <View style={styles.boxes}>
+        {boxes.length === 0 ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Change the numbers"
+            onPress={onEdit}
+            style={({ pressed }) => [styles.box, pressed && styles.boxDown]}
+          >
+            <Text style={styles.boxEmpty}>Tap to fill in</Text>
+          </Pressable>
+        ) : (
+          boxes.map(([value, unit]) => (
+            <Pressable
+              key={unit}
+              accessibilityRole="button"
+              accessibilityLabel="Change the numbers"
+              accessibilityValue={{ text: entryText(entry) }}
+              onPress={onEdit}
+              style={({ pressed }) => [styles.box, pressed && styles.boxDown]}
+            >
+              <Text style={styles.boxValue}>{value}</Text>
+              <Text style={styles.boxUnit}>{unit}</Text>
+            </Pressable>
+          ))
+        )}
+      </View>
+    </View>
+  );
+}
+
 function MainAction({
   player,
   station,
@@ -180,6 +215,7 @@ function MainAction({
   working: boolean;
   onEdit: () => void;
 }) {
+  const styles = useStyles();
   if (player.phase.name === 'rest') {
     return (
       <View style={styles.row}>
@@ -234,6 +270,7 @@ function paused(player: Player): boolean {
 }
 
 function WorkClock({ player }: { player: Player }) {
+  const styles = useStyles();
   if (player.phase.name !== 'work') return null;
   const { clock } = player.phase;
   const ms = reading(clock, player.nowMs);
@@ -245,6 +282,7 @@ function WorkClock({ player }: { player: Player }) {
 }
 
 function RestCard({ player, station, item }: { player: Player; station: Station; item: Item }) {
+  const styles = useStyles();
   if (player.phase.name !== 'rest') return null;
   const ms = reading(player.phase.clock, player.nowMs);
   return (
@@ -259,6 +297,7 @@ function RestCard({ player, station, item }: { player: Player; station: Station;
 }
 
 function SetList({ player, station, onEdit }: { player: Player; station: Station; onEdit: (item: Item) => void }) {
+  const styles = useStyles();
   const items = station.items.filter((it) => it.kind !== 'practice' || !player.isDone(it));
   if (items.length <= 1) return null;
   return (
@@ -274,9 +313,9 @@ function SetList({ player, station, onEdit }: { player: Player; station: Station
             accessibilityRole="button"
             accessibilityState={{ checked: done, selected: isCurrent }}
             onPress={() => (it.kind !== 'practice' ? onEdit(it) : undefined)}
-            style={[styles.setRow, isCurrent && styles.setRowCurrent]}
+            style={[styles.setRow, isCurrent && styles.setRowCurrent, done && styles.setRowDone]}
           >
-            <Text style={[styles.check, done && styles.checkDone]}>{done ? '✓' : '○'}</Text>
+            {done ? <Tick size={22} /> : <View style={styles.open} />}
             <Text style={[styles.setText, done && styles.setTextDone]} numberOfLines={1}>
               {[name, label].filter(Boolean).join(' · ') || targetText(it)}
             </Text>
@@ -378,6 +417,7 @@ function MoreSheet({
   onHowTo: (row: PlannedExercise) => void;
   onFinishNow: () => void;
 }) {
+  const styles = useStyles();
   return (
     <Sheet visible={visible} onClose={onClose}>
       {station.exercises.map((row) => (
@@ -464,6 +504,7 @@ const AREAS: [BodyArea, string][] = [
 
 /** ADR 0020 decision 3: asked once after "this hurts", optional. */
 function WhereItHurts({ name, onAnswer }: { name: string; onAnswer: (area: BodyArea | null) => void }) {
+  const styles = useStyles();
   return (
     <Card>
       <Label>Where did {name} hurt?</Label>
@@ -547,14 +588,18 @@ export function SavedView({
 /** The top of the finish screen, revealed one step at a time (ADR 0035): real progress
  * first, then the week, then XP and the level. */
 function Headline({ result, bests }: { result: SessionResult; bests: NonNullable<SessionResult['new_bests']> }) {
+  const styles = useStyles();
   const kept = keptNowLine(result.week);
   const xp = result.xp ?? null;
   const steps = [];
   if (bests.length > 0) {
     steps.push(
       <FadeIn key="bests">
-        <Card>
-          <Label>Real progress</Label>
+        <Card style={styles.goldCard}>
+          <View style={styles.cardTop}>
+            <Trophy />
+            <Label>Real progress</Label>
+          </View>
           {bests.slice(0, 3).map((best) => (
             <Title key={best.exercise.id}>{newBestLine(best)}</Title>
           ))}
@@ -566,7 +611,12 @@ function Headline({ result, bests }: { result: SessionResult; bests: NonNullable
   if (kept) {
     steps.push(
       <FadeIn key="week">
-        <Body>{kept}</Body>
+        <Card style={styles.cardRow}>
+          <Tick size={40} />
+          <View style={styles.grow}>
+            <Body>{kept}</Body>
+          </View>
+        </Card>
       </FadeIn>,
     );
   }
@@ -580,6 +630,7 @@ function Headline({ result, bests }: { result: SessionResult; bests: NonNullable
     steps.push(
       <FadeIn key="xp">
         <Card>
+          <Label>XP earned</Label>
           <CountUp to={xp.gained} render={(n) => `+${thousands(n)} XP`} />
           {xp.items.map((item) => (
             <Body key={item.source} muted>
@@ -597,6 +648,22 @@ function Headline({ result, bests }: { result: SessionResult; bests: NonNullable
   }
   const shown = useSteps(steps.length);
   return <>{steps.slice(0, shown)}</>;
+}
+
+/** A trophy in gold: new bests only. */
+function Trophy() {
+  const palette = usePalette();
+  return (
+    <Svg width={26} height={26} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M7 4h10v5a5 5 0 0 1-10 0zM7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4M12 14v3M8 20h8"
+        stroke={palette.goldText}
+        strokeWidth={2.2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
 }
 
 function LevelReveal({ xp }: { xp: NonNullable<SessionResult['xp']> }) {
@@ -636,6 +703,7 @@ export function ResultView({
   /** Done offline and sent later: say so. */
   synced?: boolean;
 }) {
+  const styles = useStyles();
   const up = result.progress.filter(isStepUp);
   const back = result.progress.filter((p) => !isStepUp(p));
   const bests = result.new_bests ?? [];
@@ -719,43 +787,59 @@ export function ResultView({
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((p) => ({
+  grow: { flex: 1 },
   topBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  count: { color: colors.muted, fontSize: 14, fontWeight: '600' },
-  warning: { borderColor: colors.warning },
-  current: { gap: space.s, paddingVertical: space.l },
-  exerciseName: { color: colors.text, fontSize: 22, fontWeight: '800' },
-  target: { color: colors.text, fontSize: 26, fontWeight: '800' },
-  entry: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  count: { fontFamily: font.bold, color: p.muted, fontSize: 14 },
+  current: { gap: space.s, paddingVertical: space.m, borderColor: p.brand },
+  exerciseName: { fontFamily: font.heavy, color: p.text, fontSize: 22 },
+  target: { fontFamily: font.heavy, color: p.text, fontSize: 26 },
+  entryArea: { gap: space.s, marginTop: space.xs },
+  entryHint: { fontFamily: font.bold, color: p.muted, fontSize: 12, letterSpacing: 0.6, textTransform: 'uppercase' },
+  boxes: { flexDirection: 'row', gap: 10 },
+  box: {
+    flex: 1,
+    minHeight: 86,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderBottomWidth: 4,
+    borderColor: p.edge,
+    backgroundColor: p.ground,
     alignItems: 'center',
-    borderTopColor: colors.border,
-    borderTopWidth: 1,
-    paddingTop: space.m,
-    marginTop: space.s,
+    justifyContent: 'center',
   },
-  entryText: { color: colors.text, fontSize: 20, fontWeight: '700' },
-  entryHint: { color: colors.muted, fontSize: 14, fontWeight: '600', textDecorationLine: 'underline' },
-  clock: { color: colors.text, fontSize: 64, fontWeight: '800', fontVariant: ['tabular-nums'], textAlign: 'center' },
-  rest: { alignItems: 'center', paddingVertical: space.l },
+  boxDown: { borderBottomWidth: 2, marginTop: 2 },
+  boxValue: { fontFamily: font.heavy, color: p.text, fontSize: 42, letterSpacing: -1, lineHeight: 46 },
+  boxUnit: { fontFamily: font.bold, color: p.muted, fontSize: 13 },
+  boxEmpty: { fontFamily: font.bold, color: p.text, fontSize: 18 },
+  clock: {
+    fontFamily: font.heavy,
+    color: p.text,
+    fontSize: 64,
+    fontVariant: ['tabular-nums'],
+    textAlign: 'center',
+  },
+  rest: { alignItems: 'center', paddingVertical: space.l, backgroundColor: p.chip, borderColor: p.brand },
   row: { flexDirection: 'row', gap: space.m },
   actions: { gap: space.s },
-  sets: { gap: space.xs },
+  sets: { gap: 6 },
   setRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: space.m,
-    paddingVertical: space.s,
-    paddingHorizontal: space.m,
-    borderRadius: 10,
+    gap: 12,
+    minHeight: 50,
+    paddingHorizontal: 14,
+    borderRadius: 16,
   },
-  setRowCurrent: { backgroundColor: colors.surface },
-  check: { color: colors.muted, fontSize: 18, width: 20 },
-  checkDone: { color: colors.text },
-  setText: { color: colors.text, fontSize: 15, flex: 1 },
-  setTextDone: { color: colors.muted },
-  setEntry: { color: colors.muted, fontSize: 14 },
+  setRowCurrent: { backgroundColor: p.card, borderWidth: 2, borderColor: p.edge },
+  setRowDone: { backgroundColor: p.chip },
+  open: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: p.edge },
+  setText: { fontFamily: font.bold, color: p.text, fontSize: 15, flex: 1 },
+  setTextDone: { color: p.chipText },
+  setEntry: { fontFamily: font.heavy, color: p.text, fontSize: 15 },
   menuGroup: { gap: space.xs },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.s },
-});
+  goldCard: { borderColor: p.gold },
+  cardTop: { flexDirection: 'row', alignItems: 'center', gap: space.s },
+  cardRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+}));

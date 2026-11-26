@@ -1,11 +1,14 @@
 /**
- * The onboarding quiz (docs/onboarding.md): which screens, in what order, what each
- * answer becomes in the profile. Plain functions, no React: easy to test, easy to read.
+ * The onboarding quiz (docs/onboarding.md, ADR 0036): which screens, in what order, what
+ * each answer becomes in the profile. Plain functions, no React: easy to test, easy to read.
  * .NET: a small domain model + a mapper to the request DTO.
  *
  * Rules from the playbook: one question per screen, one tap to answer (single choices
- * move on by themselves), every question changes the plan or how we talk to the user,
- * echo big answers back, about 10 taps.
+ * move on by themselves), every question changes the plan or it goes, say WHY each answer
+ * is needed, show progress. ADR 0036 cut it from 12 screens to 8: no welcome or name
+ * screen (the pact's signature is theirs; the name is in Settings), the goal's echo shows
+ * on the next screen instead of its own, home kit is asked on the "where" screen, the
+ * unused "what's made it hard" question is gone, and the safety check is one list.
  */
 import type { components } from '@/api/schema';
 
@@ -14,7 +17,6 @@ export type Goal = Schemas['Goal'];
 export type Location = Schemas['Location'];
 export type HomeEquipment = Exclude<Schemas['Equipment'], 'gym'>;
 export type BodyLimit = Schemas['BodyLimit'];
-export type Obstacle = Schemas['Obstacle'];
 export type SessionMinutes = Schemas['SessionMinutes'];
 type ProfileWrite = Schemas['ProfileWrite'];
 
@@ -22,7 +24,6 @@ type ProfileWrite = Schemas['ProfileWrite'];
 export type History = 'never_or_on_and_off' | 'six_months_to_two_years' | 'two_years_plus';
 
 export type Answers = {
-  name: string;
   goal?: Goal;
   history?: History;
   location?: Location;
@@ -33,35 +34,56 @@ export type Answers = {
   /** undefined: not answered yet. null: "No limit". */
   minutes?: SessionMinutes | null;
   limits: BodyLimit[];
-  obstacles: Obstacle[];
 };
 
 export const EMPTY_ANSWERS: Answers = {
-  name: '',
   equipment: [],
   quiet: false,
   limits: [],
-  obstacles: [],
 };
 
-export type StepId =
-  | 'welcome'
-  | 'goal'
-  | 'echo'
-  | 'history'
-  | 'where'
-  | 'equipment'
-  | 'days'
-  | 'time'
-  | 'limits'
-  | 'obstacles';
+export type StepId = 'goal' | 'history' | 'where' | 'days' | 'time' | 'limits';
 
-/** The screens for these answers. Equipment is asked at home only: gym users have it all. */
-export function stepsFor(answers: Answers): StepId[] {
-  const steps: StepId[] = ['welcome', 'goal', 'echo', 'history', 'where'];
-  if (answers.location === 'home') steps.push('equipment');
-  steps.push('days', 'time', 'limits', 'obstacles');
-  return steps;
+/** The questions, in order. Home kit is part of "where" (asked only after "Home"). */
+export const STEPS: readonly StepId[] = ['goal', 'history', 'where', 'days', 'time', 'limits'];
+
+/** The whole first run, for the progress bar: these questions, the safety list, the pact. */
+export const FLOW_LENGTH = STEPS.length + 2;
+export const SAFETY_STEP = STEPS.length + 1;
+export const PACT_STEP = STEPS.length + 2;
+
+/** Each question's title and the one line that says why it's asked. */
+export const QUESTIONS: Record<StepId, { title: string; why: string }> = {
+  goal: {
+    title: 'What’s your goal?',
+    why: 'It shapes every workout: which exercises, how many reps, how long you rest.',
+  },
+  history: {
+    title: 'How long have you trained steadily?',
+    why: 'How long you’ve trained says more than how fit you feel. Workout 1 then finds your real numbers.',
+  },
+  where: {
+    title: 'Where will you train?',
+    why: 'So every exercise in your plan is one you can really do there.',
+  },
+  days: {
+    title: 'How many days a week can you train?',
+    why: 'Your plan is built around this. Fewer days you’ll really keep beats more days you’ll skip.',
+  },
+  time: {
+    title: 'How long per workout?',
+    why: 'Every workout fits in this. 10 minutes counts.',
+  },
+  limits: {
+    title: 'Anything to train around?',
+    why: 'We train around a sore area. We don’t treat it.',
+  },
+};
+
+/** Single answers move on by themselves; these screens need the "Lock In" button. */
+export function needsButton(step: StepId, answers: Answers): boolean {
+  if (step === 'where') return answers.location === 'home';
+  return step === 'limits' && answers.limits.length > 0;
 }
 
 /** Can the person move on from this screen? */
@@ -77,50 +99,58 @@ export function isAnswered(step: StepId, answers: Answers): boolean {
       return answers.days !== undefined;
     case 'time':
       return answers.minutes !== undefined;
-    // Name (optional), echo, equipment (none is a full plan), limits (none is an
-    // answer), obstacles (skippable): always fine.
+    // Limits: none is an answer too.
     default:
       return true;
   }
 }
 
-export const GOALS: { value: Goal; label: string; echo: string }[] = [
+export const GOALS: { value: Goal; label: string; hint: string; echo: string }[] = [
   {
     value: 'build_muscle',
     label: 'Build muscle',
+    hint: 'Bigger, fuller muscles',
     echo: 'Build muscle: every part of each muscle gets trained, and your numbers go up as you earn it.',
   },
   {
     value: 'strength',
     label: 'Build strength',
+    hint: 'Lift heavier',
     echo: 'Build strength: your main lifts get longer rests so every rep is strong, and they step up as you get stronger.',
   },
   {
     value: 'lose_fat',
     label: 'Lose fat / get fit',
+    hint: 'Leaner and fitter',
     echo: 'Fat loss comes mostly from eating less than you burn. Training shapes what you keep.',
   },
   {
     value: 'stamina',
     label: 'Improve stamina',
+    hint: 'Last longer, breathe easier',
     echo: 'Improve stamina: about half your days are cardio, and strength days are circuits that keep your heart rate up.',
   },
   {
     value: 'stay_active',
     label: 'Stay active',
+    hint: 'Move well, feel good',
     echo: 'Stay active: full body on 2 to 3 days. Easy walks on the other days still count.',
   },
 ];
 
-export const HISTORY: { value: History; label: string }[] = [
-  { value: 'never_or_on_and_off', label: 'Never, on and off, or under 6 months' },
+export const HISTORY: { value: History; label: string; hint?: string }[] = [
+  {
+    value: 'never_or_on_and_off',
+    label: 'Never, on and off, or under 6 months',
+    hint: 'Workout 1 finds your starting point',
+  },
   { value: 'six_months_to_two_years', label: '6 months to 2 years' },
   { value: 'two_years_plus', label: '2+ years' },
 ];
 
-export const LOCATIONS: { value: Location; label: string }[] = [
-  { value: 'home', label: 'Home' },
-  { value: 'gym', label: 'Gym' },
+export const LOCATIONS: { value: Location; label: string; hint: string }[] = [
+  { value: 'gym', label: 'Gym', hint: 'Machines, barbells and dumbbells' },
+  { value: 'home', label: 'Home', hint: 'Your body, plus anything you have' },
 ];
 
 export const EQUIPMENT: { value: HomeEquipment; label: string }[] = [
@@ -130,6 +160,16 @@ export const EQUIPMENT: { value: HomeEquipment; label: string }[] = [
 ];
 
 export const DAYS = [2, 3, 4, 5, 6] as const;
+
+/** One line per number of days. Never a promised split: the routine depends on the goal
+ * and level too (training/routine.py). */
+export const DAY_HINTS: Record<(typeof DAYS)[number], string> = {
+  2: 'Busy weeks still count',
+  3: 'Most people start here',
+  4: 'More time for each muscle',
+  5: 'Training is part of your routine',
+  6: 'As much as you can give',
+};
 
 export const MINUTES: { value: SessionMinutes | null; label: string }[] = [
   { value: 10, label: '10 min' },
@@ -146,13 +186,6 @@ export const LIMITS: { value: BodyLimit; label: string }[] = [
   { value: 'knees', label: 'Knees' },
   { value: 'back', label: 'Back' },
   { value: 'shoulders', label: 'Shoulders' },
-];
-
-export const OBSTACLES: { value: Obstacle; label: string }[] = [
-  { value: 'no_time', label: 'No time' },
-  { value: 'dont_know_what_to_do', label: "Don't know what to do" },
-  { value: 'lose_motivation', label: 'Lose motivation' },
-  { value: 'get_bored', label: 'Get bored' },
 ];
 
 const LEVEL_FOR_HISTORY: Record<History, ProfileWrite['level']> = {
@@ -197,12 +230,13 @@ export function toProfileWrite(answers: Answers): ProfileWrite {
     days_per_week: days,
     minutes_per_session: minutes,
     limits: answers.limits,
-    obstacles: answers.obstacles,
+    // Not asked any more (ADR 0036): nothing used it yet.
+    obstacles: [],
   };
 }
 
-/** The optional name, tidied; null if none was given. */
-export function displayName(answers: Answers): string | null {
-  const name = answers.name.trim().slice(0, 50);
+/** A name typed in Settings, tidied; null if it's empty. */
+export function cleanName(text: string): string | null {
+  const name = text.trim().slice(0, 50);
   return name.length > 0 ? name : null;
 }

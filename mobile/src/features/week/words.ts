@@ -98,3 +98,11 @@ export function reminderSummary(reminder: Reminder): string {
 export function toPhoneWeekday(day: number): number {
   return ((day + 1) % 7) + 1;
 }
+
+/** What the character says on Home (ADR 0036): short, about what's next, never a loss. */
+export function bubbleLine(week: Pick<Week, 'done' | 'keep_at' | 'kept'>): string {
+  if (week.kept) return 'This week counts!';
+  if (week.done === 0) return 'Ready when you are.';
+  const left = Math.max(week.keep_at - week.done, 0);
+  return left === 1 ? '1 more this week?' : `${left} more this week?`;
+}
