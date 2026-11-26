@@ -170,3 +170,12 @@ async def sign_in_offered(
     await _record(
         session, user_id, EventName.SIGN_IN_OFFERED, {"milestone": milestone, "number": number}
     )
+
+
+async def reminder_set(session: AsyncSession, user_id: uuid.UUID, days: int, hour: int) -> None:
+    """A reminder was turned on or changed (ADR 0034): how many days, and the hour."""
+    await _record(session, user_id, EventName.REMINDER_SET, {"days": days, "hour": hour})
+
+
+async def reminder_off(session: AsyncSession, user_id: uuid.UUID) -> None:
+    await _record(session, user_id, EventName.REMINDER_OFF, {})

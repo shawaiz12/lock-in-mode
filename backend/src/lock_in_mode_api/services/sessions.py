@@ -31,12 +31,14 @@ from lock_in_mode_api.models import (
     PlannedWorkout,
     PlannedWorkoutExercise,
     SetLog,
+    User,
     WorkoutSession,
 )
 from lock_in_mode_api.models.enums import Feedback, WorkoutPart, WorkoutStatus
 from lock_in_mode_api.schemas.exercise import ExerciseRef
 from lock_in_mode_api.schemas.session import (
     IntervalProgress,
+    NewBest,
     Placement,
     Progress,
     SessionRead,
@@ -48,6 +50,8 @@ from lock_in_mode_api.services import comeback as comeback_service
 from lock_in_mode_api.services import events, sign_in_offer
 from lock_in_mode_api.services import plans as plan_service
 from lock_in_mode_api.services import progress as progress_service
+from lock_in_mode_api.services import week as week_service
+from lock_in_mode_api.training import bests as best_rules
 from lock_in_mode_api.training.placement import placed_exercise
 
 
@@ -283,6 +287,10 @@ async def finish_session(
     offer = await sign_in_offer.offer_after_finish(session, user_id, block_complete=block_complete)
     await session.commit()
     plan = await plan_service.get_current_plan(session, user_id)
+    trained = len(await week_service.trained_at(session, user_id))
+    has_reminder = await session.scalar(
+        select(User.reminder_at.is_not(None)).where(User.id == user_id)
+    )
     return SessionResult(
         **_read(await _load(session, user_id, session_id)).model_dump(),
         placements=closed.placements,
@@ -292,7 +300,73 @@ async def finish_session(
         next_workout_id=plan.next_workout_id,
         block_complete=plan.block_complete,
         sign_in_offer=offer,
+        new_bests=await _new_bests(session, user_id, session_id),
+        week=await week_service.read_week(session, user_id),
+        offer_reminder=trained == 1 and not has_reminder,
     )
+
+
+_COUNTED_PARTS = (WorkoutPart.MAIN, WorkoutPart.FINISHER)
+
+
+async def _new_bests(
+    session: AsyncSession, user_id: uuid.UUID, session_id: uuid.UUID
+) -> list[NewBest]:
+    """Personal bests in this workout (ADR 0034, rules in training/bests.py): each
+    exercise's best here against its best in every earlier finished workout."""
+    rows = await session.execute(
+        select(
+            PlannedWorkoutExercise.exercise_id,
+            SetLog.session_id,
+            SetLog.weight_kg,
+            SetLog.reps,
+            SetLog.seconds,
+        )
+        .join(PlannedWorkoutExercise, PlannedWorkoutExercise.id == SetLog.planned_exercise_id)
+        .join(WorkoutSession, WorkoutSession.id == SetLog.session_id)
+        .where(
+            WorkoutSession.user_id == user_id,
+            WorkoutSession.finished_at.is_not(None),
+            PlannedWorkoutExercise.part.in_(_COUNTED_PARTS),
+        )
+        .order_by(SetLog.logged_at, SetLog.set_number)  # bests in the order they were done
+    )
+    here: dict[uuid.UUID, list[best_rules.SetValues]] = {}
+    before: dict[uuid.UUID, list[best_rules.SetValues]] = {}
+    order: list[uuid.UUID] = []
+    for exercise_id, set_session, weight, reps, seconds in rows:
+        values = best_rules.SetValues(None if weight is None else float(weight), reps, seconds)
+        if set_session == session_id:
+            if exercise_id not in here:
+                order.append(exercise_id)
+            here.setdefault(exercise_id, []).append(values)
+        else:
+            before.setdefault(exercise_id, []).append(values)
+
+    found: list[tuple[uuid.UUID, best_rules.BestKind, float, float]] = []
+    for exercise_id in order:
+        best = best_rules.new_best(
+            best_rules.best_of(here[exercise_id]), best_rules.best_of(before.get(exercise_id, []))
+        )
+        if best is not None:
+            found.append((exercise_id, *best))
+    if not found:
+        return []
+    exercises = {
+        e.id: e
+        for e in await session.scalars(
+            select(Exercise).where(Exercise.id.in_([f[0] for f in found]))
+        )
+    }
+    return [
+        NewBest(
+            exercise=ExerciseRef.model_validate(exercises[exercise_id]),
+            kind=kind,
+            value=value,
+            previous=previous,
+        )
+        for exercise_id, kind, value, previous in found
+    ]
 
 
 # --- starting -----------------------------------------------------------------------------

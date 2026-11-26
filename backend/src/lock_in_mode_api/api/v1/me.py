@@ -16,11 +16,13 @@ from lock_in_mode_api.models import User
 from lock_in_mode_api.models.enums import LeavingReason
 from lock_in_mode_api.schemas.profile import ProfileRead, ProfileWrite, SafetyScreen
 from lock_in_mode_api.schemas.user import AccountDeletion, UserRead, UserUpdate
+from lock_in_mode_api.schemas.week import WeekRead
 from lock_in_mode_api.services import account as account_service
 from lock_in_mode_api.services import auth as auth_service
 from lock_in_mode_api.services import export as export_service
 from lock_in_mode_api.services import profile as profile_service
 from lock_in_mode_api.services import sign_in_offer
+from lock_in_mode_api.services import week as week_service
 from lock_in_mode_api.services.auth import Provider
 
 router = APIRouter(prefix="/me", tags=["me"])
@@ -45,10 +47,17 @@ async def read_me(user: CurrentUser, session: DbSession) -> UserRead:
     return await _user_read(session, user)
 
 
+@router.get("/week")
+async def read_week(user: CurrentUser, session: DbSession) -> WeekRead:
+    """This week's ring ("2 of 3") and the weekly streak with its freezes (ADR 0034)."""
+    return await week_service.read_week(session, user.id)
+
+
 @router.patch("")
 async def update_me(user: CurrentUser, body: UserUpdate, session: DbSession) -> UserRead:
-    """Change only what's sent: the optional name (null clears it) and/or the
-    "Share usage data" switch (false also erases past usage events)."""
+    """Change only what's sent: the optional name (null clears it), the "Share usage
+    data" switch (false also erases past usage events), the phone's time zone and the
+    training reminder (null turns it off). None of these change the plan."""
     user = await profile_service.update_user(session, user, body)
     return await _user_read(session, user)
 

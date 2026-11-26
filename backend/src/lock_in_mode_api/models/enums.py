@@ -161,6 +161,8 @@ class EventName(StrEnum):
     DELETION_REQUESTED = "deletion_requested"
     DELETION_CANCELLED = "deletion_cancelled"
     SIGN_IN_OFFERED = "sign_in_offered"  # ADR 0026
+    REMINDER_SET = "reminder_set"  # ADR 0034
+    REMINDER_OFF = "reminder_off"  # ADR 0034
 
 
 class LeavingReason(StrEnum):

@@ -1,8 +1,9 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, time
 from typing import Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 type SignInMilestone = Literal["workout_3", "workout_10", "first_block"]
 
@@ -41,6 +42,37 @@ class SignInOffer(BaseModel):
     summary: ProgressSummary
 
 
+class Reminder(BaseModel):
+    """The training reminder (ADR 0034): local time on the phone and the days it rings."""
+
+    at: time = Field(description='Local time, "18:30". Seconds are dropped.')
+    days: list[int] = Field(
+        min_length=1,
+        max_length=7,
+        description="Days it rings: 0 = Monday … 6 = Sunday, each once.",
+    )
+
+    @field_validator("at")
+    @classmethod
+    def _minutes(cls, at: time) -> time:
+        return at.replace(second=0, microsecond=0, tzinfo=None)
+
+    @field_validator("days")
+    @classmethod
+    def _days(cls, days: list[int]) -> list[int]:
+        if any(d < 0 or d > 6 for d in days) or len(set(days)) != len(days):
+            raise ValueError("days are 0 (Monday) to 6 (Sunday), each once")
+        return sorted(days)
+
+
+def _known_zone(name: str) -> str:
+    try:
+        ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError) as error:
+        raise ValueError(f"unknown time zone: {name}") from error
+    return name
+
+
 class UserRead(BaseModel):
     """Public view of a user. Never includes provider ids (google_sub/apple_sub)."""
 
@@ -52,6 +84,12 @@ class UserRead(BaseModel):
     created_at: datetime
     share_usage_data: bool = Field(
         description='The "Share usage data" setting (ADR 0025). Off: no usage events.'
+    )
+    time_zone: str | None = Field(
+        default=None, description="The phone's time zone (ADR 0034); null until sent."
+    )
+    reminder: Reminder | None = Field(
+        default=None, description="The training reminder (ADR 0034); null: none."
     )
     progress_summary: ProgressSummary | None = Field(
         default=None,
@@ -80,6 +118,21 @@ class UserUpdate(BaseModel):
             "the ones recorded so far. true: start again from now."
         ),
     )
+    time_zone: str = Field(
+        default="UTC",
+        max_length=64,
+        description='The phone\'s time zone, an IANA name like "Asia/Karachi" (ADR 0034). '
+        "Weeks run Monday to Sunday there.",
+    )
+    reminder: Reminder | None = Field(
+        default=None,
+        description="Set or change the training reminder; null turns it off (ADR 0034).",
+    )
+
+    @field_validator("time_zone")
+    @classmethod
+    def _zone(cls, name: str) -> str:
+        return _known_zone(name)
 
 
 class AccountDeletion(BaseModel):

@@ -14,6 +14,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validato
 from lock_in_mode_api.models.enums import Feedback, MovementSlot, ProgressChange
 from lock_in_mode_api.schemas.exercise import ExerciseRef
 from lock_in_mode_api.schemas.user import SignInOffer
+from lock_in_mode_api.schemas.week import WeekRead
 
 
 class SessionStart(BaseModel):
@@ -110,6 +111,17 @@ class IntervalProgress(BaseModel):
     rest_seconds: int = Field(description="Seconds of rest per interval from now on.")
 
 
+class NewBest(BaseModel):
+    """A personal best set in this workout (ADR 0034): "New best: 14 push-ups"."""
+
+    exercise: ExerciseRef
+    kind: Literal["weight", "reps", "seconds"] = Field(
+        description="Heaviest weight, most reps (no weight) or longest hold."
+    )
+    value: float = Field(description="The new best: kg, reps or seconds.")
+    previous: float = Field(description="The best before this workout.")
+
+
 class SessionResult(SessionRead):
     """The finished session, what the test placed (if it was the test), what moved up or
     back (ADR 0019 and 0023), and the queue."""
@@ -131,4 +143,16 @@ class SessionResult(SessionRead):
             "Guests only, at their 3rd and 10th finished workout and their first finished "
             'block (ADR 0026): show "Protect your progress". null otherwise.'
         ),
+    )
+    new_bests: list[NewBest] = Field(
+        default_factory=list,
+        description="Personal bests set in this workout, the headline of the finish "
+        "screen (ADR 0034). The first time a move is done is never a best.",
+    )
+    week: WeekRead | None = Field(
+        default=None, description="This week after this workout: the ring and the streak."
+    )
+    offer_reminder: bool = Field(
+        default=False,
+        description="Their first trained workout and no reminder yet: offer one (ADR 0034).",
     )

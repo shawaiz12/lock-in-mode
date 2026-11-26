@@ -93,8 +93,20 @@ async def record_safety_screen(
 
 async def update_user(session: AsyncSession, user: User, changes: UserUpdate) -> User:
     """PATCH /me: only the fields sent change. "Share usage data" off erases every past
-    funnel event too (ADR 0025)."""
+    funnel event too (ADR 0025). The time zone and the reminder (ADR 0034) are settings of
+    the account, not answers: they never change the plan."""
     sent = changes.model_fields_set
+    if "time_zone" in sent:
+        user.time_zone = changes.time_zone
+    if "reminder" in sent:
+        reminder = changes.reminder
+        if reminder is None:
+            if user.reminder_at is not None:
+                await events.reminder_off(session, user.id)
+            user.reminder_at, user.reminder_days = None, None
+        else:
+            user.reminder_at, user.reminder_days = reminder.at, reminder.days
+            await events.reminder_set(session, user.id, len(reminder.days), reminder.at.hour)
     if "display_name" in sent:
         user.display_name = changes.display_name
     if "share_usage_data" in sent:

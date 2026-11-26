@@ -7,8 +7,13 @@ It reads the database the settings point at (your .env), and only reads.
 
 - Funnel: how many of the people who signed up reached each step, and the % kept from the
   step before.
-- Weekly retention: per sign-up week, the share who finished a workout in week 1, 2 and 4
-  after signing up. "…" = that week hasn't fully happened yet for everyone in the row.
+- Weekly retention: per sign-up week, the share who finished a workout in week 1, 2, 4 and
+  8 after signing up. "…" = that week hasn't fully happened yet for everyone in the row.
+- Weekly lifecycle (ADR 0034): retention counted on the action that delivers the value
+  (finishing a workout), at the app's natural rhythm (weekly). For each of the last 8
+  weeks (Monday to Sunday, UTC): who trained, and of them who was new, who also trained
+  the week before, who came back after 1–3 or 4+ weeks away, plus who went quiet and
+  who kept the week (2+ workouts, the streak rule).
 - Protect your progress (ADR 0026): per milestone, how many guests were offered sign-in
   and how many linked within 7 days of it. A link counts for the latest offer before it.
 - Other counts in the same days: linked accounts, level-ups, deletions, leaving reasons.
@@ -22,7 +27,7 @@ import uuid
 from collections import Counter, defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,7 +35,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from lock_in_mode_api.models import AccountDeletionReason, Event
 from lock_in_mode_api.models.enums import EventName
 
-RETENTION_WEEKS = (1, 2, 4)
+RETENTION_WEEKS = (1, 2, 4, 8)
+LIFECYCLE_WEEKS = 8
+KEEP_AT = 2  # workouts that keep a week (training/week.py)
 LINK_WINDOW = timedelta(days=7)
 OFFER_MILESTONES = (
     ("workout_3", "After workout 3"),
@@ -54,6 +61,48 @@ class Cohort:
 
 
 @dataclass(frozen=True)
+class WeekLife:
+    """One week of the lifecycle (ADR 0034). Every trained user is exactly one of new,
+    current, back after 1–3 weeks or back after 4+ weeks."""
+
+    week_of: date  # Monday
+    trained: int  # finished at least one workout this week
+    new: int  # their first week ever
+    current: int  # trained the week before too
+    back_short: int  # back after 1–3 weeks away
+    back_long: int  # back after 4+ weeks away
+    quiet: int  # trained the week before, not this week
+    kept: int  # 2+ workouts this week
+
+
+def lifecycle(per_user: dict[uuid.UUID, Counter[date]], weeks: Sequence[date]) -> list[WeekLife]:
+    """Pure: each user's finished workouts per Monday → the lifecycle of `weeks`."""
+    rows = []
+    for week in weeks:
+        before = week - timedelta(weeks=1)
+        counts = dict.fromkeys(("new", "current", "back_short", "back_long", "quiet"), 0)
+        trained = kept = 0
+        for active in per_user.values():
+            if active.get(week, 0) == 0:
+                if active.get(before, 0) > 0:
+                    counts["quiet"] += 1
+                continue
+            trained += 1
+            kept += active[week] >= KEEP_AT
+            earlier = [w for w in active if w < week]
+            if not earlier:
+                counts["new"] += 1
+            elif before in active:
+                counts["current"] += 1
+            elif (week - max(earlier)).days // 7 - 1 <= 3:
+                counts["back_short"] += 1
+            else:
+                counts["back_long"] += 1
+        rows.append(WeekLife(week, trained, **counts, kept=kept))
+    return rows
+
+
+@dataclass(frozen=True)
 class Offers:
     label: str
     offered: int  # offers made (for "Any offer": guests offered at least once)
@@ -70,6 +119,7 @@ class Report:
     now: datetime
     funnel: list[Step]
     retention: list[Cohort]
+    weeks: list[WeekLife]
     offers: list[Offers]
     counts: dict[str, int]
     reasons: dict[str, int]
@@ -97,6 +147,7 @@ FUNNEL: tuple[tuple[str, EventName, ColumnElement[bool] | None], ...] = (
     ("Signed up", EventName.SIGNED_UP, None),
     ("Onboarding done", EventName.ONBOARDING_DONE, None),
     ("Workout 1 finished", EventName.WORKOUT_FINISHED, _number(1)),
+    ("Workout 2 finished", EventName.WORKOUT_FINISHED, _number(2)),
     ("Workout 3 finished", EventName.WORKOUT_FINISHED, _number(3)),
     ("Block 1 complete", EventName.BLOCK_COMPLETE, _block(1)),
     ("Block 2 started", EventName.PLAN_STARTED, _next_block(2)),
@@ -166,6 +217,20 @@ async def _retention(
     return cohorts
 
 
+async def _weeks(session: AsyncSession, now: datetime) -> list[WeekLife]:
+    """The last LIFECYCLE_WEEKS weeks, this one included (so far), for everyone."""
+    this_monday = (now - timedelta(days=now.weekday())).date()
+    weeks = [this_monday - timedelta(weeks=n) for n in reversed(range(LIFECYCLE_WEEKS))]
+    per_user: dict[uuid.UUID, Counter[date]] = defaultdict(Counter)
+    rows = await session.execute(
+        select(Event.user_id, Event.at).where(Event.name == EventName.WORKOUT_FINISHED)
+    )
+    for user_id, at in rows:
+        day = at.date()
+        per_user[user_id][day - timedelta(days=day.weekday())] += 1
+    return lifecycle(per_user, weeks)
+
+
 async def _offers(session: AsyncSession, cohort: Sequence[uuid.UUID]) -> list[Offers]:
     """Offered → linked within 7 days, per milestone. A link is credited to the latest
     offer before it, so one link never counts twice; a link with no offer in the 7 days
@@ -212,6 +277,8 @@ async def _counts(session: AsyncSession, since: datetime) -> dict[str, int]:
         "Comebacks after a break": await count(EventName.COMEBACK_STARTED),
         "Deletions asked (Google/Apple)": await count(EventName.DELETION_REQUESTED),
         "Deletions cancelled": await count(EventName.DELETION_CANCELLED),
+        "Reminders set or changed": await count(EventName.REMINDER_SET),
+        "Reminders turned off": await count(EventName.REMINDER_OFF),
     }
 
 
@@ -232,6 +299,7 @@ async def build_report(session: AsyncSession, days: int) -> Report:
         now=now,
         funnel=await _funnel(session, list(signups)),
         retention=await _retention(session, signups, now),
+        weeks=await _weeks(session, now),
         offers=await _offers(session, list(signups)),
         counts=await _counts(session, since),
         reasons=await _reasons(session, since),
@@ -258,6 +326,17 @@ def render(report: Report) -> str:
         lines.append(f"{cohort.week_of:%d %b %Y}  {cohort.users:>6}{cells}")
     if not report.retention:
         lines.append("(nobody signed up in these days)")
+
+    lines += ["", "Weekly lifecycle: who finished a workout each week (Monday, UTC)"]
+    columns = ("Trained", "New", "Current", "Back 1-3w", "Back 4w+", "Quiet", "Kept 2+")
+    lines.append(f"{'Week of':<13}" + "".join(f"  {c:>9}" for c in columns))
+    for n, life in enumerate(report.weeks):
+        counts = [life.trained, life.new, life.current, life.back_short, life.back_long]
+        counts += [life.quiet, life.kept]
+        mark = " *" if n == len(report.weeks) - 1 else ""
+        week_label = f"{life.week_of:%d %b %Y}{mark}"
+        lines.append(f"{week_label:<13}" + "".join(f"  {c:>9}" for c in counts))
+    lines.append("* this week, so far")
 
     lines += ["", "Protect your progress: guests offered sign-in, linked within 7 days"]
     width = max(len(row.label) for row in report.offers)

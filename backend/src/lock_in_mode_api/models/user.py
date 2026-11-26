@@ -1,7 +1,18 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, time
 
-from sqlalchemy import CheckConstraint, DateTime, Index, String, func, text, true
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    Index,
+    SmallInteger,
+    String,
+    Time,
+    func,
+    text,
+    true,
+)
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 
 from lock_in_mode_api.models.base import Base, enum_column
@@ -39,6 +50,22 @@ class User(Base):
 
     # "Share usage data" (ADR 0025): off = no funnel events, and past ones are erased.
     share_usage_data: Mapped[bool] = mapped_column(default=True, server_default=true())
+
+    # The phone's time zone, an IANA name like "Asia/Karachi" (ADR 0034): their week runs
+    # Monday to Sunday there. NULL until the app first sends it: weeks are then in UTC.
+    time_zone: Mapped[str | None] = mapped_column(String(64))
+    # The training reminder (ADR 0034): the local time and the days (0 = Monday … 6 =
+    # Sunday). Both set or both NULL (no reminder); kept together by services/profile.py.
+    # The phone schedules it; it's kept here so a new phone can set it up again.
+    reminder_at: Mapped[time | None] = mapped_column(Time)
+    reminder_days: Mapped[list[int] | None] = mapped_column(ARRAY(SmallInteger))
+
+    @property
+    def reminder(self) -> dict[str, object] | None:
+        """The reminder as the API shows it (schemas/user.py `Reminder`), or None."""
+        if self.reminder_at is None or self.reminder_days is None:
+            return None
+        return {"at": self.reminder_at, "days": list(self.reminder_days)}
 
     @property
     def is_leaving(self) -> bool:
