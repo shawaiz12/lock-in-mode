@@ -157,6 +157,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/xp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Xp
+         * @description The Lock In level and XP (ADR 0035): "Lock In level 7 · 320 / 1,000 XP".
+         */
+        get: operations["read_xp_api_v1_me_xp_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/export": {
         parameters: {
             query?: never;
@@ -1503,6 +1523,8 @@ export interface components {
             new_bests?: components["schemas"]["NewBest"][];
             /** @description This week after this workout: the ring and the streak. */
             week?: components["schemas"]["WeekRead"] | null;
+            /** @description What this workout earned (ADR 0035), to reveal after the new bests and the week. null: nothing was ticked. */
+            xp?: components["schemas"]["XpGained"] | null;
             /**
              * Offer Reminder
              * @description Their first trained workout and no reminder yet: offer one (ADR 0034).
@@ -1910,6 +1932,66 @@ export interface components {
              */
             comeback_week: number | null;
         };
+        /**
+         * XpGained
+         * @description What a finished workout earned, in the order to reveal it on the finish screen.
+         */
+        XpGained: {
+            /** Items */
+            items: components["schemas"]["XpItem"][];
+            /**
+             * Gained
+             * @description The sum of `items`.
+             */
+            gained: number;
+            /**
+             * Bonus
+             * @description A Locked-in bonus came with it: celebrate it.
+             */
+            bonus: boolean;
+            /**
+             * Capped
+             * @description Past this week's XP limit (days a week + 1): it still counts as training. Say "Rest counts too: you've done your week."
+             */
+            capped: boolean;
+            before: components["schemas"]["XpLevel"];
+            after: components["schemas"]["XpLevel"];
+        };
+        /** XpItem */
+        XpItem: {
+            /** @description workout: the workout itself (100 × share of its sets) · week: the week was kept · best: new bests, 25 each, max 3 · comeback: first workout back after a break · bonus: the Locked-in bonus, the workout's XP once more. */
+            source: components["schemas"]["XpSourceName"];
+            /** Amount */
+            amount: number;
+        };
+        /**
+         * XpLevel
+         * @description 'Lock In level 7 · 320 / 1,000 XP'. Never goes down.
+         */
+        XpLevel: {
+            /**
+             * Total
+             * @description All XP ever earned.
+             */
+            total: number;
+            /**
+             * Level
+             * @description The Lock In level (not the training level).
+             */
+            level: number;
+            /**
+             * Xp Into
+             * @description XP since this level started.
+             */
+            xp_into: number;
+            /**
+             * Xp Needed
+             * @description XP from this level's start to the next level.
+             */
+            xp_needed: number;
+        };
+        /** @enum {string} */
+        XpSourceName: "workout" | "week" | "best" | "comeback" | "bonus";
     };
     responses: never;
     parameters: never;
@@ -2282,6 +2364,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WeekRead"];
+                };
+            };
+            /** @description Request body or parameters are invalid */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                    "application/json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error. Branch on `code`; see docs/errors.md */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    read_xp_api_v1_me_xp_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["XpLevel"];
                 };
             };
             /** @description Request body or parameters are invalid */

@@ -9,7 +9,7 @@
  *   ResultView    what moved up or back, the strength test, what's next
  *   SavedView     finished offline: saved on the phone, results once it's sent (ADR 0033)
  */
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import type { BodyArea, BodyLimit, PlannedExercise, SessionResult } from '@/api/endpoints';
@@ -27,6 +27,7 @@ import {
 import type { Item, Station } from '@/features/player/steps';
 import { coachLine, partLabel, SAFETY_LINE, setLabel, upNext, waitingLine } from '@/features/player/words';
 import { keptNowLine, newBestLine } from '@/features/week/words';
+import { CAPPED_LINE, levelLine, levelShare, thousands, xpItemLine } from '@/features/xp/words';
 import type { Player } from '@/state/player';
 import {
   Body,
@@ -44,6 +45,7 @@ import {
   TextButton,
   Title,
 } from '@/ui/kit';
+import { celebrate, Confetti, CountUp, FadeIn, FillBar, useSteps } from '@/ui/reveal';
 import { ReminderOffer } from '@/ui/week';
 
 // --- the player --------------------------------------------------------------------------
@@ -534,11 +536,85 @@ export function SavedView({
           <Body>
             {online
               ? 'Sending it now. What moves up next time shows on your plan once it’s there.'
-              : 'It syncs when you’re online. Then your plan shows what moves up next time, and your next workout gets ready.'}
+              : 'It syncs when you’re online. Then your plan shows what moves up next time, your XP lands, and your next workout gets ready.'}
           </Body>
         </Card>
       )}
     </Screen>
+  );
+}
+
+/** The top of the finish screen, revealed one step at a time (ADR 0035): real progress
+ * first, then the week, then XP and the level. */
+function Headline({ result, bests }: { result: SessionResult; bests: NonNullable<SessionResult['new_bests']> }) {
+  const kept = keptNowLine(result.week);
+  const xp = result.xp ?? null;
+  const steps = [];
+  if (bests.length > 0) {
+    steps.push(
+      <FadeIn key="bests">
+        <Card>
+          <Label>Real progress</Label>
+          {bests.slice(0, 3).map((best) => (
+            <Title key={best.exercise.id}>{newBestLine(best)}</Title>
+          ))}
+          <Confetti />
+        </Card>
+      </FadeIn>,
+    );
+  }
+  if (kept) {
+    steps.push(
+      <FadeIn key="week">
+        <Body>{kept}</Body>
+      </FadeIn>,
+    );
+  }
+  if (xp?.capped) {
+    steps.push(
+      <FadeIn key="xp">
+        <Body muted>{CAPPED_LINE}</Body>
+      </FadeIn>,
+    );
+  } else if (xp && xp.gained > 0) {
+    steps.push(
+      <FadeIn key="xp">
+        <Card>
+          <CountUp to={xp.gained} render={(n) => `+${thousands(n)} XP`} />
+          {xp.items.map((item) => (
+            <Body key={item.source} muted>
+              {xpItemLine(item)}
+            </Body>
+          ))}
+        </Card>
+      </FadeIn>,
+    );
+    steps.push(
+      <FadeIn key="level">
+        <LevelReveal xp={xp} />
+      </FadeIn>,
+    );
+  }
+  const shown = useSteps(steps.length);
+  return <>{steps.slice(0, shown)}</>;
+}
+
+function LevelReveal({ xp }: { xp: NonNullable<SessionResult['xp']> }) {
+  const up = xp.after.level > xp.before.level;
+  // Once per screen, even if React runs the effect twice (it does while developing).
+  const celebrated = useRef(false);
+  useEffect(() => {
+    if (!up || celebrated.current) return;
+    celebrated.current = true;
+    celebrate();
+  }, [up]);
+  return (
+    <Card>
+      {up ? <Title>{`Lock In level ${xp.after.level}!`}</Title> : null}
+      <FillBar from={up ? 0 : levelShare(xp.before)} to={levelShare(xp.after)} />
+      <Body muted>{levelLine(xp.after)}</Body>
+      {up ? <Confetti /> : null}
+    </Card>
   );
 }
 
@@ -568,18 +644,10 @@ export function ResultView({
       <Label>{position === null ? 'Workout' : `Workout ${position}`} done</Label>
       <Title>Locked in.</Title>
       {synced ? <Body muted>Done offline, synced just now.</Body> : null}
-      {bests.length > 0 ? (
-        <Card>
-          <Label>Real progress</Label>
-          {bests.slice(0, 3).map((best) => (
-            <Title key={best.exercise.id}>{newBestLine(best)}</Title>
-          ))}
-        </Card>
-      ) : null}
+      <Headline result={result} bests={bests} />
       <Body muted>
         {result.sets.length} {result.sets.length === 1 ? 'set' : 'sets'} logged.
       </Body>
-      {keptNowLine(result.week) ? <Body>{keptNowLine(result.week)}</Body> : null}
 
       {result.placements.length > 0 ? (
         <Card>

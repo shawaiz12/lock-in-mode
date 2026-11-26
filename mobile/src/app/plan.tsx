@@ -16,7 +16,7 @@
  * workout gets ready. Changing answers and starting a block need a connection.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { router } from 'expo-router';
+import { router, useIsFocused } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
@@ -56,7 +56,7 @@ import {
   Title,
 } from '@/ui/kit';
 import { ResultView } from '@/ui/player';
-import { SettingsCard, WeekCard } from '@/ui/week';
+import { LevelCard, SettingsCard, WeekCard } from '@/ui/week';
 
 const REVEAL_STEP_MS = 700;
 
@@ -66,10 +66,12 @@ export default function PlanScreen() {
   const online = useOnline();
   const { journal } = useJournal();
   const store = useJournalStore();
+  const focused = useIsFocused();
 
   // A workout done offline just arrived: its results first (they'd have shown on the
-  // finish screen if the phone had been online).
-  if (journal?.done && journal.result) {
+  // finish screen if the phone had been online). Only while this screen is on top: right
+  // after an online finish the player shows them, and this screen sits underneath.
+  if (journal?.done && journal.result && focused) {
     return (
       <ResultView
         result={journal.result}
@@ -190,6 +192,7 @@ function Week({ plan }: { plan: Plan }) {
       {!online ? <OfflineCard nextPosition={next?.position ?? null} ready={ready === 'ready'} journal={journal} /> : null}
       <JournalCard journal={journal} online={online} syncing={syncing} />
       <WeekCard waiting={sending ? 1 : 0} />
+      <LevelCard />
 
       <Label>
         Block {plan.block_number} · {plan.weeks} weeks

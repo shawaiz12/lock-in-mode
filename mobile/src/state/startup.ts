@@ -30,6 +30,8 @@ export const keys = {
   workout: (id: string) => ['workout', id] as const,
   /** The account and its settings (GET /me). */
   me: ['me'] as const,
+  /** The Lock In level and XP (GET /me/xp). */
+  xp: ['me', 'xp'] as const,
   /** This week's ring and the streak (GET /me/week). */
   week: ['me', 'week'] as const,
   /** The workout in progress on the server, if any (GET /sessions/current). */

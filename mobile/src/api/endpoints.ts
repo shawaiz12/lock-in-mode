@@ -31,6 +31,8 @@ export type MeUpdate = Schemas['UserUpdate'];
 export type Reminder = Schemas['Reminder'];
 export type Week = Schemas['WeekRead'];
 export type NewBest = Schemas['NewBest'];
+export type XpLevel = Schemas['XpLevel'];
+export type XpGained = Schemas['XpGained'];
 
 /** openapi-fetch returns { data } or { error }; this turns the error into an ApiError. */
 function unwrap<T>(result: { data?: T; error?: unknown; response: Response }): T {
@@ -73,6 +75,11 @@ export async function updateMe(changes: Partial<MeUpdate>): Promise<Me> {
 /** This week's ring and the weekly streak (ADR 0034). */
 export async function getWeek(): Promise<Week> {
   return unwrap(await api.GET('/api/v1/me/week'));
+}
+
+/** The Lock In level and XP (ADR 0035). */
+export async function getXp(): Promise<XpLevel> {
+  return unwrap(await api.GET('/api/v1/me/xp'));
 }
 
 /** The optional name from the welcome screen. */

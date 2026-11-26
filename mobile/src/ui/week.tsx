@@ -13,7 +13,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { getOrCreatePlan, getWeek, type Reminder } from '@/api/endpoints';
+import { getOrCreatePlan, getWeek, getXp, type Reminder } from '@/api/endpoints';
 import { describeError } from '@/api/problem';
 import {
   type ClockTime,
@@ -29,6 +29,7 @@ import {
   streakLine,
   suggestTime,
 } from '@/features/week/words';
+import { levelLine, levelShare } from '@/features/xp/words';
 import { NotificationsOffError, useMe, useSaveReminder } from '@/state/reminders';
 import { keys } from '@/state/startup';
 import { useSoundCheck } from '@/ui/alerts';
@@ -41,6 +42,7 @@ import {
   Label,
   LockInButton,
   OutlineButton,
+  ProgressBar,
   Sheet,
   TextButton,
   Title,
@@ -78,6 +80,18 @@ export function WeekCard({ waiting = 0 }: { waiting?: number }) {
       <Body>{ringLabel(shown)}</Body>
       <Body muted>{streakLine(week.data)}</Body>
       {extra ? <Body muted>{extra}</Body> : null}
+    </Card>
+  );
+}
+
+/** "Lock In level 7 · 320 / 1,000 XP" under the week: the second line, never the first. */
+export function LevelCard() {
+  const xp = useQuery({ queryKey: keys.xp, queryFn: getXp });
+  if (!xp.data) return null;
+  return (
+    <Card>
+      <Body muted>{levelLine(xp.data)}</Body>
+      <ProgressBar value={levelShare(xp.data)} />
     </Card>
   );
 }

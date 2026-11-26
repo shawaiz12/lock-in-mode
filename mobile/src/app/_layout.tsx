@@ -60,6 +60,7 @@ function refresh(queryClient: QueryClient, before: Journal | null, after: Journa
     void queryClient.invalidateQueries({ queryKey: keys.openSession });
     void queryClient.invalidateQueries({ queryKey: keys.workout(after.workoutId) });
     void queryClient.invalidateQueries({ queryKey: keys.week });
+    void queryClient.invalidateQueries({ queryKey: keys.xp });
   }
 }
 
