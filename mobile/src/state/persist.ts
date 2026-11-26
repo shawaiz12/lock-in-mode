@@ -28,7 +28,7 @@ export const CACHE_KEY = 'lockin.cache';
 export const CACHE_VERSION = '1';
 
 /** The first part of the query keys worth keeping (src/state/startup.ts `keys`). */
-const KEPT = new Set(['profile', 'plan', 'workout', 'exercise', 'workout-session']);
+const KEPT = new Set(['profile', 'plan', 'workout', 'exercise', 'workout-session', 'me']);
 
 export function shouldKeep(query: Pick<Query, 'queryKey' | 'state'>): boolean {
   return query.state.status === 'success' && KEPT.has(String(query.queryKey[0]));

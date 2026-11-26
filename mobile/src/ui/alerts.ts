@@ -12,10 +12,17 @@
  * - A tick of a set gets a light haptic tap: the button really did something.
  *
  * Any of these can fail (low power mode, no motor, audio busy): never let that break
- * the workout, so every call is fire-and-forget.
+ * the workout, so every call is fire-and-forget. While developing, a failure is written
+ * to the Metro terminal ("[alerts] …") instead of disappearing.
+ *
+ * The sounds are saved on the phone before they're needed (`downloadFirst`, ADR 0034):
+ * in Expo Go they otherwise stream from the computer, so a workout opened offline was
+ * silent. A rewind only happens after a sound has played (rewinding a sound that hasn't
+ * loaded yet can stop it from playing at all). `useSoundCheck` plays the beep on demand
+ * and shows whether the sound loaded, to check a phone.
  * .NET/Unity: like an AudioSource + Handheld.Vibrate() wrapped in one small service.
  */
-import { setAudioModeAsync, useAudioPlayer } from 'expo-audio';
+import { type AudioPlayer, setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import * as Haptics from 'expo-haptics';
 import { useEffect } from 'react';
 import { Vibration } from 'react-native';
@@ -26,14 +33,31 @@ const DONE = require('../../assets/sounds/done.wav');
 /** Beep on silent too; never stop their music. */
 export const AUDIO_MODE = { playsInSilentMode: true, interruptionMode: 'mixWithOthers' } as const;
 
+/** Seen in the Metro terminal while developing; silent in a real build. */
+const report = (error: unknown) => {
+  if (__DEV__) console.warn('[alerts]', error);
+};
+
 const quietly = (work: () => unknown) => {
   try {
     const result = work();
-    if (result instanceof Promise) result.catch(() => {});
-  } catch {
+    if (result instanceof Promise) result.catch(report);
+  } catch (error) {
     // A beep or a buzz is a nicety; the workout carries on without it.
+    report(error);
   }
 };
+
+/** Saved on the phone first, then played from there. */
+const OPTIONS = { downloadFirst: true } as const;
+
+function play(player: AudioPlayer) {
+  quietly(async () => {
+    // Back to the start only once it has played: a fresh sound is already there.
+    if (player.currentTime > 0) await player.seekTo(0);
+    player.play();
+  });
+}
 
 export type Alerts = {
   /** 3, 2, 1: a short beep. */
@@ -45,18 +69,12 @@ export type Alerts = {
 };
 
 export function useAlerts(): Alerts {
-  const tick = useAudioPlayer(TICK);
-  const done = useAudioPlayer(DONE);
+  const tick = useAudioPlayer(TICK, OPTIONS);
+  const done = useAudioPlayer(DONE, OPTIONS);
 
   useEffect(() => {
     quietly(() => setAudioModeAsync(AUDIO_MODE));
   }, []);
-
-  const play = (player: typeof tick) =>
-    quietly(async () => {
-      await player.seekTo(0);
-      player.play();
-    });
 
   return {
     countIn: () => play(tick),
@@ -65,5 +83,23 @@ export function useAlerts(): Alerts {
       quietly(() => Vibration.vibrate([0, 400, 150, 400]));
     },
     ticked: () => quietly(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)),
+  };
+}
+
+/** "Sound check" (ADR 0034): play the rest beep now and say whether its sound loaded,
+ * to find out why a phone stays quiet. */
+export function useSoundCheck() {
+  const done = useAudioPlayer(DONE, OPTIONS);
+  const status = useAudioPlayerStatus(done);
+  useEffect(() => {
+    quietly(() => setAudioModeAsync(AUDIO_MODE));
+  }, []);
+  return {
+    loaded: status.isLoaded,
+    playing: status.playing,
+    play: () => {
+      play(done);
+      quietly(() => Vibration.vibrate(200));
+    },
   };
 }

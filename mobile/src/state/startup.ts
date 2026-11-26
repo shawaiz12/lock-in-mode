@@ -28,6 +28,10 @@ export const keys = {
   profile: ['profile'] as const,
   plan: ['plan'] as const,
   workout: (id: string) => ['workout', id] as const,
+  /** The account and its settings (GET /me). */
+  me: ['me'] as const,
+  /** This week's ring and the streak (GET /me/week). */
+  week: ['me', 'week'] as const,
   /** The workout in progress on the server, if any (GET /sessions/current). */
   openSession: ['workout-session', 'open'] as const,
   exercise: (id: string) => ['exercise', id] as const,

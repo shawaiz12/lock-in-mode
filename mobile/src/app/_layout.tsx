@@ -26,11 +26,13 @@ import { deleteSet, finishSession, logSet, startSession } from '@/api/endpoints'
 import type { Journal } from '@/features/offline/journal';
 import { createJournalStore, JournalProvider } from '@/state/journal';
 import { watchConnection } from '@/state/online';
+import { showRemindersInTheApp } from '@/state/reminders';
 import { persistOptions } from '@/state/persist';
 import { keys, makeQueryClient, useStartup } from '@/state/startup';
 import { colors } from '@/ui/kit';
 
 watchConnection();
+showRemindersInTheApp();
 
 export default function RootLayout() {
   // One cache for the app's whole life (useState keeps it across redraws).
@@ -57,6 +59,7 @@ function refresh(queryClient: QueryClient, before: Journal | null, after: Journa
     void queryClient.invalidateQueries({ queryKey: keys.plan });
     void queryClient.invalidateQueries({ queryKey: keys.openSession });
     void queryClient.invalidateQueries({ queryKey: keys.workout(after.workoutId) });
+    void queryClient.invalidateQueries({ queryKey: keys.week });
   }
 }
 

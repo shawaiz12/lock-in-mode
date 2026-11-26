@@ -26,6 +26,7 @@ import {
 } from '@/features/player/result';
 import type { Item, Station } from '@/features/player/steps';
 import { coachLine, partLabel, SAFETY_LINE, setLabel, upNext, waitingLine } from '@/features/player/words';
+import { keptNowLine, newBestLine } from '@/features/week/words';
 import type { Player } from '@/state/player';
 import {
   Body,
@@ -43,6 +44,7 @@ import {
   TextButton,
   Title,
 } from '@/ui/kit';
+import { ReminderOffer } from '@/ui/week';
 
 // --- the player --------------------------------------------------------------------------
 
@@ -560,14 +562,24 @@ export function ResultView({
 }) {
   const up = result.progress.filter(isStepUp);
   const back = result.progress.filter((p) => !isStepUp(p));
+  const bests = result.new_bests ?? [];
   return (
     <Screen footer={<LockInButton title="Lock In: done" onPress={onDone} />}>
       <Label>{position === null ? 'Workout' : `Workout ${position}`} done</Label>
       <Title>Locked in.</Title>
       {synced ? <Body muted>Done offline, synced just now.</Body> : null}
+      {bests.length > 0 ? (
+        <Card>
+          <Label>Real progress</Label>
+          {bests.slice(0, 3).map((best) => (
+            <Title key={best.exercise.id}>{newBestLine(best)}</Title>
+          ))}
+        </Card>
+      ) : null}
       <Body muted>
         {result.sets.length} {result.sets.length === 1 ? 'set' : 'sets'} logged.
       </Body>
+      {keptNowLine(result.week) ? <Body>{keptNowLine(result.week)}</Body> : null}
 
       {result.placements.length > 0 ? (
         <Card>
@@ -623,6 +635,8 @@ export function ResultView({
           <Body>Every workout of this block is done. Your next block is ready to start.</Body>
         </Card>
       ) : null}
+
+      {result.offer_reminder ? <ReminderOffer finishedAt={new Date(result.finished_at ?? result.started_at)} /> : null}
 
       {result.sign_in_offer ? (
         <Card>

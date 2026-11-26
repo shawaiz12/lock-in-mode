@@ -26,6 +26,11 @@ export type SwapReason = Schemas['SwapReason'];
 export type SwapResult = Schemas['SwapResult'];
 export type BodyArea = Schemas['BodyArea'];
 export type BodyLimit = Schemas['BodyLimit'];
+export type Me = Schemas['UserRead'];
+export type MeUpdate = Schemas['UserUpdate'];
+export type Reminder = Schemas['Reminder'];
+export type Week = Schemas['WeekRead'];
+export type NewBest = Schemas['NewBest'];
 
 /** openapi-fetch returns { data } or { error }; this turns the error into an ApiError. */
 function unwrap<T>(result: { data?: T; error?: unknown; response: Response }): T {
@@ -53,6 +58,21 @@ export async function getProfileOrNull(): Promise<Profile | null> {
  * untouched plan on the server (ADR 0017). */
 export async function saveProfile(profile: ProfileWrite): Promise<Profile> {
   return unwrap(await api.PUT('/api/v1/me/profile', { body: profile }));
+}
+
+/** The account: settings (time zone, reminder) and, for guests, what they'd lose. */
+export async function getMe(): Promise<Me> {
+  return unwrap(await api.GET('/api/v1/me'));
+}
+
+/** Change only what's sent (PATCH): the time zone, the reminder (null turns it off). */
+export async function updateMe(changes: Partial<MeUpdate>): Promise<Me> {
+  return unwrap(await api.PATCH('/api/v1/me', { body: changes }));
+}
+
+/** This week's ring and the weekly streak (ADR 0034). */
+export async function getWeek(): Promise<Week> {
+  return unwrap(await api.GET('/api/v1/me/week'));
 }
 
 /** The optional name from the welcome screen. */

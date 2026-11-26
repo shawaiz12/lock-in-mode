@@ -130,10 +130,31 @@ export interface paths {
         head?: never;
         /**
          * Update Me
-         * @description Change only what's sent: the optional name (null clears it) and/or the
-         *     "Share usage data" switch (false also erases past usage events).
+         * @description Change only what's sent: the optional name (null clears it), the "Share usage
+         *     data" switch (false also erases past usage events), the phone's time zone and the
+         *     training reminder (null turns it off). None of these change the plan.
          */
         patch: operations["update_me_api_v1_me_patch"];
+        trace?: never;
+    };
+    "/api/v1/me/week": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Week
+         * @description This week's ring ("2 of 3") and the weekly streak with its freezes (ADR 0034).
+         */
+        get: operations["read_week_api_v1_me_week_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/me/export": {
@@ -1012,6 +1033,29 @@ export interface components {
          */
         MuscleHead: "chest_upper" | "chest_mid" | "chest_lower" | "delt_front" | "delt_side" | "delt_rear" | "biceps_long" | "biceps_short" | "brachialis" | "triceps_long" | "triceps_lateral" | "triceps_medial" | "lats" | "mid_back" | "spinal_erectors" | "upper_traps" | "lower_traps" | "quads_vastus" | "rectus_femoris" | "hamstrings_hip" | "hamstrings_knee" | "glute_max" | "glute_med" | "gastrocnemius" | "soleus" | "upper_abs" | "lower_abs" | "obliques" | "deep_core" | "forearm_flexors" | "forearm_extensors" | "brachioradialis" | "adductors";
         /**
+         * NewBest
+         * @description A personal best set in this workout (ADR 0034): "New best: 14 push-ups".
+         */
+        NewBest: {
+            exercise: components["schemas"]["ExerciseRef"];
+            /**
+             * Kind
+             * @description Heaviest weight, most reps (no weight) or longest hold.
+             * @enum {string}
+             */
+            kind: "weight" | "reps" | "seconds";
+            /**
+             * Value
+             * @description The new best: kg, reps or seconds.
+             */
+            value: number;
+            /**
+             * Previous
+             * @description The best before this workout.
+             */
+            previous: number;
+        };
+        /**
          * Obstacle
          * @description Answers to "What's made it hard before?". Changes tips, reminders, quests; not the plan.
          * @enum {string}
@@ -1329,6 +1373,23 @@ export interface components {
             refresh_token: string;
         };
         /**
+         * Reminder
+         * @description The training reminder (ADR 0034): local time on the phone and the days it rings.
+         */
+        Reminder: {
+            /**
+             * At
+             * Format: time
+             * @description Local time, "18:30". Seconds are dropped.
+             */
+            at: string;
+            /**
+             * Days
+             * @description Days it rings: 0 = Monday … 6 = Sunday, each once.
+             */
+            days: number[];
+        };
+        /**
          * RoutineKind
          * @description The shape of a user's week (Knowledge Base section 4, ADR 0014).
          * @enum {string}
@@ -1435,6 +1496,19 @@ export interface components {
             block_complete: boolean;
             /** @description Guests only, at their 3rd and 10th finished workout and their first finished block (ADR 0026): show "Protect your progress". null otherwise. */
             sign_in_offer?: components["schemas"]["SignInOffer"] | null;
+            /**
+             * New Bests
+             * @description Personal bests set in this workout, the headline of the finish screen (ADR 0034). The first time a move is done is never a best.
+             */
+            new_bests?: components["schemas"]["NewBest"][];
+            /** @description This week after this workout: the ring and the streak. */
+            week?: components["schemas"]["WeekRead"] | null;
+            /**
+             * Offer Reminder
+             * @description Their first trained workout and no reminder yet: offer one (ADR 0034).
+             * @default false
+             */
+            offer_reminder?: boolean;
         };
         /** SessionStart */
         SessionStart: {
@@ -1616,6 +1690,13 @@ export interface components {
              * @description The "Share usage data" setting (ADR 0025). Off: no usage events.
              */
             share_usage_data: boolean;
+            /**
+             * Time Zone
+             * @description The phone's time zone (ADR 0034); null until sent.
+             */
+            time_zone?: string | null;
+            /** @description The training reminder (ADR 0034); null: none. */
+            reminder?: components["schemas"]["Reminder"] | null;
             /** @description Guests only (ADR 0026): for a quiet "Protect your progress" card. Guest progress lives only on this phone. null for Google/Apple accounts. */
             progress_summary?: components["schemas"]["ProgressSummary"] | null;
         };
@@ -1635,6 +1716,14 @@ export interface components {
              * @default true
              */
             share_usage_data?: boolean;
+            /**
+             * Time Zone
+             * @description The phone's time zone, an IANA name like "Asia/Karachi" (ADR 0034). Weeks run Monday to Sunday there.
+             * @default UTC
+             */
+            time_zone?: string;
+            /** @description Set or change the training reminder; null turns it off (ADR 0034). */
+            reminder?: components["schemas"]["Reminder"] | null;
         };
         /** ValidationProblem */
         ValidationProblem: {
@@ -1656,6 +1745,56 @@ export interface components {
             detail?: string | null;
             /** Errors */
             errors: components["schemas"]["FieldError"][];
+        };
+        /**
+         * WeekRead
+         * @description 'This week: 2 of 3' and '5-week streak'. Weeks run Monday to Sunday in the phone's
+         *     time zone (`PATCH /me` `time_zone`); a trained workout = finished with a ticked set.
+         */
+        WeekRead: {
+            /**
+             * Week Start
+             * Format: date
+             * @description Monday of this week, on the user's calendar.
+             */
+            week_start: string;
+            /**
+             * Done
+             * @description Workouts trained this week.
+             */
+            done: number;
+            /**
+             * Planned
+             * @description Workouts planned a week (the profile's days).
+             */
+            planned: number | null;
+            /**
+             * Keep At
+             * @description Workouts that keep a week in the streak (2).
+             */
+            keep_at: number;
+            /**
+             * Kept
+             * @description This week already counts for the streak.
+             */
+            kept: boolean;
+            /**
+             * Streak
+             * @description Kept weeks in a row; this week joins once kept.
+             */
+            streak: number;
+            /** Best Streak */
+            best_streak: number;
+            /**
+             * Freezes
+             * @description Freezes held (0-2): one earned per 4 kept weeks; a missed week uses one.
+             */
+            freezes: number;
+            /**
+             * Last Week
+             * @description How last week ended ("frozen": a freeze saved it). null: no weeks yet.
+             */
+            last_week: ("kept" | "frozen" | "missed") | null;
         };
         /** WhereItHurts */
         WhereItHurts: {
@@ -2103,6 +2242,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UserRead"];
+                };
+            };
+            /** @description Request body or parameters are invalid */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                    "application/json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error. Branch on `code`; see docs/errors.md */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    read_week_api_v1_me_week_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WeekRead"];
                 };
             };
             /** @description Request body or parameters are invalid */

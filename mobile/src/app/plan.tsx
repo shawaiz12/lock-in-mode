@@ -37,6 +37,7 @@ import { groupByWeek, routineLabel, statusLabel } from '@/features/plan/format';
 import { useJournal, useJournalStore } from '@/state/journal';
 import { useOnline } from '@/state/online';
 import { useReadyOffline } from '@/state/ready';
+import { useAccountSync, useMe } from '@/state/reminders';
 import { keys } from '@/state/startup';
 import {
   Body,
@@ -55,6 +56,7 @@ import {
   Title,
 } from '@/ui/kit';
 import { ResultView } from '@/ui/player';
+import { SettingsCard, WeekCard } from '@/ui/week';
 
 const REVEAL_STEP_MS = 700;
 
@@ -131,6 +133,8 @@ function Week({ plan }: { plan: Plan }) {
   const online = useOnline();
   const { journal, syncing } = useJournal();
   const ready = useReadyOffline(next?.id);
+  const me = useMe();
+  useAccountSync(me.data);
 
   // The journal (ADR 0033): a workout in progress on this phone, or one finished here
   // and still to be sent. The next workout waits for that one.
@@ -185,6 +189,7 @@ function Week({ plan }: { plan: Plan }) {
     <Screen footer={footer}>
       {!online ? <OfflineCard nextPosition={next?.position ?? null} ready={ready === 'ready'} journal={journal} /> : null}
       <JournalCard journal={journal} online={online} syncing={syncing} />
+      <WeekCard waiting={sending ? 1 : 0} />
 
       <Label>
         Block {plan.block_number} · {plan.weeks} weeks
@@ -211,6 +216,7 @@ function Week({ plan }: { plan: Plan }) {
       ) : null}
 
       {online ? <Choices plan={plan} /> : null}
+      <SettingsCard />
 
       {groupByWeek(plan.workouts).map((group) => (
         <View key={group.week} style={styles.week}>
