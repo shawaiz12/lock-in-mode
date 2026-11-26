@@ -10,7 +10,7 @@ in order: each gives you values the next needs. Keep the values in your password
 ```
 phone ──https──▶ Vercel (API, Mumbai) ──TLS, Supabase CA, port 6543──▶ Supabase (Postgres, Mumbai)
                                       └──TLS──────────────────────────▶ Upstash (Redis, Mumbai)
-GitHub Actions, on main:  tests ─▶ migrate + seed (port 5432) ─▶ vercel deploy ─▶ live check
+GitHub Actions, on main:  tests ─▶ migrate + seed + XP backfill (port 5432) ─▶ vercel deploy ─▶ live check
 GitHub Actions, hourly:   account cleanup (port 5432)
 GitHub Actions, nightly:  pg_dump (port 5432) ─▶ test restore ─▶ encrypt ─▶ keep 30 days
 ```
@@ -124,7 +124,8 @@ Setting `VERCEL_PROJECT_ID` switches on the deploy job and the hourly cleanup.
 The backup uses the same `POSTGRES_*` values as the deploy (session pooler, port 5432).
 
 Test the deploy: Actions → **CI → Run workflow** (branch `main`). `Deploy API` shows the
-migrations, `Exercise library: 257 in the seed file`, the Vercel URL, then
+migrations, `Exercise library: 257 in the seed file`, `XP backfill: N workouts looked at`,
+the Vercel URL, then
 `Live: {"status":"ok","version":"<this commit>"}` and
 `Health: {"status":"ok","database":"ok","redis":"ok"}`.
 

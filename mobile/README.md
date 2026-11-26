@@ -106,6 +106,9 @@ Commit it with the backend change. CI fails if they don't match.
 | `onlineManager` + `expo-network` | One app-wide "online?" flag that queries obey | `NetworkChange.NetworkAvailabilityChanged` |
 | `useSyncExternalStore` | Redraw when something outside React changes | Subscribing to a C# `event` in `OnEnable` |
 | `expo-notifications` (local) | A reminder the phone shows by itself, weekly | Windows `ScheduledToastNotification` / a local notification in Unity Mobile Notifications |
+| `Animated` (`useNativeDriver`) | Fades, count-ups and the confetti, run on the native side | A DOTween tween / an `Animator` |
+| `AccessibilityInfo.isReduceMotionEnabled` | The phone's Reduce motion setting: show everything at once | Checking an accessibility option before playing a cutscene |
+| `useIsFocused` | Is this screen the one in front? | `gameObject.activeInHierarchy` |
 
 ```
 src/
@@ -122,7 +125,8 @@ src/
 ├── features/            pure + tested: onboarding flow, plan labels, safety answers,
 │   ├── player/          steps (screens and sets), entry (pre-fill), clock, words, result
 │   ├── offline/         journal (the workout on the phone) and sync (sending it)
-│   └── week/            words for the ring, streak, new bests and the reminder
+│   ├── week/            words for the ring, streak, new bests and the reminder
+│   └── xp/              words for XP lines and the level
 ├── state/
 │   ├── startup.ts       "where should this person be?" → drives the navigator
 │   ├── player.ts        the player's state and actions (usePlayer)
@@ -132,11 +136,12 @@ src/
 │   ├── ready.ts         keeps the next workout downloaded
 │   └── reminders.ts     the training reminder (local notifications) and time zone
 ├── test/                fixtures; fakes of expo-sqlite's store, expo-network,
-│                        expo-notifications and expo-audio
+│                        expo-notifications, expo-audio and expo-haptics
 └── ui/
     ├── kit.tsx          Screen, Title, Choice, LockInButton, Sheet, Stepper…
     ├── player.tsx       the player's screens (draws what usePlayer returns)
-    ├── week.tsx         the weekly ring, reminder offer/settings, sound check
+    ├── week.tsx         the weekly ring, level card, reminder offer/settings, sound check
+    ├── reveal.tsx       the finish screen's reveal: steps, count-up, bar, confetti, buzz
     └── alerts.ts        beep + buzz at the end of a rest or a timed move
 assets/sounds/           tick.wav (3-2-1) and done.wav (made for this app)
 ```
