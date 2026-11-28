@@ -1193,7 +1193,7 @@ export interface components {
             on_list: number;
             /**
              * Top Spots
-             * @description The top this many get an early Android invite
+             * @description The top this many get the app before everyone else
              */
             top_spots: number;
             /** In Top */
@@ -2111,7 +2111,7 @@ export interface components {
             on_list: number;
             /**
              * Top Spots
-             * @description The top this many get an early Android invite
+             * @description The top this many get the app before everyone else
              */
             top_spots: number;
             /** In Top */
