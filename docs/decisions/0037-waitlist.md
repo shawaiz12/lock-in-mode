@@ -4,7 +4,7 @@
 **Status:** Accepted
 
 ## Context
-Launch is about a month away (Android first, after the Google Play closed test). The app
+Launch is about a month away, on Android and iPhone at the same time. The app
 has no website and no way to reach anyone it doesn't already have: the first Instagram
 account was banned, and guests have no email. The marketing notes
 (`lock-in-mode/marketing-knowledge.md`, rule 11) call for an owned audience: a waitlist,
@@ -22,7 +22,10 @@ What the research says (Source 12 in the marketing notes):
   within a month keeps about 20% converting to paid; after 3 months, under 10%.
 
 His choices (2026-11-28): in our own API, % off the first year + a badge, a referral line
-whose top spots get closed-test invites, and a domain of his own.
+whose top spots get early access, and a domain of his own. After the first version went
+live he sharpened it (same day): launch is on both stores at once, his closed testers are
+already sorted, so the page never mentions Android tests; the point is growing the list
+before launch, and everyone who joins before launch gets the discount.
 
 ## Decisions
 
@@ -58,8 +61,9 @@ whose top spots get closed-test invites, and a domain of his own.
 `POST /api/v1/waitlist {email, trains_at?, ref?, source?}`.
 - The email is trimmed and lower-cased (a CHECK makes sure), unique. "Where do you train?"
   (gym / home / both) is optional: one tap that tells us which group is joining.
-- The hint under the field asks for the Gmail on their Android phone, because closed-test
-  invites go to a Google account.
+- The founding offer is the first thing in the form card ("Join before launch: 50% off…"),
+  and after joining the share block leads with it: friends who join get the discount too,
+  and each one moves you up. Growing the list is the page's main job.
 - New → **201** with the spot, a public 8-character **link code** (no look-alike letters),
   and a private **key**, shown once. Only the key's sha256 is stored (like refresh tokens).
 - Already on the list → **200** with their spot and **no key**, and nothing about the row
@@ -75,10 +79,11 @@ whose top spots get closed-test invites, and a domain of his own.
 - `GET /api/v1/waitlist/{code}` → `{position, friends_joined, on_list, top_spots, in_top}`.
   The code is in the share link, so anyone with your link can see your spot; that's all
   it shows.
-- The top 20 get the Android closed-test invite. The page says "in the top 20 right now.
-  Stay there…": spots move until invites go out.
+- The top 20 get the app before everyone else (early access). The page says "in the top
+  20 right now. Stay there…": spots move until early access goes out. **He needs a way to
+  give it** (a pre-launch build or store early access) before launch day.
 - **Gaming:** 20 joins a minute and 30 an hour per IP, and the top of the line is checked
-  by hand before invites (`waitlist_report --friends` lists who each one brought: a run
+  by hand before early access goes out (`waitlist_report --friends` lists who each one brought: a run
   of made-up emails is easy to spot). No email verification yet (no email service).
 
 ### 5. Leaving
