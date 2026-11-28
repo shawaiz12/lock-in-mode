@@ -28,6 +28,7 @@ problem document, sent as `Content-Type: application/problem+json`
 | [`plan_not_found`](#plan_not_found) | 404 | The user has no plan yet | Call `POST /plans` (after the safety screen) |
 | [`block_complete`](#block_complete) | 404 | Every workout of the block is done or skipped | Show "Block complete!", then `POST /plans` |
 | [`session_not_found`](#session_not_found) | 404 | No workout in progress, or no such session | Show the home screen |
+| [`waitlist_entry_not_found`](#waitlist_entry_not_found) | 404 | No one on the waitlist has this link code or private key | The page forgets what it saved and shows the join form |
 | [`method_not_allowed`](#method_not_allowed) | 405 | Wrong HTTP method | Bug in the app |
 | [`provider_account_in_use`](#provider_account_in_use) | 409 | That Google/Apple account belongs to another user | Warn that guest progress stays behind; if confirmed, call `/auth/{provider}` |
 | [`provider_already_linked`](#provider_already_linked) | 409 | A different account of that provider is already linked | Don't offer linking again |
@@ -90,6 +91,12 @@ next block. `GET /api/v1/plans/current` says the same with `block_complete: true
 `GET /api/v1/sessions/current` when no workout is in progress (normal: show the home
 screen), or a session id that doesn't exist or belongs to someone else
 ([ADR 0018](decisions/0018-sessions-and-the-strength-test.md)).
+
+## waitlist_entry_not_found
+`GET /api/v1/waitlist/{code}` with a link code nobody has (they left, or it was mistyped),
+or `POST /api/v1/waitlist/leave` with a key that isn't on the list (already left)
+([ADR 0037](decisions/0037-waitlist.md)). The page drops the code it saved and shows the
+join form again.
 
 ## method_not_allowed
 The path exists but not with this HTTP method. The `Allow` header lists valid methods.
@@ -158,6 +165,9 @@ list. Submitted values are never echoed back, because they can contain tokens.
 ## rate_limited
 Too many requests to a sign-in endpoint (`/auth/guest`, `/auth/google`, `/auth/apple`)
 from this IP in the current minute ([ADR 0008](decisions/0008-rate-limiting.md)).
+Also sent by `POST /waitlist` (ADR 0037): more than 20 joins a minute, or more than
+`WAITLIST_JOINS_PER_IP_PER_HOUR` (30) an hour, from one IP; and by the waitlist's other
+endpoints past 20 a minute per IP.
 Also sent by `GET /me/export` ("Download my data") after 3 downloads by the same account
 in the current clock hour ([ADR 0027](decisions/0027-guest-sign-in-life-and-data-export.md));
 its `detail` says how many minutes are left, ready to show.

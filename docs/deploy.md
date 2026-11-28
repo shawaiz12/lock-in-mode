@@ -147,6 +147,36 @@ done; echo
 ```
 Expected: 20 non-429 codes, then **429**. Never 429: tell Claude.
 
+## 6. The waitlist page and your domain (ADR 0037)
+The API serves the waitlist page at `/`, so it's live at
+`https://lock-in-mode-api.vercel.app/` as soon as a deploy with ADR 0037 is out. Check
+`/`, `/static/site.css` and `/api/v1/waitlist/count` answer.
+
+**A domain of your own** (about $10–15 a year):
+1. Pick a name and buy it at a registrar that sells close to cost (Cloudflare Registrar,
+   Porkbun or Namecheap). Compare the **renewal** price, not just year one. Ideas:
+   `lockinmode.app`, `lockinmode.com`, `getlockinmode.com`.
+2. Vercel → project `lock-in-mode-api` → **Settings → Domains** → **Add** the domain
+   (e.g. `lockinmode.app`), and `www.lockinmode.app` redirecting to it.
+3. Vercel shows the DNS records to create (an `A` record for the bare domain, a `CNAME`
+   for `www`). Add exactly those at the registrar. HTTPS is set up by Vercel once the
+   records are seen (minutes, sometimes up to a day).
+4. Open `https://<your domain>/`. The mobile app keeps using the `vercel.app` address;
+   nothing else changes.
+
+**Links for each bio** (the `?s=` tag is how the report tells sources apart):
+`https://<your domain>/?s=tiktok`, `?s=instagram`, `?s=youtube`, `?s=linkedin`, `?s=x`,
+`?s=reddit`. Use a new tag for anything you want counted on its own (`?s=reel-legday`).
+
+**Settings** (Vercel → Settings → Environment Variables, then redeploy), only if you want
+to change the defaults: `WAITLIST_FOUNDING_DISCOUNT_PERCENT` (50), `WAITLIST_TOP_SPOTS`
+(20), `WAITLIST_LAUNCH_LABEL` (December 2026), `WAITLIST_COUNT_SHOWN_FROM` (100).
+
+**Reading it:** with the Supabase values in your `.env` (session pooler, port 5432), from
+`backend/`: `uv run python -m lock_in_mode_api.waitlist_report --friends`, and
+`--csv waitlist.csv` for the launch email. The CSV holds people's emails: keep it off
+GitHub and delete it when you're done.
+
 ## Free-plan limits to watch (ADR 0031)
 - **Vercel Hobby**: non-commercial use only: **move to Pro ($20/month) or a container
   host before the app earns money.** 1M invocations, 4 h of active CPU and 360 GB-h of
