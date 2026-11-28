@@ -695,6 +695,112 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/waitlist": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Join Waitlist
+         * @description Join the waitlist. 201 with a one-time private `key` for a new signup; 200 with the
+         *     spot and no key for an email that's already on the list (nothing about it changes).
+         *     `ref` (a friend's link code) and `source` (?s= on the link) are optional; a code nobody
+         *     has is ignored.
+         */
+        post: operations["join_waitlist_api_v1_waitlist_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/waitlist/count": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Waitlist Count
+         * @description The offer and the size of the list, for the page. `count` is null until the list
+         *     reaches `waitlist_count_shown_from` people: real numbers only, never padded.
+         */
+        get: operations["waitlist_count_api_v1_waitlist_count_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/waitlist/visits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Count Visit
+         * @description The page was opened (once per browser per day). Counts only: no IP, no cookie.
+         */
+        post: operations["count_visit_api_v1_waitlist_visits_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/waitlist/leave": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Leave Waitlist
+         * @description Leave the waitlist for good: the email and everything with it is deleted. Needs the
+         *     private key given at signup, so a shared link can't remove its owner.
+         */
+        post: operations["leave_waitlist_api_v1_waitlist_leave_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/waitlist/{code}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Waitlist Spot
+         * @description A spot in line by link code (any case). The page asks on every visit, so the spot is
+         *     always current.
+         */
+        get: operations["waitlist_spot_api_v1_waitlist__code__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health/live": {
         parameters: {
             query?: never;
@@ -828,6 +934,11 @@ export interface components {
              * @description false until the first workout back is started: show "Welcome back" (never how long they were gone). Either way, DELETE /me/comeback ends it ("I kept training elsewhere").
              */
             started: boolean;
+        };
+        /** CountVisit */
+        CountVisit: {
+            /** Source */
+            source?: string | null;
         };
         /**
          * Equipment
@@ -1044,6 +1155,54 @@ export interface components {
              */
             rest_seconds: number;
         };
+        /** JoinWaitlist */
+        JoinWaitlist: {
+            /**
+             * Email
+             * Format: email
+             */
+            email: string;
+            trains_at?: components["schemas"]["TrainsAt"] | null;
+            /** Ref */
+            ref?: string | null;
+            /** Source */
+            source?: string | null;
+        };
+        /**
+         * JoinedWaitlist
+         * @description POST /waitlist. `key` comes once, to a new signup only: the page keeps it to leave
+         *     the list later. Someone already on the list gets their spot without a key.
+         */
+        JoinedWaitlist: {
+            /** Referral Code */
+            referral_code: string;
+            /**
+             * Position
+             * @description 1 = first in line
+             */
+            position: number;
+            /**
+             * Friends Joined
+             * @description People who joined with this person's link
+             */
+            friends_joined: number;
+            /**
+             * On List
+             * @description Everyone on the waitlist right now
+             */
+            on_list: number;
+            /**
+             * Top Spots
+             * @description The top this many get an early Android invite
+             */
+            top_spots: number;
+            /** In Top */
+            in_top: boolean;
+            /** Already On List */
+            already_on_list: boolean;
+            /** Key */
+            key?: string | null;
+        };
         /**
          * LastResult
          * @description The last set logged for this exercise, in any workout: pre-fill the next set with it.
@@ -1060,6 +1219,11 @@ export interface components {
              * Format: date-time
              */
             logged_at: string;
+        };
+        /** LeaveWaitlist */
+        LeaveWaitlist: {
+            /** Key */
+            key: string;
         };
         /**
          * LeavingReason
@@ -1825,6 +1989,12 @@ export interface components {
             deletion_cancelled?: boolean;
         };
         /**
+         * TrainsAt
+         * @description The waitlist's one optional tap, "Where do you train?" (ADR 0037).
+         * @enum {string}
+         */
+        TrainsAt: "gym" | "home" | "both";
+        /**
          * UserRead
          * @description Public view of a user. Never includes provider ids (google_sub/apple_sub).
          */
@@ -1903,6 +2073,49 @@ export interface components {
             detail?: string | null;
             /** Errors */
             errors: components["schemas"]["FieldError"][];
+        };
+        /**
+         * WaitlistCount
+         * @description What the page may show. `count` is null below `waitlist_count_shown_from`, so the
+         *     page never says "3 people locked in".
+         */
+        WaitlistCount: {
+            /** Count */
+            count: number | null;
+            /** Founding Discount Percent */
+            founding_discount_percent: number;
+            /** Top Spots */
+            top_spots: number;
+        };
+        /**
+         * WaitlistSpot
+         * @description Someone's place in line, read by their link code.
+         */
+        WaitlistSpot: {
+            /** Referral Code */
+            referral_code: string;
+            /**
+             * Position
+             * @description 1 = first in line
+             */
+            position: number;
+            /**
+             * Friends Joined
+             * @description People who joined with this person's link
+             */
+            friends_joined: number;
+            /**
+             * On List
+             * @description Everyone on the waitlist right now
+             */
+            on_list: number;
+            /**
+             * Top Spots
+             * @description The top this many get an early Android invite
+             */
+            top_spots: number;
+            /** In Top */
+            in_top: boolean;
         };
         /**
          * WeekRead
@@ -3708,6 +3921,225 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Request body or parameters are invalid */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                    "application/json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error. Branch on `code`; see docs/errors.md */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    join_waitlist_api_v1_waitlist_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JoinWaitlist"];
+            };
+        };
+        responses: {
+            /** @description Already on the list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JoinedWaitlist"];
+                };
+            };
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JoinedWaitlist"];
+                };
+            };
+            /** @description Request body or parameters are invalid */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                    "application/json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error. Branch on `code`; see docs/errors.md */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    waitlist_count_api_v1_waitlist_count_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WaitlistCount"];
+                };
+            };
+            /** @description Request body or parameters are invalid */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                    "application/json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error. Branch on `code`; see docs/errors.md */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    count_visit_api_v1_waitlist_visits_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CountVisit"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Request body or parameters are invalid */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                    "application/json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error. Branch on `code`; see docs/errors.md */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    leave_waitlist_api_v1_waitlist_leave_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LeaveWaitlist"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Request body or parameters are invalid */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                    "application/json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error. Branch on `code`; see docs/errors.md */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    waitlist_spot_api_v1_waitlist__code__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WaitlistSpot"];
+                };
             };
             /** @description Request body or parameters are invalid */
             422: {
