@@ -29,10 +29,14 @@ async def test_the_page_shows_the_offer_the_top_spots_and_the_launch(
 
     page = await _page(client)
 
-    assert "40% off your first year of Pro" in page
+    assert "40% off</strong> your first year of Pro" in page
     assert "top 25" in page
     assert "Top 25" in page
-    assert "Launching January 2027" in page
+    assert "Android &amp; iPhone &middot; Launching January 2027" in page
+    assert "Join before launch: 40% off" in page  # first thing in the form card
+    assert page.index("Join before launch") < page.index('id="email"')
+    assert "everyone who joins before launch gets 40% off too" in page
+    assert 'data-discount="40"' in page
     assert "$" not in page  # every placeholder filled
 
 
@@ -45,6 +49,7 @@ async def test_no_discount_means_no_offer_anywhere(
 
     assert "Founding" not in page
     assert "% off" not in page
+    assert "Each friend who joins with your link moves you up the line." in page
 
 
 async def test_the_launch_label_is_escaped(
@@ -136,6 +141,18 @@ def test_the_page_says_nothing_the_app_cant_back_up() -> None:
     assert "every workout hits" not in text
     assert "weekly streak" in text  # the streak is weekly (ADR 0034), never daily
     assert "daily streak" not in text
+    # Launch is on both stores at once (his call, 2026-11-28), and the top of the line
+    # gets early access, not a test invite.
+    assert "android and iphone at the same time" in text
+    assert "android first" not in text
+    assert "test invite" not in text
+
+
+def test_the_script_promises_early_access_not_a_test_invite() -> None:
+    script = (STATIC / "site.js").read_text().lower()
+
+    assert "get the app before everyone else" in script
+    assert "android" not in script
 
 
 def test_the_page_is_not_in_the_api_docs() -> None:
