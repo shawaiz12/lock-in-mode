@@ -167,6 +167,14 @@ class EventName(StrEnum):
     PACT_SIGNED = "pact_signed"  # ADR 0036
 
 
+class TrainsAt(StrEnum):
+    """The waitlist's one optional tap, "Where do you train?" (ADR 0037)."""
+
+    GYM = "gym"
+    HOME = "home"
+    BOTH = "both"
+
+
 class LeavingReason(StrEnum):
     """The optional "Why are you leaving?" on the delete screen (ADR 0024). Saved with no
     link to the person, only once the account is really gone."""

@@ -10,6 +10,8 @@ __pycache__/
 
 # Secrets – NEVER commit these
 .env
+# Waitlist exports hold people's emails (ADR 0037)
+waitlist*.csv
 
 # Editor / OS
 .vscode/

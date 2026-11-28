@@ -17,6 +17,7 @@ from lock_in_mode_api.core.config import settings
 from lock_in_mode_api.core.db import engine
 from lock_in_mode_api.core.redis import get_redis, redis_client
 from lock_in_mode_api.services.account import run_cleanup
+from lock_in_mode_api.web import site
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title="Lock In Mode API", version="0.1.0", lifespan=lifespan)
 add_problem_handlers(app)
 app.include_router(v1.router)
+# The waitlist page (ADR 0037): / and its files under /static.
+app.include_router(site.router)
+app.mount("/static", site.static_files, name="static")
 
 
 @app.get("/health/live", tags=["infrastructure"])

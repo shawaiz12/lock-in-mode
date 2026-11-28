@@ -120,6 +120,15 @@ class SessionNotFound(ApiError):
     title = "Session not found"
 
 
+class WaitlistEntryNotFound(ApiError):
+    """No one on the waitlist has this link code or private key (ADR 0037): they left, or
+    it was mistyped. The page forgets what it saved and shows the join form again."""
+
+    status_code = 404
+    code = "waitlist_entry_not_found"
+    title = "Not on the waitlist"
+
+
 class MethodNotAllowed(ApiError):
     status_code = 405
     code = "method_not_allowed"

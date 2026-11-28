@@ -83,6 +83,23 @@ class Settings(BaseSettings):
     # "Download my data" (ADR 0027): exports per account per hour.
     export_rate_limit_per_hour: int = 3
 
+    # The waitlist page (ADR 0037). Everything the page promises comes from here, so a
+    # change of plan is one setting, not a hunt through the HTML.
+    # The founding-member offer: this % off the first year of Pro for everyone who joins
+    # before launch. 0 hides the offer.
+    waitlist_founding_discount_percent: int = Field(default=50, ge=0, le=100)
+    # The top N of the line get an invite to the Android closed test before launch.
+    waitlist_top_spots: int = Field(default=20, ge=1, le=1000)
+    # The page shows "N people locked in" only from this many (a real count, never padded;
+    # a tiny number reads as "nobody's here").
+    waitlist_count_shown_from: int = Field(default=100, ge=0)
+    # Shown on the page: when the app comes out. Words, so "Early 2027" works too.
+    waitlist_launch_label: str = "December 2026"
+    # New signups per IP address per hour (on top of the per-minute limit): people
+    # behind one mobile carrier share an IP, so it's generous; scripts making fake
+    # friends to climb the line hit it fast.
+    waitlist_joins_per_ip_per_hour: int = Field(default=30, ge=1)
+
     @field_validator("jwt_secret")
     @classmethod
     def jwt_secret_must_be_long(cls, value: SecretStr) -> SecretStr:

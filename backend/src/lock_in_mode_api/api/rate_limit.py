@@ -121,3 +121,20 @@ async def export_rate_limit(user: CurrentUser, redis: Annotated[Redis, Depends(g
             f"Try again in {minutes} minute{'' if minutes == 1 else 's'}.",
             headers={"Retry-After": str(seconds_left)},
         )
+
+
+async def waitlist_join_limit(
+    request: Request, redis: Annotated[Redis, Depends(get_redis)]
+) -> None:
+    """Joining the waitlist (ADR 0037): `waitlist_joins_per_ip_per_hour` per IP per clock
+    hour, on top of the per-minute limit. It stops a script inventing friends to climb
+    the line; the top of the line is still checked by hand before invites go out."""
+    now = clock()
+    window = int(now // HOUR_SECONDS)
+    count = await _count(redis, f"rl:waitlist-hour:{client_ip(request)}:{window}", HOUR_SECONDS)
+    if count is not None and count > settings.waitlist_joins_per_ip_per_hour:
+        seconds_left = math.ceil((window + 1) * HOUR_SECONDS - now)
+        raise RateLimited(
+            "Too many signups from this network. Please try again later.",
+            headers={"Retry-After": str(seconds_left)},
+        )
