@@ -14,6 +14,12 @@ os.environ["POSTGRES_DB"] = "lockin_test"
 os.environ["JWT_SECRET"] = "test-only-jwt-secret-not-used-anywhere-else"
 # Redis database 15 is for tests only, so flushing it never touches dev data in db 0.
 os.environ["REDIS_URL"] = "redis://localhost:6379/15"
+# Rate limits at their defaults whatever the developer's .env says (a low value left over
+# from trying a limit by hand made unrelated tests fail with 429). Tests about a limit
+# lower it themselves with monkeypatch.
+os.environ["AUTH_RATE_LIMIT_PER_MINUTE"] = "20"
+os.environ["EXPORT_RATE_LIMIT_PER_HOUR"] = "3"
+os.environ["WAITLIST_JOINS_PER_IP_PER_HOUR"] = "30"
 
 import asyncio  # noqa: E402
 from collections.abc import AsyncIterator, Iterator  # noqa: E402
