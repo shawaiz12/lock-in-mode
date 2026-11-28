@@ -88,7 +88,7 @@ class Settings(BaseSettings):
     # The founding-member offer: this % off the first year of Pro for everyone who joins
     # before launch. 0 hides the offer.
     waitlist_founding_discount_percent: int = Field(default=50, ge=0, le=100)
-    # The top N of the line get an invite to the Android closed test before launch.
+    # The top N of the line get the app before everyone else (early access).
     waitlist_top_spots: int = Field(default=20, ge=1, le=1000)
     # The page shows "N people locked in" only from this many (a real count, never padded;
     # a tiny number reads as "nobody's here").

@@ -13,7 +13,7 @@ written on your machine).
   joined, per ?s= tag. Warm traffic (your bios) should join far more often than cold.
   Signups that came through a friend's link are counted on their own line.
 - Where they train: the optional tap.
-- The front of the line: the top `waitlist_top_spots`, who get the Android test invite.
+- The front of the line: the top `waitlist_top_spots`, who get the app before everyone else.
   Check them by hand before inviting (--friends lists who each one brought): a run of
   made-up emails is easy to spot.
 """
@@ -183,7 +183,7 @@ def render(report: Report, show_friends: bool = False) -> str:
     lines += [f"  {place:<20}{n:>8}" for place, n in report.trains_at.items()] or ["  nobody yet"]
     lines += [
         "",
-        f"The front of the line (top {settings.waitlist_top_spots} get the Android invite)",
+        f"The front of the line (top {settings.waitlist_top_spots} get early access)",
     ]
     for f in report.front:
         lines.append(f"  #{f.position:<4}{f.email:<40}{f.friends:>3} friends  {f.joined_at:%d %b}")

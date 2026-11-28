@@ -128,7 +128,7 @@ async def waitlist_join_limit(
 ) -> None:
     """Joining the waitlist (ADR 0037): `waitlist_joins_per_ip_per_hour` per IP per clock
     hour, on top of the per-minute limit. It stops a script inventing friends to climb
-    the line; the top of the line is still checked by hand before invites go out."""
+    the line; the top of the line is still checked by hand before early access goes out."""
     now = clock()
     window = int(now // HOUR_SECONDS)
     count = await _count(redis, f"rl:waitlist-hour:{client_ip(request)}:{window}", HOUR_SECONDS)

@@ -75,16 +75,20 @@
     $("spot-number").textContent = "#" + spot.position.toLocaleString("en-US");
     $("spot-of").textContent = "of " + spot.on_list.toLocaleString("en-US");
     $("status-line").textContent = spot.in_top
-      ? "You're in the top " + spot.top_spots + " right now. Stay there for an Android test invite before launch."
-      : "The top " + spot.top_spots + " get an Android test invite before launch. Each friend who joins with your link moves you up.";
+      ? "You're in the top " + spot.top_spots + " right now. Stay there to get the app before everyone else."
+      : "The top " + spot.top_spots + " get the app before everyone else. Each friend who joins with your link moves you up.";
     $("friends").textContent = friendsLine(spot.friends_joined);
     $("share-link").value = link;
-    var message = "I'm locking in. Join the Lock In Mode waitlist with my link: " + link;
+    var discount = Number($("status").getAttribute("data-discount")) || 0;
+    var pitch = discount > 0
+      ? "I'm locking in. Join the Lock In Mode waitlist before launch and get " + discount + "% off: "
+      : "I'm locking in. Join the Lock In Mode waitlist with my link: ";
+    var message = pitch + link;
     $("whatsapp").href = "https://wa.me/?text=" + encodeURIComponent(message);
     if (navigator.share) {
       $("native-share").hidden = false;
       $("native-share").onclick = function () {
-        navigator.share({ title: "Lock In Mode", text: "I'm locking in. Join the waitlist with my link:", url: link }).catch(function () {});
+        navigator.share({ title: "Lock In Mode", text: pitch.trim(), url: link }).catch(function () {});
       };
     }
     var hasKey = Boolean(opts.key);

@@ -105,7 +105,7 @@ input[aria-invalid="true"] { border-color: var(--danger); }
 .choice input:focus-visible + span { outline: 3px solid var(--brand); outline-offset: 2px; }
 .error { color: var(--danger); font-weight: 600; font-size: 15px; }
 .offer {
-  margin-top: 16px; padding: 12px 14px; border-radius: 14px; font-size: 15px;
+  margin-bottom: 16px; padding: 12px 14px; border-radius: 14px; font-size: 15px;
   background: color-mix(in srgb, var(--gold) 22%, var(--card)); border: 2px solid var(--gold);
 }
 .offer strong, .founding strong { color: var(--gold-text); }
@@ -128,6 +128,7 @@ input[aria-invalid="true"] { border-color: var(--danger); }
 .status-line { font-weight: 600; }
 .friends { color: var(--muted); }
 .share { display: grid; gap: 10px; padding-top: 6px; border-top: 2px solid var(--line); }
+.share-pitch { font-weight: 600; padding-top: 6px; }
 .link-row { display: flex; gap: 8px; }
 .link { min-height: 48px; font-size: 15px; }
 .share-buttons { display: grid; gap: 12px; }

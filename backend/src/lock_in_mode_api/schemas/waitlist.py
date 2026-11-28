@@ -42,7 +42,7 @@ class WaitlistSpot(BaseModel):
     position: int = Field(description="1 = first in line")
     friends_joined: int = Field(description="People who joined with this person's link")
     on_list: int = Field(description="Everyone on the waitlist right now")
-    top_spots: int = Field(description="The top this many get an early Android invite")
+    top_spots: int = Field(description="The top this many get the app before everyone else")
     in_top: bool
 
 

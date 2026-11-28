@@ -33,15 +33,15 @@
 <main>
   <section class="hero">
     <div class="hero-copy">
-      <p class="chip">Fitness app &middot; Launching $launch</p>
+      <p class="chip">Android &amp; iPhone &middot; Launching $launch</p>
       <h1>You keep starting Monday. <span class="hl">This time, lock&nbsp;in.</span></h1>
       <p class="lead">Lock In Mode plans every workout for you, at the gym or at home, and changes it as you get stronger. Show up, level up. That's the whole game.</p>
 
       <div class="card join" id="join">
+        $offer_strip
         <form id="join-form" novalidate>
           <label for="email" class="label">Your email</label>
           <input id="email" name="email" type="email" inputmode="email" autocomplete="email" autocapitalize="off" spellcheck="false" placeholder="you@gmail.com" required maxlength="254">
-          <p class="hint">Use the Gmail on your Android phone: early test invites go there.</p>
 
           <fieldset class="trains">
             <legend class="label">Where do you train? <span class="optional">(optional)</span></legend>
@@ -54,13 +54,12 @@
 
           <button class="button" type="submit" id="join-button">Lock me in</button>
           <p class="error" id="join-error" role="alert" hidden></p>
-          <p class="fine">One email when it's live, plus your invite if you make the top $top. No spam. Leave any time.</p>
+          <p class="fine">One email when the app is live, plus early access if you're in the top $top. No spam. Leave any time.</p>
         </form>
-        $offer_strip
         <p class="count" id="count" hidden></p>
       </div>
 
-      <div class="card status" id="status" hidden aria-live="polite">
+      <div class="card status" id="status" hidden aria-live="polite" data-discount="$discount">
         <div class="stamp" aria-hidden="true">LOCKED IN</div>
         <p class="status-title" id="status-title">You're in.</p>
         <p class="spot"><span class="spot-label">Your spot</span> <span class="spot-number" id="spot-number">#1</span> <span class="spot-of" id="spot-of"></span></p>
@@ -68,6 +67,7 @@
         <p class="friends" id="friends"></p>
 
         <div class="share">
+          <p class="share-pitch">$share_pitch</p>
           <p class="label">Your link</p>
           <div class="link-row">
             <input id="share-link" class="link" type="text" readonly aria-label="Your share link">
@@ -162,7 +162,7 @@
     <h2>Questions</h2>
     <details>
       <summary>When does it come out?</summary>
-      <p>$launch, on Android first. iPhone is coming too.</p>
+      <p>$launch, on Android and iPhone at the same time.</p>
     </details>
     <details>
       <summary>Is it free?</summary>
@@ -170,11 +170,11 @@
     </details>
     <details>
       <summary>How does the line work?</summary>
-      <p>Each friend who joins with your link moves you ahead of everyone with fewer friends. Same number? Whoever joined first goes first. The top $top get an Android test invite before launch. We check the top of the line before invites go out, so made-up emails don't count.</p>
+      <p>Each friend who joins with your link moves you ahead of everyone with fewer friends. Same number? Whoever joined first goes first. The top $top get the app before everyone else. We check the top of the line before early access goes out, so made-up emails don't count.</p>
     </details>
     <details>
       <summary>What do you do with my email?</summary>
-      <p>Send you Lock In Mode news: the launch, and your invite if you're in the top $top. Never sold, never shared. Leave any time from this page and it's deleted. We count page visits, but we don't track you: no cookies, no ads.</p>
+      <p>Send you Lock In Mode news: the launch, and your early access if you're in the top $top. Never sold, never shared. Leave any time from this page and it's deleted. We count page visits, but we don't track you: no cookies, no ads.</p>
     </details>
     <details>
       <summary>Who's building this?</summary>

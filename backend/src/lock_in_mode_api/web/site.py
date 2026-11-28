@@ -2,8 +2,8 @@
 
 Same address as the API, so the page's calls to /api/v1/waitlist need no CORS, and one
 deploy ships both. The HTML is one template; everything it promises (the founding offer,
-the top-of-line invites, the launch month) comes from settings, so a change of plan is a
-setting, not an edit to the page.
+early access for the top of the line, the launch month) comes from settings, so a change
+of plan is a setting, not an edit to the page.
 
 .NET: like an ASP.NET Core Razor Page in the same app as the API, with UseStaticFiles for
 the css, js and fonts.
@@ -67,12 +67,18 @@ def _offer_parts() -> dict[str, str]:
     pct = settings.waitlist_founding_discount_percent
     top = settings.waitlist_top_spots
     if pct == 0:
-        return {"offer_strip": "", "founding_note": "", "perks_section": "", "faq_discount": ""}
+        return {
+            "offer_strip": "",
+            "founding_note": "",
+            "perks_section": "",
+            "faq_discount": "",
+            "share_pitch": "Each friend who joins with your link moves you up the line.",
+        }
     return {
         "offer_strip": (
-            '<p class="offer"><strong>Founding member:</strong> '
-            f"{pct}% off your first year of Pro, plus a Founding badge in the app. "
-            "Only for people who join before launch.</p>"
+            f'<p class="offer"><strong>Join before launch: {pct}% off</strong> '
+            "your first year of Pro, plus a Founding badge in the app. Everyone on the list "
+            "before launch gets it.</p>"
         ),
         "founding_note": (
             '<p class="founding">Founding member: your '
@@ -87,12 +93,16 @@ def _offer_parts() -> dict[str, str]:
             '<li class="card"><strong>Founding badge</strong>'
             "<span>in the app, for good</span></li>"
             f'<li class="card"><strong>Top {top}</strong>'
-            "<span>get an Android test invite before launch</span></li>"
+            "<span>get the app before everyone else</span></li>"
             "</ul>"
             '<p class="fine">Only for people who join before launch. Pro\'s price is '
             "announced at launch.</p></section>"
         ),
         "faq_discount": f" Founding members get {pct}% off the first year.",
+        "share_pitch": (
+            f"Bring your friends: everyone who joins before launch gets {pct}% off too, and "
+            "each one who joins with your link moves you up the line."
+        ),
     }
 
 
@@ -110,6 +120,7 @@ def render_page(request: Request) -> str:
         version=html.escape(settings.app_version, quote=True),
         launch=html.escape(settings.waitlist_launch_label),
         top=str(settings.waitlist_top_spots),
+        discount=str(settings.waitlist_founding_discount_percent),
         **_offer_parts(),
     )
 
